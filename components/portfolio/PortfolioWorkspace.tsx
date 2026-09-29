@@ -15,6 +15,8 @@ import { GrowthChart } from "@/components/charts/GrowthChart";
 import { DrawdownLab } from "@/components/drawdown/DrawdownLab";
 import { BenchmarkSection } from "@/components/benchmark/BenchmarkSection";
 import { RiskSection } from "@/components/risk/RiskSection";
+import { RollingSection } from "@/components/rolling/RollingSection";
+import { StressLab } from "@/components/stress/StressLab";
 import { money, percent, timestamp } from "@/lib/utils/format";
 import type { BacktestResult } from "@/lib/types/analytics";
 import type {
@@ -654,10 +656,39 @@ export function PortfolioWorkspace({ today }: { today: string }) {
               benchmark={result.benchmarkAnalytics}
             />
           </section>
+          <section className="results" aria-labelledby="rolling-title">
+            <div className="section-heading">
+              <div>
+                <p className="eyebrow">07 / Rolling</p>
+                <h2 id="rolling-title">Risk through time.</h2>
+              </div>
+              <span className="tag">Full windows only</span>
+            </div>
+            <RollingSection
+              key={result.metadata.snapshotHash}
+              rolling={result.rollingAnalytics}
+              performance={result.performance}
+              benchmark={result.benchmarkAnalytics}
+            />
+          </section>
+          <section className="results" aria-labelledby="stress-title">
+            <div className="section-heading">
+              <div>
+                <p className="eyebrow">08 / Stress Lab</p>
+                <h2 id="stress-title">Historical stress periods.</h2>
+              </div>
+              <span className="tag">Fixed windows · re-initialized</span>
+            </div>
+            <StressLab
+              key={result.metadata.snapshotHash}
+              config={result.config}
+              today={today}
+            />
+          </section>
           <section className="results" aria-labelledby="results-title">
             <div className="section-heading">
               <div>
-                <p className="eyebrow">07 / Historical ledger</p>
+                <p className="eyebrow">09 / Historical ledger</p>
                 <h2 id="results-title">A traceable return ledger.</h2>
               </div>
               <span className="tag">
@@ -746,6 +777,28 @@ export function PortfolioWorkspace({ today }: { today: string }) {
                 interval&rsquo;s actual beginning weight and is arithmetic, not
                 linked attribution.
               </p>
+              <p>
+                Rolling ({result.rollingAnalytics.methodologyVersion}): 20-, 60-
+                and 120-session volatility, beta and correlation use the same
+                formulas as the full-period statistics on the N daily returns
+                ending at each close. A value appears only when all N are
+                consecutive scheduled sessions; beta and correlation also need
+                benchmark prices at both ends of every interval, so a window
+                touching a missing benchmark session stays blank rather than
+                being compressed.
+              </p>
+              <p>
+                Stress Lab (stress-v1, separate request and snapshot hash):
+                fixed windows GFC 2007-10-09 → 2009-03-09, COVID 2020-02-19 →
+                2020-03-23 and 2022 2021-12-31 → 2022-12-30, between session
+                closes. Each event re-initializes the target portfolio at its
+                start close, earns its first return at the next session and
+                applies the same monthly closing resets. Every holding needs a
+                price at every window session; otherwise the event reports
+                Incomplete Historical Coverage and is never shortened or
+                proxy-filled. Event active return is portfolio minus benchmark
+                cumulative return; holding returns are standalone.
+              </p>
               <ul>
                 {result.metadata.warnings.map((w) => (
                   <li key={w}>{w}</li>
@@ -806,7 +859,7 @@ export function PortfolioWorkspace({ today }: { today: string }) {
       <section className="current-context" aria-labelledby="context-title">
         <div className="section-heading">
           <div>
-            <p className="eyebrow">08 / Separate current context</p>
+            <p className="eyebrow">10 / Separate current context</p>
             <h2 id="context-title">Latest observations.</h2>
           </div>
           <span className="muted">Excluded from the historical engine</span>

@@ -9,6 +9,8 @@ export async function fetchPublic(
   ttlSeconds: number,
   fetcher: Fetcher = fetch,
   timeoutMs = 4000,
+  /** Error statuses returned with their body for the caller to interpret. */
+  passStatuses: readonly number[] = [],
 ): Promise<Response> {
   for (let attempt = 0; attempt < 2; attempt++) {
     const controller = new AbortController();
@@ -42,7 +44,7 @@ export async function fetchPublic(
         fail("RATE_LIMIT", "Provider rate limit reached. Try again later.", {
           retryable: true,
         });
-      if (!response.ok)
+      if (!response.ok && !passStatuses.includes(response.status))
         fail("PROVIDER_ERROR", `Provider returned HTTP ${response.status}.`, {
           retryable: true,
         });

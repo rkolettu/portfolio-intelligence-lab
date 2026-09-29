@@ -78,7 +78,29 @@ export class YahooProvider implements HistoricalProvider, QuoteProvider {
       `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(valid)}?${query}`,
       ttl,
       this.fetcher,
+      undefined,
+      [400],
     );
+    if (response.status === 400) {
+      // Observed: a range entirely before listing is a 400 "Data doesn't exist
+      // for startDate = …". That is missing history, not a provider fault.
+      const body: unknown = await response.json().catch(() => null);
+      const description = z
+        .object({
+          chart: z.object({ error: z.object({ description: z.string() }) }),
+        })
+        .safeParse(body).data?.chart.error.description;
+      if (description?.startsWith("Data doesn't exist"))
+        fail(
+          "INSUFFICIENT_HISTORY",
+          `${valid} has no history in the requested range; it may have listed later.`,
+          { ticker: valid },
+        );
+      fail("PROVIDER_ERROR", "Provider returned HTTP 400.", {
+        ticker: valid,
+        retryable: true,
+      });
+    }
     return {
       data: parseYahoo(await response.json(), valid),
       responseDate: response.headers.get("date"),

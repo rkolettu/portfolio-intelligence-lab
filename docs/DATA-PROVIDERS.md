@@ -81,6 +81,14 @@ Run: `npm run smoke:providers`, 2026-09-29 03:26 UTC, Node 26.3.1 on macOS, actu
 
 These facts establish a **local integration smoke**, not a contractual or deployed-runtime qualification. Newly fetched corrected data can change numerical results (successive fetches differed by about $0.00001 in ending wealth); rely on snapshot replay, not a fixed live price.
 
+## Stress-window data (Phase 5)
+
+`/api/stress` fetches each holding and the benchmark once over the span of the requested windows. The fixed preset span is 2007-10-09 → 2022-12-30, so its cache keys are identical for every portfolio holding a given security; a Custom Historical Window uses its own span. Providers, key format, TTLs, concurrency and whole-series fallback are the analysis's, unchanged. DGS3MO is fetched only when CASH is held. Failures are recorded per security and judged per event instead of failing the request.
+
+Observed live (2026-09-29): Yahoo answers a range entirely before a security's listing with HTTP 400 and `{"chart":{"error":{"description":"Data doesn't exist for startDate = …, endDate = …"}}}` (for example ARM over 2007–2022), while an unknown symbol is HTTP 404. `fetchPublic` returns listed error statuses with their body to the adapter (default none, so FRED is unchanged). The Yahoo adapter maps only that 400 body to non-retryable `INSUFFICIENT_HISTORY`; every other 400 remains `PROVIDER_ERROR`. Stress therefore reports such a holding as Incomplete Historical Coverage, and a main analysis over a pre-listing period reports insufficient history instead of a retryable provider fault. If Yahoo changes that text, the case falls back to the provider-error label.
+
+Live smoke of the sample (1.3 s, 351 KB): all three windows complete. With a VT benchmark, the GFC event keeps its portfolio result while benchmark and active results are unavailable, because VT's provider-reported first trade is 2008-06-26.
+
 ## Cache, timeout and provenance
 
 Successful history is fetched as a coherent whole requested series (with ten days of boundary context); normalized in-memory cache TTL one hour. Quotes use 60 seconds. Treasury uses six hours. Vercel/Next fetch caching uses the same TTLs and may serve a stale response while revalidating, which provenance cache ages now expose. No chunk splicing across adjustment scales and no stale-as-complete historical fallback. Freshness records cache age separately from market observation age, source response/fetch time, last successful refresh and observation date.

@@ -113,3 +113,10 @@ export function drawdownTicks(minimum: number, maxTicks = 6): number[] {
     i === 0 ? 0 : -Number((i * step).toPrecision(12)),
   );
 }
+
+/** Every k-th session date (first included), at most `maxTicks`, for windows too
+ * short for month or year ticks. */
+export function sessionTicks(dates: readonly string[], maxTicks = 6): string[] {
+  const step = Math.max(1, Math.ceil(dates.length / maxTicks));
+  return dates.filter((_, i) => i % step === 0);
+}

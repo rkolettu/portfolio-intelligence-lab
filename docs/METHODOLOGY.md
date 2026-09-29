@@ -145,6 +145,58 @@ Effective holdings measures capital concentration, not correlation diversificati
 
 **Target weights vs historical drifted weights.** Risk decomposition uses configured targets (what the allocation is designed to hold). Return contribution uses the historical drifted/reset weights (what the backtest actually held each day). The two are never mixed.
 
+## Rolling analytics (Phase 5, `rolling-v1`)
+
+Computed once in `simulate()` (`lib/analytics/{rolling,rollingSummary}.ts`) and shipped as `rollingAnalytics`; constants live in `ROLLING_METHODOLOGY`, so Phase 1 snapshot identity is unchanged (verified by cross-version replay).
+
+- **Windows:** 20, 60 and 120 session returns; 60 by default.
+- **Full windows only.** A value at date t uses the N ledger intervals ending at t's close (N + 1 closes). It exists only when all N intervals are valid for the statistic and chain session to session: each interval starts where the previous one ended. A missing session resets the count; a window is never compressed across it, and no partial window is shown.
+- **Volatility** is `sampleStdDev(r) × √252` on the realized portfolio's daily returns (drifted weights, CASH accrual included): the Phase 2 function applied to the window.
+- **Beta and correlation** are portfolio vs benchmark on the Phase 3 canonical aligned intervals only: the Phase 3 `beta` (`Cov(p, b) / Var(b)`) and `correlation`, applied to the window. An interval without benchmark prices at both ends blanks every window that contains it; a benchmark that starts later yields its first value N aligned intervals after its start.
+- **Undefined values:** a full window whose statistic is undefined (zero benchmark variance, for example) is blank, counted, and reported with its reason, never forced. Short-sample notes are not attached to rolling points; the chart states the window length instead.
+- **Chart:** the full-period statistic (Phase 2 realized volatility, Phase 3 beta or correlation) is drawn as a reference line. Correlation uses a fixed [−1, 1] axis; volatility is zero-anchored; beta always includes zero. Display downsampling keeps each gap's first and last point, so gaps stay visible. Short windows are noisy descriptions of the past, not forecasts.
+
+## Historical stress tests (Phase 5, `stress-v1`, `stress-windows-v1`)
+
+Stress runs through its own `/api/stress` request, independent of `/api/analysis` like quotes and the current curve: the analysis snapshot, hash and latency are unchanged, and a stress failure never touches the analysis.
+
+**Fixed windows** (`config/stressWindows.ts`), between actual XNYS session closes. They are chosen, documented historical windows, not universal definitions of each crisis, and are never redefined dynamically.
+
+| Event | Start close | End close | Sessions | Choice |
+| --- | --- | --- | --- | --- |
+| Global Financial Crisis | 2007-10-09 | 2009-03-09 | 356 | S&P 500 closing high to closing low |
+| COVID Crash | 2020-02-19 | 2020-03-23 | 24 | S&P 500 closing high to closing low |
+| 2022 Inflation / Rate Shock | 2021-12-31 | 2022-12-30 | 252 | Calendar year 2022 |
+
+**Event convention.** Each event is an independent run of the unchanged Phase 1 simulation on its window. The configured target portfolio is initialized at target weights at the start close; the first earned return ends at the next session. Weights drift, and the same monthly closing resets apply. No result depends on another backtest's drifted weights. The analysis's CASH policy and prior-known Treasury rule are reused unchanged.
+
+**Coverage.** Every positive-weight risky holding must have an adjusted price at every window session. Otherwise the event is reported as **Incomplete Historical Coverage** with each missing holding and its reason: pre-inception (provider-reported first trade after the start), provider history beginning later, missing sessions, or no history returned. It shows no portfolio figure: it is never shortened, bridged, proxy-filled or rebuilt from a subset. Over a historical span, `INSUFFICIENT_HISTORY` and `TICKER_NOT_FOUND` mean missing history. Other fetch errors (timeout, rate limit, malformed data) make the event unavailable with the provider message. The benchmark is checked separately: without full event coverage, benchmark return, benchmark volatility and active return are unavailable while a fully covered portfolio event remains. CASH needs the window's Treasury history, as in the main run.
+
+**Metrics.**
+
+- Portfolio return is `W_end / W_start − 1` on the event's compounded wealth.
+- Benchmark return is the ETF's adjusted-price return over the same sessions.
+- **Event active return** is portfolio return minus benchmark return. It is a simple difference over the window, not the annualized arithmetic active return of the benchmark section.
+- Maximum drawdown is within the window, with the start close as the first peak.
+- Portfolio and benchmark volatility are `sampleStdDev × √252` of the event's daily returns; they are unstable for short windows.
+- **Holding returns** are each holding's own compounded return, `prod(1 + r_t) − 1` (CASH at its accrual). They are standalone returns, not contributions.
+- Best and worst name every holding at the extreme; returns within 1e-12 are ties.
+- The number of monthly resets inside the window is reported.
+
+**Bounds.** Custom and preset bounds resolve to the first session on or after the requested start and the last completed session on or before the requested end. Today's unfinalized bar is excluded by the analysis's uniform cutoff. Any difference from the request is disclosed. Fewer than two completed sessions makes the event unavailable.
+
+**Custom Historical Window.** The same rules apply to dates the user chooses. The start must precede the end, the end cannot be in the future, and the span is at most 10 years; longer horizons belong to the main analysis. Calendar coverage is enforced server-side. It is labeled as a historical window and never called a hypothetical stress test.
+
+**Data and reproducibility.** Each security is fetched once over the span covering the requested windows: the fixed preset span 2007-10-09 → 2022-12-30 (cache keys shared by every portfolio holding that security) or the custom window. This uses the analysis's providers, cache-key format, TTLs and fallback rules. Treasury history is fetched only when CASH is held. The result carries its own trimmed snapshot and a SHA-256 over:
+
+- the config, the Phase 1 `METHODOLOGY` and `STRESS_METHODOLOGY`;
+- the windows version and both calendar versions;
+- the snapshot: windows, prices on window sessions, Treasury observations from 14 days before each window, window sessions plus the next session, and fetch failures.
+
+`runStress({...snapshot, config, now: metadata.generatedAt})` reproduces every event and the hash. Trimming is proven not to change any event.
+
+Today's configured holdings applied to past windows carry selection and survivorship bias. Results are gross of costs and describe what happened, not what will happen.
+
 ## Reproducibility and limitations
 
 Results contain normalized source observations, UTC sessions, original configuration, finalized-data cutoff, fetch/source provenance, versioned methodology/calendar, interval-set hash and SHA-256 snapshot identity. Replaying `simulate({...result.snapshot, config: result.config, now: result.metadata.generatedAt})` reproduces the ledger. No durable server snapshot retention is claimed; future provider revisions can change newly fetched results. Hashes alone cannot recover old data. Production redistribution and retention permissions remain a release gate.

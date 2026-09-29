@@ -46,7 +46,8 @@ export function capitalRiskScale(values: readonly number[]): {
   const min = Math.floor(lo / step + 1e-9) * step;
   const max = Math.ceil(hi / step - 1e-9) * step;
   const ticks: number[] = [];
+  // `|| 0` turns an accumulated −0 into 0, which would otherwise render as "-0%".
   for (let t = min; t <= max + 1e-9; t += step)
-    ticks.push(Number(t.toFixed(10)));
+    ticks.push(Number(t.toFixed(10)) || 0);
   return { min, max, ticks, position: (v) => (v - min) / (max - min) };
 }

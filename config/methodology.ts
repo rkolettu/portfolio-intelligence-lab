@@ -56,3 +56,25 @@ export const RISK_METHODOLOGY = {
   /** Relative tolerance for eigenvalue-based PSD and singularity diagnostics. */
   eigenTolerance: 1e-10,
 } as const;
+
+/** Phase 5 rolling conventions (separate version; Phase 1–4 unchanged). A window
+ * of N needs N consecutive scheduled session returns ending on the plotted date. */
+export const ROLLING_METHODOLOGY = {
+  version: "rolling-v1",
+  windows: [20, 60, 120],
+  defaultWindow: 60,
+  riskAnnualization: METHODOLOGY.riskAnnualization,
+} as const;
+
+/** Phase 5 stress conventions (separate version; Phase 1–4 unchanged). Each event
+ * re-initializes at target weights on its start-session close and reuses the
+ * Phase 1 simulation unchanged, including monthly closing resets. */
+export const STRESS_METHODOLOGY = {
+  version: "stress-v1",
+  /** Custom Historical Window span cap; longer horizons belong to the main analysis. */
+  maxCustomYears: 10,
+  /** Holding returns within this absolute distance are reported as tied. */
+  tieTolerance: 1e-12,
+  /** Treasury observations kept before each window for prior-known rate lookup. */
+  treasuryContextDays: 14,
+} as const;

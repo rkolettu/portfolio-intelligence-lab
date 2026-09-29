@@ -112,6 +112,12 @@ it("capital/risk axis always includes zero and extends left for negative contrib
   expect(capitalRiskScale([0.5, 0.5]).min).toBe(0);
 });
 
+it('never produces a negative-zero tick (rendered as "-0%") when the axis extends left', () => {
+  const s = capitalRiskScale([-0.5, 0.05]);
+  expect(s.ticks.some((t) => Object.is(t, -0))).toBe(false);
+  expect(s.ticks).toContain(0);
+});
+
 it("sorting orders by the chosen key, puts N/A last and keeps ties in portfolio order", () => {
   const holdings = hedge().riskAnalytics.holdings;
   expect(sortHoldings(holdings, "weight").map((h) => h.ticker)).toEqual([

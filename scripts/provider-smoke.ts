@@ -5,6 +5,7 @@ import {
   currentTreasury,
   services,
 } from "../lib/server/analyze";
+import { stress } from "../lib/server/stress";
 import { samplePortfolio } from "../config/samplePortfolio";
 import { PROVIDER_POLICY } from "../config/providers";
 import { CALENDAR_COVERAGE, CALENDAR_VERSION } from "../lib/backtest/calendar";
@@ -89,6 +90,26 @@ console.log(
               sumOfDailyReturns: r.returnContribution.sumOfDailyReturns,
             };
           })(),
+          rolling: (() => {
+            const r = result.value.rollingAnalytics;
+            const summary = (m: typeof r.volatility) =>
+              m.available
+                ? m.series.map((s) => ({
+                    window: s.window,
+                    validCount: s.validCount,
+                    firstDate: s.firstDate,
+                    latest: s.values.at(-1),
+                    undefinedCount: s.undefinedCount,
+                  }))
+                : `N/A: ${m.reason}`;
+            return {
+              version: r.methodologyVersion,
+              dates: r.dates.length,
+              volatility: summary(r.volatility),
+              beta: summary(r.beta),
+              correlation: summary(r.correlation),
+            };
+          })(),
           benchmarkComparison: result.value.benchmarkAnalytics.comparison
             .available
             ? {
@@ -165,4 +186,48 @@ console.log(
   ),
 );
 console.log("TREASURY", JSON.stringify(await currentTreasury(now)));
+// Stress Lab: its own request, snapshot and hash; the analysis above is untouched.
+const started = Date.now();
+const events = await stress({ config }, now);
+console.log(
+  "STRESS",
+  JSON.stringify(
+    events.ok
+      ? {
+          ok: true,
+          ms: Date.now() - started,
+          version: events.value.methodologyVersion,
+          windows: events.value.windowsVersion,
+          snapshotHash: events.value.metadata.snapshotHash,
+          responseBytes: Buffer.byteLength(JSON.stringify(events)),
+          events: events.value.events.map((e) =>
+            e.status === "complete"
+              ? {
+                  id: e.id,
+                  window: `${e.startDate} → ${e.endDate}`,
+                  returns: e.sample.returnCount,
+                  portfolio: e.portfolioReturn.available
+                    ? e.portfolioReturn.value
+                    : e.portfolioReturn.reason,
+                  benchmark: e.benchmarkReturn.available
+                    ? e.benchmarkReturn.value
+                    : e.benchmarkReturn.reason,
+                  active: e.activeReturn.available
+                    ? e.activeReturn.value
+                    : e.activeReturn.reason,
+                  maximumDrawdown: e.maximumDrawdown.available
+                    ? e.maximumDrawdown.value
+                    : e.maximumDrawdown.reason,
+                  best: e.best,
+                  worst: e.worst,
+                  rebalances: e.rebalances,
+                  holdings: e.holdings.map((h) => [h.ticker, h.return]),
+                }
+              : e,
+          ),
+        }
+      : events,
+  ),
+);
+if (!events.ok) process.exitCode = 1;
 if (!result.ok) process.exitCode = 1;

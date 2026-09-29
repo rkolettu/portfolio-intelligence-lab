@@ -74,3 +74,10 @@ export const decimal = (value: number) =>
 /** Percentage points with an explicit sign (arithmetic contributions). */
 export const percentagePoints = (value: number) =>
   `${value > 0 ? "+" : value < 0 ? "−" : ""}${Math.abs(value * 100).toFixed(2)} pp`;
+/** Axis day label for short windows: "Mar 2". */
+export const axisDay = (date: string) =>
+  new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(`${date}T00:00:00Z`));

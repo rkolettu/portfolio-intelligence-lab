@@ -1,6 +1,7 @@
 import type { CashPolicy, PortfolioConfig } from "./portfolio";
 import type {
   DataCoverage,
+  DataError,
   DataQualityState,
   HistoricalSeries,
   Result,
@@ -207,6 +208,38 @@ export type RiskAnalytics = {
     maxIdentityResidual: number;
   };
 };
+/** One rolling statistic at one window length, aligned to RollingAnalytics.dates.
+ * A value exists only where the N intervals ending on that date are consecutive
+ * scheduled sessions that are all valid for the statistic. */
+export type RollingSeries = {
+  window: number;
+  /** null: fewer than N consecutive valid intervals, or undefined on a full window. */
+  values: (number | null)[];
+  /** Full windows with a defined value. */
+  validCount: number;
+  /** Date of the first defined value. */
+  firstDate: string | null;
+  /** Full windows on which the statistic is undefined (e.g. zero variance). */
+  undefinedCount: number;
+  undefinedReasons: string[];
+};
+export type RollingMetric =
+  | { available: true; series: RollingSeries[] }
+  | { available: false; reason: string };
+/** Phase 5 rolling layer: realized portfolio volatility, and beta / correlation
+ * against the benchmark on the Phase 3 aligned intervals. */
+export type RollingAnalytics = {
+  methodologyVersion: string;
+  benchmarkTicker: string;
+  /** Window lengths in session returns; series arrays follow this order. */
+  windows: number[];
+  defaultWindow: number;
+  /** Ledger interval end dates; every series' values align to these. */
+  dates: string[];
+  volatility: RollingMetric;
+  beta: RollingMetric;
+  correlation: RollingMetric;
+};
 /** A peak-to-recovery episode on the compounded daily-close wealth series. */
 export type DrawdownEpisode = {
   /** Last date at the high-water mark before wealth fell below it. */
@@ -249,14 +282,105 @@ export type PerformanceSummary = {
   /** elapsedCalendarDays / 365.25, the CAGR time basis. */
   elapsedYears: number;
 };
-export type StressTestResult = {
+/** A fixed preset stress window or a user-selected Custom Historical Window. */
+export type StressWindowDefinition = {
+  id: string;
   name: string;
   startDate: string;
   endDate: string;
-  portfolioReturn: Metric;
-  benchmarkReturn: Metric;
-  activeReturn: Metric;
-  coverage: DataCoverage[];
+  description: string;
+  kind: "preset" | "custom";
+};
+/** Why one holding cannot cover an event window. */
+export type StressCoverageIssue = {
+  ticker: string;
+  /** First adjusted price inside the window, if any. */
+  firstAvailableDate: string | null;
+  firstTradeDate: string | null;
+  /** Window sessions without an adjusted price. */
+  missingSessions: number;
+  reason: string;
+};
+export type StressPathPoint = {
+  date: string;
+  /** Wealth from $10,000 at the event start close. */
+  portfolio: number;
+  benchmark: number | null;
+};
+type StressEventBase = {
+  id: string;
+  name: string;
+  description: string;
+  kind: "preset" | "custom";
+  requestedStartDate: string;
+  requestedEndDate: string;
+  /** Initialization session (first on/after the requested start), if any. */
+  startDate: string | null;
+  /** Last completed session on/before the requested end, if any. */
+  endDate: string | null;
+  notes: string[];
+};
+export type StressTestResult = StressEventBase &
+  (
+    | {
+        status: "complete";
+        sample: Sample;
+        /** End of the first earned return (the session after the start close). */
+        firstReturnDate: string;
+        portfolioReturn: Metric;
+        benchmarkReturn: Metric;
+        /** Portfolio cumulative − benchmark cumulative return; not annualized. */
+        activeReturn: Metric;
+        /** Within-window: the start close is the first peak. */
+        maximumDrawdown: Metric;
+        maximumDrawdownEpisode: DrawdownEpisode | null;
+        portfolioVolatility: Metric;
+        benchmarkVolatility: Metric;
+        holdings: StressHoldingReturn[];
+        best: string[];
+        worst: string[];
+        /** Monthly closing resets applied before the window's final session. */
+        rebalances: number;
+        path: StressPathPoint[];
+      }
+    | { status: "incomplete_coverage"; missing: StressCoverageIssue[] }
+    | { status: "unavailable"; reason: string }
+  );
+export type StressSnapshot = {
+  windows: StressWindowDefinition[];
+  prices: HistoricalSeries[];
+  treasury: TreasurySeries | null;
+  sessions: Session[];
+  /** Securities whose history could not be fetched, with the typed error. */
+  unavailable: { ticker: string; error: DataError }[];
+};
+/** Phase 5 stress layer, returned by its own request with its own snapshot. */
+export type StressAnalytics = {
+  methodologyVersion: string;
+  windowsVersion: string;
+  config: PortfolioConfig;
+  benchmark: string;
+  events: StressTestResult[];
+  metadata: {
+    generatedAt: string;
+    snapshotHash: string;
+    engineMethodologyVersion: string;
+    calendarVersion: string;
+    federalCalendarVersion: string;
+    historicalProviders: string[];
+    treasuryProvider: string | null;
+    warnings: string[];
+    currentDataUsed: false;
+  };
+  snapshot: StressSnapshot;
+};
+/** Standalone compounded return of one holding over an event window. */
+export type StressHoldingReturn = {
+  ticker: string;
+  weight: number;
+  /** prod(1 + r_t) − 1 over the event: the holding's own return, not a contribution. */
+  return: number;
+  riskless: boolean;
 };
 export type LedgerRow = ReturnInterval & {
   wealth: number;
@@ -307,6 +431,7 @@ export type BacktestResult = {
   performance: PerformanceSummary;
   benchmarkAnalytics: BenchmarkAnalytics;
   riskAnalytics: RiskAnalytics;
+  rollingAnalytics: RollingAnalytics;
   metadata: MethodologyMetadata;
   snapshot: {
     prices: HistoricalSeries[];

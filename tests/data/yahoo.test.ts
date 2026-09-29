@@ -74,3 +74,51 @@ it("falls back to the latest finalized raw close when a quote is older or missin
   expect(q.marketTimestamp).toBe("2024-05-31T20:00:00Z");
   expect(q.status).toBe("end_of_day");
 });
+it("reports a span entirely before listing as insufficient history, not a provider fault", async () => {
+  // Observed live: Yahoo answers a pre-listing range with HTTP 400 and this body.
+  let calls = 0;
+  const p = new YahooProvider(async () => {
+    calls++;
+    return Response.json(
+      {
+        chart: {
+          result: null,
+          error: {
+            code: "Bad Request",
+            description:
+              "Data doesn't exist for startDate = 1191024000, endDate = 1672531200",
+          },
+        },
+      },
+      { status: 400 },
+    );
+  });
+  const request = {
+    ticker: "ARM",
+    startDate: "2007-10-09",
+    endDate: "2022-12-30",
+    now: "2026-09-29T12:00:00Z",
+  };
+  await expect(p.getHistoricalPrices(request)).rejects.toMatchObject({
+    detail: {
+      code: "INSUFFICIENT_HISTORY",
+      ticker: "ARM",
+      retryable: false,
+    },
+  });
+  expect(calls).toBe(1);
+  const other = new YahooProvider(async () =>
+    Response.json(
+      {
+        chart: {
+          result: null,
+          error: { code: "Bad Request", description: "Invalid input" },
+        },
+      },
+      { status: 400 },
+    ),
+  );
+  await expect(other.getHistoricalPrices(request)).rejects.toMatchObject({
+    detail: { code: "PROVIDER_ERROR" },
+  });
+});

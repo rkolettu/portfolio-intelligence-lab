@@ -18,6 +18,7 @@ import { CALENDAR_VERSION } from "./calendar";
 import { summarizePerformance } from "@/lib/analytics/summary";
 import { summarizeBenchmark } from "@/lib/analytics/benchmarkSummary";
 import { summarizeRisk } from "@/lib/analytics/riskSummary";
+import { summarizeRolling } from "@/lib/analytics/rollingSummary";
 import { FEDERAL_CALENDAR_VERSION } from "@/lib/treasury-data/normalize";
 import { snapshotHash, sampleMetadata } from "./metadata";
 export type SimulationInput = {
@@ -161,6 +162,11 @@ export function simulate(input: SimulationInput): BacktestResult {
       ledger,
       sample,
       benchmarkAlignment: alignment,
+    }),
+    rollingAnalytics: summarizeRolling({
+      ticker: config.benchmark,
+      ledger,
+      alignment,
     }),
     performance: summarizePerformance({
       initialWealth: METHODOLOGY.initialWealth,

@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { simulate } from "../../lib/backtest/engine";
+import { runStress } from "../../lib/backtest/stress";
+import type { StressWindowDefinition } from "../../lib/types/analytics";
 import { series, sessions } from "../fixtures/helpers";
 const dates = ["2024-05-30", "2024-05-31", "2024-06-03"];
 const simulation = simulate({
@@ -17,6 +19,17 @@ const simulation = simulate({
   now: "2024-06-04T10:00:00Z",
 });
 test.beforeEach(async ({ page }) => {
+  // Deterministic Stress Lab data; the fixture is defined below with the long result.
+  await page.route("**/api/stress", (route) =>
+    route.fulfill({
+      json: {
+        ok: true,
+        value: route.request().postDataJSON().window
+          ? customStress
+          : presetStress,
+      },
+    }),
+  );
   await page.route("**/api/quotes", (route) =>
     route.fulfill({
       json: [
@@ -395,4 +408,122 @@ test("risk section: overview, capital vs risk sorting, holding table and return 
   ).toBeVisible();
   for (const part of await section.locator("dl.kpi-strip, table, figure").all())
     await expect(part).not.toContainText(/NaN|Infinity/);
+});
+
+// Phase 5: stress windows inside the long fixture. QQQ reports a first trade on
+// session 10, so the first window is Incomplete Historical Coverage.
+const stressWindow = (
+  id: string,
+  name: string,
+  from: number,
+  to: number,
+): StressWindowDefinition => ({
+  id,
+  name,
+  startDate: longDates[from],
+  endDate: longDates[to],
+  description: `${name} fixture window.`,
+  kind: id === "custom" ? "custom" : "preset",
+});
+const stressFixture = (windows: StressWindowDefinition[]) =>
+  runStress({
+    config: longResult.config,
+    windows,
+    prices: [
+      series("QQQ", longDates.slice(10), longPrices.slice(10), longDates[10]),
+      series("SPY", longDates, longBenchmark),
+    ],
+    treasury: longResult.snapshot.treasury,
+    sessions: sessions(longDates),
+    unavailable: [],
+    now: "2024-06-01T12:00:00Z",
+  });
+const presetStress = stressFixture([
+  stressWindow("gfc", "Global Financial Crisis", 0, 40),
+  stressWindow("covid", "COVID Crash", 30, 60),
+  stressWindow("rate-shock-2022", "2022 Inflation / Rate Shock", 50, 88),
+]);
+const customStress = stressFixture([
+  stressWindow("custom", "Custom Historical Window", 20, 80),
+]);
+
+test("rolling analytics and Stress Lab: windows, coverage failure and a custom window", async ({
+  page,
+}) => {
+  await showLongResult(page);
+  const rolling = page.locator("section:has(#rolling-title)");
+  await expect(
+    rolling.getByRole("heading", { name: "60-session rolling volatility" }),
+  ).toBeVisible();
+  await expect(rolling.locator(".recharts-line-curve")).toHaveCount(1);
+  await rolling.getByRole("radio", { name: "Beta vs SPY" }).check();
+  await rolling.getByRole("radio", { name: "20D", exact: true }).check();
+  await expect(
+    rolling.getByRole("heading", { name: "20-session rolling beta vs SPY" }),
+  ).toBeVisible();
+  await rolling.getByRole("radio", { name: "120D", exact: true }).check();
+  await expect(
+    rolling.getByText(/No 120-session window is complete in this sample/),
+  ).toBeVisible();
+
+  const stress = page.locator("section:has(#stress-title)");
+  const table = stress.getByRole("table", { name: /Historical stress events/ });
+  await expect(table.getByRole("row")).toHaveCount(4);
+  await expect(table).toContainText("Incomplete Historical Coverage");
+  await stress.getByRole("radio", { name: /GFC/ }).check();
+  await expect(
+    stress.getByRole("heading", { name: "Incomplete Historical Coverage" }),
+  ).toBeVisible();
+  await expect(
+    stress.getByText(
+      "This stress result cannot be calculated accurately because one or more holdings lack sufficient historical data during the selected period.",
+    ),
+  ).toBeVisible();
+  await stress.getByRole("radio", { name: /COVID/ }).check();
+  await expect(
+    stress.locator('dl[aria-label="COVID Crash event metrics"]'),
+  ).toBeVisible();
+  const path = stress
+    .locator("figure")
+    .filter({ has: page.getByRole("heading", { name: /through the event/ }) });
+  await expect(path.locator(".recharts-line-curve")).toHaveCount(2);
+  await expect(stress.locator(".cr-row", { hasText: "CASH" })).toContainText(
+    "riskless",
+  );
+
+  await stress.getByRole("radio", { name: "Custom window" }).check();
+  await stress.getByLabel("Window start").fill(longDates[20]);
+  await stress.getByLabel("Window end").fill(longDates[80]);
+  await stress.getByRole("button", { name: "Run custom window" }).click();
+  await expect(
+    stress.locator('dl[aria-label="Custom Historical Window event metrics"]'),
+  ).toBeVisible();
+  await expect(table.getByRole("row")).toHaveCount(5);
+  await expect(stress).not.toContainText(/hypothetical stress test/i);
+  for (const part of await page
+    .locator(
+      "section:has(#rolling-title), section:has(#stress-title) dl, section:has(#stress-title) table",
+    )
+    .all())
+    await expect(part).not.toContainText(/NaN|Infinity/);
+});
+
+test("rolling and stress sections stay within a mobile viewport", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await showLongResult(page);
+  const stress = page.locator("section:has(#stress-title)");
+  await stress.getByRole("radio", { name: /COVID/ }).check();
+  await expect(
+    stress.locator('dl[aria-label="COVID Crash event metrics"]'),
+  ).toBeVisible();
+  await stress.getByRole("radio", { name: "Custom window" }).check();
+  await expect(stress.getByLabel("Window start")).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
 });

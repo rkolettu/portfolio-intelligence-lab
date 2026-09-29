@@ -1259,3 +1259,79 @@ h3 {
     transition: none !important;
   }
 }
+
+/* Phase 5 · rolling analytics and Stress Lab */
+.stress-table td:nth-child(1),
+.stress-table td:nth-child(2) {
+  white-space: nowrap;
+}
+.stress-select {
+  margin-top: 18px;
+}
+.stress-detail {
+  margin-top: 4px;
+}
+.stress-name {
+  margin: 0 0 4px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.coverage-notice {
+  margin: 12px 0 18px;
+  padding: 14px 18px;
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--warning);
+  border-radius: 4px;
+  background: var(--surface);
+  font-size: 12px;
+}
+.coverage-notice h4 {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--warning);
+}
+.coverage-notice p {
+  margin: 0 0 8px;
+}
+.coverage-notice ul {
+  margin: 0 0 8px;
+  padding-left: 18px;
+}
+.coverage-notice li + li {
+  margin-top: 4px;
+}
+.custom-window {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  margin: 12px 0;
+}
+.custom-window label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.sh-bar {
+  top: 10px;
+}
+/* Keep the outermost return-axis labels inside the track at any width. */
+.sh-axis .cr-tick:first-child {
+  transform: none;
+}
+.sh-axis .cr-tick:last-child {
+  transform: translateX(-100%);
+}
+.stress-select .segmented {
+  flex-wrap: wrap;
+}
+.stress-select .segmented label {
+  white-space: nowrap;
+}
+@media (max-width: 800px) {
+  .custom-window > div {
+    flex: 1 1 140px;
+  }
+}
