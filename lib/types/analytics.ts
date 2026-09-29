@@ -38,6 +38,73 @@ export type BenchmarkMetrics = {
   informationRatio: Metric;
   annualizedActiveReturn: Metric;
 };
+/** One portfolio interval on which the benchmark also has a valid return: the
+ * benchmark has adjusted prices at BOTH interval endpoints (no forward-fill). */
+export type AlignedInterval = {
+  startDate: string;
+  date: string;
+  portfolioReturn: number;
+  benchmarkReturn: number;
+  /** The ledger's prior-known Treasury accrual for this interval, or null. */
+  riskFreeReturn: number | null;
+};
+/** Canonical portfolio / benchmark / risk-free comparison sample (server-side). */
+export type BenchmarkAlignment = {
+  ticker: string;
+  observations: AlignedInterval[];
+  /** Null when no interval aligns. */
+  sample: Sample | null;
+  /** Portfolio sessions carrying a benchmark price. */
+  pricedSessions: string[];
+  /** Portfolio sessions inside the benchmark's priced span that lack a price. */
+  missingSessions: string[];
+  /** Portfolio intervals before / after the comparison period (shorter benchmark). */
+  leadingIntervalsExcluded: number;
+  trailingIntervalsExcluded: number;
+  riskFree: { complete: boolean; available: number; required: number };
+};
+export type ComparisonPeriod =
+  | {
+      available: true;
+      sample: Sample;
+      /** No interior gaps: geometric (compounded) comparison is valid. */
+      continuous: boolean;
+      leadingIntervalsExcluded: number;
+      trailingIntervalsExcluded: number;
+      notes: string[];
+    }
+  | { available: false; reason: string };
+export type SeriesDrawdown =
+  | {
+      available: true;
+      series: DrawdownPoint[];
+      maximumDrawdown: Metric;
+      currentDrawdown: Metric;
+      maximumDrawdownEpisode: DrawdownEpisode | null;
+      episodes: DrawdownEpisode[];
+      episodeCount: number;
+    }
+  | { available: false; reason: string };
+/** Phase 3 benchmark-relative layer. Every `relative` metric shares one sample. */
+export type BenchmarkAnalytics = {
+  methodologyVersion: string;
+  ticker: string;
+  comparison: ComparisonPeriod;
+  relative: BenchmarkMetrics & {
+    /** OLS slope of portfolio excess on benchmark excess (alpha regression). */
+    regressionBeta: Metric;
+    rSquared: Metric;
+  };
+  /** Geometric comparison over the continuous comparison period. */
+  geometric: {
+    portfolioCumulativeReturn: Metric;
+    benchmarkCumulativeReturn: Metric;
+    portfolioCagr: Metric;
+    benchmarkCagr: Metric;
+  };
+  riskFree: { complete: boolean; available: number; required: number };
+  drawdown: SeriesDrawdown;
+};
 export type RiskContribution = {
   ticker: string;
   marginal: Metric;
@@ -142,6 +209,7 @@ export type BacktestResult = {
   quality: DataQualityState[];
   benchmark: Result<BenchmarkPath>;
   performance: PerformanceSummary;
+  benchmarkAnalytics: BenchmarkAnalytics;
   metadata: MethodologyMetadata;
   snapshot: {
     prices: HistoricalSeries[];

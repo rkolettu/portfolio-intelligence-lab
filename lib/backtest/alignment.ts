@@ -1,15 +1,25 @@
-import type { BenchmarkPath, LedgerRow } from "@/lib/types/analytics";
+import type {
+  AlignedInterval,
+  BenchmarkAlignment,
+  BenchmarkPath,
+  LedgerRow,
+} from "@/lib/types/analytics";
 import type { HistoricalSeries, Result, Session } from "@/lib/types/data";
 import { arithmeticReturn, compoundWealth } from "@/lib/analytics/returns";
 import { normalizePrices } from "@/lib/market-data/normalize";
-import { sampleMetadata } from "./metadata";
+import { sampleMetadata, snapshotHash } from "./metadata";
 import { errorResult, fail } from "@/lib/utils/errors";
-export function benchmarkPath(
+
+/** The ONE place portfolio intervals are paired with benchmark prices. An interval
+ * (prior session close → session close) is aligned only when the benchmark has an
+ * adjusted price at both endpoints; a missing session is never bridged or filled.
+ * Every benchmark-relative metric, the growth path and benchmark drawdown derive
+ * from this result. */
+export function alignBenchmark(
   benchmark: HistoricalSeries | undefined,
   sessions: Session[],
-  ledger: LedgerRow[],
-  initialWealth: number,
-): Result<BenchmarkPath> {
+  ledger: readonly LedgerRow[],
+): Result<BenchmarkAlignment> {
   try {
     if (!benchmark)
       fail(
@@ -30,30 +40,114 @@ export function benchmarkPath(
         p.adjustedClose,
       ]),
     );
-    const valid = sessions.filter((s) => prices.has(s.date));
-    if (valid.length < 2)
+    const priced = sessions.filter((s) => prices.has(s.date));
+    const span = priced.length
+      ? sessions.filter(
+          (s) => s.date >= priced[0].date && s.date <= priced.at(-1)!.date,
+        )
+      : [];
+    const observations: AlignedInterval[] = ledger.flatMap((row) =>
+      prices.has(row.startDate) && prices.has(row.date)
+        ? [
+            {
+              startDate: row.startDate,
+              date: row.date,
+              portfolioReturn: row.return,
+              benchmarkReturn: arithmeticReturn(
+                prices.get(row.startDate)!,
+                prices.get(row.date)!,
+              ),
+              riskFreeReturn: row.riskFreeReturn,
+            },
+          ]
+        : [],
+    );
+    const first = observations[0];
+    const last = observations.at(-1);
+    const inside = first
+      ? ledger.filter((r) => r.date > first.startDate && r.date <= last!.date)
+      : [];
+    const interior = inside.length - observations.length;
+    const leading = first
+      ? ledger.filter((r) => r.date <= first.startDate).length
+      : ledger.length;
+    const trailing = last
+      ? ledger.filter((r) => r.startDate >= last.date).length
+      : 0;
+    const available = observations.filter(
+      (o) => o.riskFreeReturn !== null,
+    ).length;
+    return {
+      ok: true,
+      value: {
+        ticker: benchmark.ticker,
+        observations,
+        sample: first
+          ? {
+              startDate: first.startDate,
+              endDate: last!.date,
+              returnCount: observations.length,
+              // Same identity construction as sampleMetadata for consecutive sessions.
+              intervalSetId: snapshotHash(
+                observations.map((o) => [o.startDate, o.date]),
+              ),
+              excludedIntervalCount: interior,
+              excludedReasons: interior
+                ? [
+                    `${interior} interval${interior === 1 ? "" : "s"} inside the comparison period lack a benchmark price at one endpoint and are excluded, not bridged.`,
+                  ]
+                : [],
+            }
+          : null,
+        pricedSessions: priced.map((s) => s.date),
+        missingSessions: span
+          .filter((s) => !prices.has(s.date))
+          .map((s) => s.date),
+        leadingIntervalsExcluded: leading,
+        trailingIntervalsExcluded: trailing,
+        riskFree: {
+          complete: available === observations.length,
+          available,
+          required: observations.length,
+        },
+      },
+    };
+  } catch (error) {
+    return errorResult(error);
+  }
+}
+
+/** Phase 1 continuous-overlap growth path, derived from the canonical alignment.
+ * Requires continuous coverage; interior gaps make compounded comparison wealth
+ * unavailable rather than joining across them. */
+export function benchmarkPath(
+  alignment: Result<BenchmarkAlignment>,
+  sessions: Session[],
+  ledger: readonly LedgerRow[],
+  initialWealth: number,
+): Result<BenchmarkPath> {
+  try {
+    if (!alignment.ok) return alignment;
+    const a = alignment.value;
+    if (a.pricedSessions.length < 2)
       fail(
         "INSUFFICIENT_HISTORY",
         "Benchmark has fewer than two common observations.",
       );
-    const overlap = sessions.filter(
-      (s) => s.date >= valid[0].date && s.date <= valid.at(-1)!.date,
-    );
-    if (overlap.some((s) => !prices.has(s.date)))
+    if (a.missingSessions.length)
       fail(
         "COVERAGE_GAP",
         "Benchmark has interior gaps; continuous comparison wealth is unavailable.",
       );
-    const intervals = overlap
-      .slice(1)
-      .map((s, i) => ({
-        date: s.date,
-        startDate: overlap[i].date,
-        return: arithmeticReturn(
-          prices.get(overlap[i].date)!,
-          prices.get(s.date)!,
-        ),
-      }));
+    const overlap = sessions.filter(
+      (s) =>
+        s.date >= a.pricedSessions[0] && s.date <= a.pricedSessions.at(-1)!,
+    );
+    const intervals = a.observations.map((o) => ({
+      date: o.date,
+      startDate: o.startDate,
+      return: o.benchmarkReturn,
+    }));
     const values = compoundWealth(
       initialWealth,
       intervals.map((i) => i.return),

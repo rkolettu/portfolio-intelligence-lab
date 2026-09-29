@@ -1,20 +1,12 @@
 "use client";
-import type { Metric, PerformanceSummary } from "@/lib/types/analytics";
+import type { PerformanceSummary } from "@/lib/types/analytics";
 import {
   percent,
   ratio,
   unsignedPercent,
   wholeMoney,
 } from "@/lib/utils/format";
-import { InfoTip } from "./InfoTip";
-
-type Kpi = {
-  label: string;
-  metric: Metric;
-  format: (value: number) => string;
-  formula: string;
-  footnote: (m: Extract<Metric, { available: true }>) => string;
-};
+import { KpiStrip, type Kpi } from "./KpiStrip";
 
 /** Dense overview strip. Pure presentation: every number is precomputed. */
 export function MetricStrip({
@@ -88,44 +80,5 @@ export function MetricStrip({
           : "No drawdown",
     },
   ];
-  return (
-    <dl className="kpi-strip">
-      {kpis.map((k) => (
-        <div className="kpi" key={k.label}>
-          <dt>
-            {k.label}
-            <InfoTip label={k.label}>
-              {k.formula}
-              {k.metric.available ? (
-                k.metric.notes?.map((n) => (
-                  <span className="tip-note" key={n}>
-                    {n}
-                  </span>
-                ))
-              ) : (
-                <span className="tip-note">
-                  Not available: {k.metric.reason}
-                </span>
-              )}
-            </InfoTip>
-          </dt>
-          <dd>
-            {k.metric.available ? (
-              <>
-                <span className="kpi-value">{k.format(k.metric.value)}</span>
-                <span className="kpi-foot">{k.footnote(k.metric)}</span>
-              </>
-            ) : (
-              <>
-                <span className="kpi-value kpi-na">N/A</span>
-                <span className="kpi-foot">
-                  Undefined for this sample · see ⓘ
-                </span>
-              </>
-            )}
-          </dd>
-        </div>
-      ))}
-    </dl>
-  );
+  return <KpiStrip items={kpis} label="Performance overview" />;
 }

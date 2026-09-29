@@ -583,6 +583,20 @@ footer > div {
   }
   .site-header {
     padding: 18px;
+    gap: 14px;
+  }
+  .brand {
+    flex: none;
+  }
+  /* Section links scroll within the header instead of widening the page. */
+  .site-header nav {
+    min-width: 0;
+    overflow-x: auto;
+    gap: 16px;
+    scrollbar-width: none;
+  }
+  .site-header nav a {
+    white-space: nowrap;
   }
   .header-status {
     display: none;
@@ -656,7 +670,7 @@ h3 {
 }
 .kpi-strip {
   display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--kpi-cols, 7), minmax(0, 1fr));
   margin: 0 0 14px;
   border-bottom: 1px solid var(--border);
 }
@@ -754,12 +768,6 @@ h3 {
   display: block;
   animation: kpi-in 150ms ease-out both;
 }
-/* Open each tip toward the inside of its column: 7 columns on desktop. */
-.kpi:nth-last-child(-n + 3) .tip,
-.drawdown-stats > div:nth-last-child(-n + 3) .tip {
-  left: auto;
-  right: -8px;
-}
 .tip-note {
   display: block;
   margin-top: 6px;
@@ -780,6 +788,7 @@ h3 {
 }
 .chart-legend {
   display: flex;
+  flex: none;
   flex-wrap: wrap;
   gap: 16px;
   font-size: 11px;
@@ -910,19 +919,6 @@ h3 {
   .drawdown-stats > div {
     padding-top: 12px;
   }
-  /* :nth-child(n) matches the desktop anchor rule's specificity so it resets. */
-  .kpi:nth-child(n) .tip,
-  .drawdown-stats > div:nth-child(n) .tip {
-    left: -8px;
-    right: auto;
-  }
-  .kpi:nth-child(4n) .tip,
-  .kpi:nth-child(4n + 3) .tip,
-  .drawdown-stats > div:nth-child(4n) .tip,
-  .drawdown-stats > div:nth-child(4n + 3) .tip {
-    left: auto;
-    right: -8px;
-  }
 }
 @media (max-width: 800px) {
   .kpi-strip,
@@ -946,20 +942,84 @@ h3 {
     flex-direction: column;
     gap: 8px;
   }
-  .tip {
-    width: min(240px, 70vw);
-  }
-  /* :nth-child(n) matches the desktop anchor rule's specificity so it resets. */
-  .kpi:nth-child(n) .tip,
-  .drawdown-stats > div:nth-child(n) .tip {
-    left: -8px;
-    right: auto;
-  }
-  .kpi:nth-child(even) .tip,
-  .drawdown-stats > div:nth-child(even) .tip {
-    left: auto;
-    right: -8px;
-  }
+}
+
+/* Phase 3 · benchmark-relative */
+.group-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 20px 0 0;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.comparison-table {
+  max-width: 560px;
+  margin-bottom: 8px;
+}
+.series-control {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.segmented {
+  display: inline-flex;
+  margin: 0;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.segmented label {
+  position: relative;
+  margin: 0;
+  padding: 4px 12px;
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--muted);
+  cursor: pointer;
+  transition:
+    background-color 150ms,
+    color 150ms;
+}
+.segmented label.selected {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+.segmented input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  cursor: inherit;
+}
+.segmented label:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.segmented label:has(input:disabled) {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.stats-label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 4px 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text);
 }
 
 @media (prefers-reduced-motion: reduce) {

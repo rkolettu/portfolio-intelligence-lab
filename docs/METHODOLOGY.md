@@ -36,7 +36,7 @@ Without CASH, missing rates leave absolute wealth available. With CASH, missing 
 
 ## Benchmark and current context
 
-Basic benchmark wealth uses a continuous common sample, identical interval endpoints and adjusted convention. An interior benchmark gap disables continuous comparison without erasing absolute history. Existing portfolio wealth is sliced/rebased, never restarted at target weights. Benchmark ETFs are fund proxies, not their underlying indexes. Benchmark performance statistics belong to later phases.
+Basic benchmark wealth uses a continuous common sample, identical interval endpoints and adjusted convention. An interior benchmark gap disables continuous comparison without erasing absolute history. Existing portfolio wealth is sliced/rebased, never restarted at target weights. Benchmark ETFs are fund proxies, not their underlying indexes. Benchmark-relative statistics are defined in the Phase 3 section below.
 
 Quotes and current Treasury data use independent routes and failure states. Unknown latency is Latest Available; an old quote cannot replace a newer finalized raw close. Freshness is re-derived on every cache read and while displayed: live/delayed claims lapse by elapsed time (never upgraded), and a quote is marked stale once the next session close after its market timestamp has passed. No aggregate day-price estimate or current portfolio value is offered without qualified synchronized quotes/valuation inputs. This also avoids mixing pre/post-market sessions, dates, split bases or incomplete holdings. Current curve observations use a common official date. None enters historical simulation.
 
@@ -72,6 +72,41 @@ Arithmetic daily returns feed only the dispersion statistics; wealth, cumulative
 **Growth of $10,000.** Portfolio series: `W_0 … W_n`. With the benchmark toggle, both series come from the Phase 1 continuous-overlap path, each normalized to $10,000 at the overlap start. If the benchmark starts later, the chart shows that window and says so; clearing the toggle shows full portfolio history. No benchmark statistics (beta, alpha, tracking error and so on) are computed in Phase 2.
 
 **Charts.** Display points are downsampled (at most about 640) by keeping the first, last, and each bucket's minimum and maximum, plus annotated episode dates. The trough and extremes therefore always appear. Calculations always use the full series. Month-end table views give non-visual access to the plotted values.
+
+## Benchmark-relative metrics (Phase 3, `benchmark-v1`)
+
+**Canonical alignment.** `alignBenchmark` (`lib/backtest/alignment.ts`) is the only code that pairs portfolio and benchmark data. For each ledger interval (prior session close → session close), the benchmark return is valid only when the ETF has an adjusted close at **both** endpoints. A missing session invalidates the two intervals touching it; nothing is forward-filled or bridged. Each aligned row carries the ledger's portfolio return, the benchmark price-ratio return, and the ledger's prior-known risk-free accrual (the no-look-ahead Treasury engine; never the current curve). The alignment records:
+
+- the comparison period: first aligned interval start → last aligned interval end;
+- the aligned observation count and an interval-set hash (constructed exactly like Phase 1 sample identities);
+- interior intervals excluded, and portfolio intervals before/after the comparison;
+- risk-free coverage.
+
+Absolute portfolio analytics never shorten to the benchmark. A later-starting benchmark starts only the comparison later; a later-starting portfolio starts the comparison at the portfolio's effective start. The Phase 1 growth path is derived from the same alignment; a randomized test confirms it is identical to the original implementation.
+
+Let `p_t`, `b_t`, `rf_t` be the aligned values, `active_t = p_t − b_t`, `pe_t = p_t − rf_t`, `be_t = b_t − rf_t`. Sample moments use `n − 1`.
+
+| Metric | Definition | Guard |
+| --- | --- | --- |
+| Beta | `Cov(p, b) / Var(b)` on raw returns | unavailable if `b` has effectively zero variance |
+| Correlation | `Cov(p, b) / (sd(p) sd(b))`, roundoff clamped to [−1, 1] | unavailable if either series has zero variance |
+| Annualized active return | `mean(active) × 252` | never a CAGR difference |
+| Tracking error | `sd(active) × √252` | 0 when active returns are constant |
+| Information ratio | `mean(active) / sd(active) × √252` | unavailable when tracking error is zero |
+| CAPM alpha | OLS `pe = α + β·be + ε`; annualized `α × 252` (linear, never compounded) | needs ≥ 3 rows, a risk-free return for **every** aligned interval, and non-zero **excess**-benchmark variance |
+| Regression beta, R² | OLS slope; `R² = corr(pe, be)²` | same as alpha; R² also needs non-zero `pe` variance |
+
+Beta, correlation, active return, tracking error and IR need at least 2 aligned returns, and carry a short-sample note below 252. Zero variance uses the Phase 2 scale-aware tolerance (≤ 1e-12 × the largest absolute observation).
+
+- The raw-return beta and the regression slope are different statistics and can differ when rates vary. Alpha is never computed as `mean(pe) − rawβ·mean(be)`.
+- If any aligned interval lacks a risk-free return, alpha, regression beta and R² are unavailable. They are never re-estimated on a shorter hidden sample.
+- Every relative metric carries the identical `Sample` object.
+
+**Geometric comparison.** Portfolio and benchmark cumulative return and CAGR are computed over the comparison period from wealth paths rebased to $10,000 at its start. The portfolio keeps its drifted weights. CAGR uses calendar days / 365.25, as in Phase 2. These require continuous coverage and are unavailable across interior benchmark gaps. They are presented separately from the arithmetic active-return statistics.
+
+**Benchmark drawdown.** Computed on the rebased benchmark wealth path with the unchanged Phase 2 functions: `dd_t = W_t / max(W_0 … W_t) − 1`, with the same episode rules. It needs continuous coverage. When the benchmark starts later, its running peak starts at the comparison start, while portfolio drawdown keeps its full-history peak; the UI says so.
+
+CAPM alpha against a chosen ETF is a single-factor excess-return intercept relative to that proxy, not evidence of skill. No significance tests are reported.
 
 ## Reproducibility and limitations
 

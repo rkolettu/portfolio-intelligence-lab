@@ -109,14 +109,18 @@ it("drawdown lab reports peak, trough, unrecovered state and current drawdown", 
   expect(stat("Calendar days to recovery")).toBe("4");
   expect(stat("Trading days to recovery")).toBe("2");
   expect(stat("Current drawdown")).toBe("-2.83%"); // 103/106 - 1
-  expect(screen.getByText(/Deepest drawdown episodes · 2 of 2/)).toBeTruthy();
+  expect(
+    screen.getByText(/Portfolio · deepest drawdown episodes · 2 of 2/),
+  ).toBeTruthy();
 });
 
 it("drawdown lab states no drawdown and at-peak without inventing dates", () => {
   const r = run([100, 101, 102, 103, 104], true);
   render(<DrawdownLab performance={r.performance} />);
   expect(
-    screen.getByText("No drawdown: wealth never closed below a prior peak."),
+    screen.getByText(
+      /Portfolio: no drawdown; wealth never closed below a prior peak\./,
+    ),
   ).toBeTruthy();
   expect(
     screen.getByText("Current drawdown", { selector: "dt" }).nextElementSibling!

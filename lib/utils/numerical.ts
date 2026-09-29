@@ -39,3 +39,19 @@ export function isEffectivelyZero(
   for (const v of observations) scale = Math.max(scale, Math.abs(v));
   return dispersion <= DISPERSION_RELATIVE_TOLERANCE * scale;
 }
+
+/** Sample covariance (n - 1) of paired observations, two-pass. */
+export function sampleCovariance(
+  x: readonly number[],
+  y: readonly number[],
+): number {
+  if (x.length !== y.length)
+    fail("INVALID_INPUT", "Covariance requires paired observations.");
+  if (x.length < 2)
+    fail("INVALID_INPUT", "Sample covariance requires two observations.");
+  const mx = mean(x);
+  const my = mean(y);
+  let sum = 0;
+  for (let i = 0; i < x.length; i++) sum += (x[i] - mx) * (y[i] - my);
+  return sum / (x.length - 1);
+}

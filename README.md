@@ -1,6 +1,6 @@
 # Portfolio Risk & Analytics Lab
 
-Phases 1–2: a pure historical return engine, isolated server data adapters, explicit coverage/rate methodology, a persistent portfolio builder, and the performance layer (cumulative return, CAGR, volatility, Sharpe, Sortino, drawdown episodes, Growth of $10,000). Next.js App Router, TypeScript, Tailwind, Vercel Analytics, Zod, Recharts, Vitest and Playwright. Benchmark statistics, risk contribution, diversification and construction (Phases 3+) are not implemented. Formulas: [METHODOLOGY.md](docs/METHODOLOGY.md).
+Phases 1–3: a pure historical return engine, isolated server data adapters, explicit coverage/rate methodology, a persistent portfolio builder, and the performance layer (cumulative return, CAGR, volatility, Sharpe, Sortino, drawdown episodes, Growth of $10,000) and benchmark-relative analytics on one canonical aligned sample (beta, CAPM alpha, correlation, tracking error, information ratio, active return, geometric comparison, benchmark drawdown). Next.js App Router, TypeScript, Tailwind, Vercel Analytics, Zod, Recharts, Vitest and Playwright. Covariance, risk contribution, diversification, rolling analytics, stress tests and construction (Phases 4+) are not implemented. Formulas: [METHODOLOGY.md](docs/METHODOLOGY.md).
 
 ```sh
 npm ci

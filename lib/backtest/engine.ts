@@ -13,9 +13,10 @@ import { arithmeticReturn, compoundWealth } from "@/lib/analytics/returns";
 import { applyReturns, crossesMonth } from "@/lib/analytics/rebalance";
 import { accrueCash, priorKnownRate } from "@/lib/treasury-data/alignment";
 import { portfolioCoverage } from "./coverage";
-import { benchmarkPath } from "./alignment";
+import { alignBenchmark, benchmarkPath } from "./alignment";
 import { CALENDAR_VERSION } from "./calendar";
 import { summarizePerformance } from "@/lib/analytics/summary";
+import { summarizeBenchmark } from "@/lib/analytics/benchmarkSummary";
 import { FEDERAL_CALENDAR_VERSION } from "@/lib/treasury-data/normalize";
 import { snapshotHash, sampleMetadata } from "./metadata";
 export type SimulationInput = {
@@ -98,8 +99,15 @@ export function simulate(input: SimulationInput): BacktestResult {
     });
     weights = nextWeights;
   }
-  const benchmark = benchmarkPath(
+  // One canonical portfolio/benchmark/risk-free alignment feeds the growth path,
+  // every benchmark-relative metric and benchmark drawdown.
+  const alignment = alignBenchmark(
     input.prices.find((p) => p.ticker === config.benchmark),
+    sessions,
+    ledger,
+  );
+  const benchmark = benchmarkPath(
+    alignment,
     sessions,
     ledger,
     METHODOLOGY.initialWealth,
@@ -142,6 +150,11 @@ export function simulate(input: SimulationInput): BacktestResult {
     ledger,
     coverage,
     benchmark,
+    benchmarkAnalytics: summarizeBenchmark({
+      ticker: config.benchmark,
+      alignment,
+      path: benchmark,
+    }),
     performance: summarizePerformance({
       initialWealth: METHODOLOGY.initialWealth,
       initialDate: sessions[0].date,

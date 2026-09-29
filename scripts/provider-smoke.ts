@@ -50,7 +50,27 @@ console.log(
               currentDrawdown: result.value.performance.currentDrawdown,
             }).map(([k, m]) => [k, m.available ? m.value : `N/A: ${m.reason}`]),
           ),
-          maximumDrawdownEpisode: result.value.performance.maximumDrawdownEpisode,
+          maximumDrawdownEpisode:
+            result.value.performance.maximumDrawdownEpisode,
+          benchmarkComparison: result.value.benchmarkAnalytics.comparison
+            .available
+            ? {
+                ...result.value.benchmarkAnalytics.comparison.sample,
+                riskFree: result.value.benchmarkAnalytics.riskFree,
+              }
+            : result.value.benchmarkAnalytics.comparison,
+          benchmarkMetrics: Object.fromEntries(
+            Object.entries({
+              ...result.value.benchmarkAnalytics.relative,
+              ...result.value.benchmarkAnalytics.geometric,
+              ...(result.value.benchmarkAnalytics.drawdown.available
+                ? {
+                    benchmarkMaximumDrawdown:
+                      result.value.benchmarkAnalytics.drawdown.maximumDrawdown,
+                  }
+                : {}),
+            }).map(([k, m]) => [k, m.available ? m.value : `N/A: ${m.reason}`]),
+          ),
         }
       : result,
     null,
@@ -59,11 +79,18 @@ console.log(
 );
 // Falsifiable release-timing check: every observation the model says is known by
 // `now` must already be served by FRED; otherwise the model is too aggressive.
-const rates = await services.treasury.getHistoricalRates(addDays(today, -21), today, now);
+const rates = await services.treasury.getHistoricalRates(
+  addDays(today, -21),
+  today,
+  now,
+);
 const latestServed = rates.observations.at(-1)?.date ?? null;
 let modelClaimsKnown: string | null = null;
 for (let d = today; d >= addDays(today, -21); d = addDays(d, -1))
-  if (federalBusinessDay(d) && Date.parse(modeledAvailableAt(d)) <= Date.parse(now)) {
+  if (
+    federalBusinessDay(d) &&
+    Date.parse(modeledAvailableAt(d)) <= Date.parse(now)
+  ) {
     modelClaimsKnown = d;
     break;
   }
@@ -73,11 +100,13 @@ console.log(
     latestServed,
     latestServedModeledAvailableAt: rates.observations.at(-1)?.availableAt,
     modelClaimsKnownThrough: modelClaimsKnown,
-    servedButNotYetModeledAvailable: rates.observations.filter(
-      (r) => Date.parse(r.availableAt) > Date.parse(now),
-    ).map((r) => r.date),
+    servedButNotYetModeledAvailable: rates.observations
+      .filter((r) => Date.parse(r.availableAt) > Date.parse(now))
+      .map((r) => r.date),
     modelConservative:
-      latestServed !== null && modelClaimsKnown !== null && latestServed >= modelClaimsKnown,
+      latestServed !== null &&
+      modelClaimsKnown !== null &&
+      latestServed >= modelClaimsKnown,
   }),
 );
 console.log(

@@ -148,24 +148,39 @@ test("real route accepts the browser origin independently of internal Next hostn
 // Phase 2: ~4 months of weekday sessions with prior-known rates, a recovered
 // drawdown and a later unrecovered one, so every metric is defined.
 const longDates: string[] = [];
-for (let d = new Date("2024-01-02T12:00:00Z"); longDates.length < 90; d.setUTCDate(d.getUTCDate() + 1))
+for (
+  let d = new Date("2024-01-02T12:00:00Z");
+  longDates.length < 90;
+  d.setUTCDate(d.getUTCDate() + 1)
+)
   if (d.getUTCDay() % 6) longDates.push(d.toISOString().slice(0, 10));
-const longPrices = longDates.map((_, i) => 100 * (1 + i * 0.002) * (1 + 0.04 * Math.sin(i / 6)));
+const longPrices = longDates.map(
+  (_, i) => 100 * (1 + i * 0.002) * (1 + 0.04 * Math.sin(i / 6)),
+);
 const longBenchmark = longDates.map((_, i) => 100 * (1 + i * 0.0015));
 const longResult = simulate({
   config: {
-    holdings: [{ ticker: "QQQ", weight: 0.8 }, { ticker: "CASH", weight: 0.2 }],
+    holdings: [
+      { ticker: "QQQ", weight: 0.8 },
+      { ticker: "CASH", weight: 0.2 },
+    ],
     benchmark: "SPY",
     requestedStartDate: longDates[0],
     endDate: longDates.at(-1)!,
     rebalanceFrequency: "monthly",
     cashPolicy: "historical_proxy",
   },
-  prices: [series("QQQ", longDates, longPrices), series("SPY", longDates, longBenchmark)],
+  prices: [
+    series("QQQ", longDates, longPrices),
+    series("SPY", longDates, longBenchmark),
+  ],
   treasury: {
     series: "DGS3MO",
     observations: ["2023-12-29", ...longDates].map((date) => ({
-      date, annualYield: 0.05, availableAt: `${date}T20:15:00Z`, availability: "published" as const,
+      date,
+      annualYield: 0.05,
+      availableAt: `${date}T20:15:00Z`,
+      availability: "published" as const,
     })),
     provenance: series("SPY", [], []).provenance,
   },
@@ -178,27 +193,53 @@ async function showLongResult(page: import("@playwright/test").Page) {
   );
   await page.goto("/");
   await page.getByRole("button", { name: "Analyze Sample Portfolio" }).click();
-  await expect(page.getByRole("heading", { name: "Performance overview." })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Performance overview." }),
+  ).toBeVisible();
 }
 
-test("performance overview, growth chart and drawdown lab render real metrics", async ({ page }) => {
+test("performance overview, growth chart and drawdown lab render real metrics", async ({
+  page,
+}) => {
   await showLongResult(page);
-  const strip = page.locator("dl.kpi-strip");
-  for (const label of ["Ending value", "Cumulative return", "CAGR", "Annualized volatility", "Sharpe ratio", "Sortino ratio", "Maximum drawdown"])
-    await expect(strip.getByRole("term").filter({ hasText: new RegExp(`^${label}`) })).toBeVisible();
+  const strip = page.locator('dl[aria-label="Performance overview"]');
+  for (const label of [
+    "Ending value",
+    "Cumulative return",
+    "CAGR",
+    "Annualized volatility",
+    "Sharpe ratio",
+    "Sortino ratio",
+    "Maximum drawdown",
+  ])
+    await expect(
+      strip.getByRole("term").filter({ hasText: new RegExp(`^${label}`) }),
+    ).toBeVisible();
   await expect(strip).not.toContainText("N/A");
-  for (const part of await page.locator("dl.kpi-strip, dl.drawdown-stats, figure.chart-figure").all())
+  for (const part of await page
+    .locator(
+      "dl.kpi-strip, dl.drawdown-stats, figure.chart-figure, table.comparison-table",
+    )
+    .all())
     await expect(part).not.toContainText(/NaN|Infinity/);
   // Methodology tooltip appears on keyboard focus.
   await page.getByRole("button", { name: "About Sortino ratio" }).focus();
-  await expect(page.getByRole("tooltip").filter({ hasText: "Downside deviation uses every day" })).toBeVisible();
+  await expect(
+    page
+      .getByRole("tooltip")
+      .filter({ hasText: "Downside deviation uses every day" }),
+  ).toBeVisible();
   // Both series draw; hovering shows a crosshair readout with every series.
-  const growth = page.locator("figure").filter({ has: page.getByRole("heading", { name: "Growth of $10,000" }) });
+  const growth = page
+    .locator("figure")
+    .filter({ has: page.getByRole("heading", { name: "Growth of $10,000" }) });
   await expect(growth.locator(".recharts-line-curve")).toHaveCount(2);
   await growth.locator(".chart-frame").scrollIntoViewIfNeeded();
   const box = (await growth.locator(".chart-frame").boundingBox())!;
   await page.mouse.move(box.x + box.width * 0.2, box.y + box.height * 0.5);
-  await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.5, { steps: 8 });
+  await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.5, {
+    steps: 8,
+  });
   await expect(growth.locator(".chart-tooltip")).toContainText("Portfolio");
   await expect(growth.locator(".chart-tooltip")).toContainText("SPY");
   await growth.getByRole("checkbox", { name: /SPY benchmark/ }).uncheck();
@@ -208,26 +249,104 @@ test("performance overview, growth chart and drawdown lab render real metrics", 
   const stats = page.locator("dl.drawdown-stats");
   await expect(stats).toContainText(episode.peakDate);
   await expect(stats).toContainText(episode.troughDate);
-  await expect(page.locator("figure").filter({ hasText: "Portfolio drawdown" }).locator(".recharts-area-area")).toHaveCount(1);
+  await expect(
+    page
+      .locator("figure")
+      .filter({ hasText: "Portfolio drawdown" })
+      .locator(".recharts-area-area"),
+  ).toHaveCount(1);
 });
 
-test("performance sections stay within a mobile viewport with reduced motion", async ({ page }) => {
+test("performance sections stay within a mobile viewport with reduced motion", async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.emulateMedia({ reducedMotion: "reduce" });
   await showLongResult(page);
-  await expect(page.getByRole("heading", { name: "Peak-to-trough losses." })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Peak-to-trough losses." }),
+  ).toBeVisible();
   expect(
-    await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
   ).toBe(true);
   // Open tooltips in either column stay inside the viewport.
   for (const name of ["About Sortino ratio", "About Maximum drawdown"]) {
-    await page.locator("dl.kpi-strip").getByRole("button", { name, exact: true }).focus();
-    const tip = (await page.getByRole("tooltip").filter({ visible: true }).boundingBox())!;
+    await page
+      .locator('dl[aria-label="Performance overview"]')
+      .getByRole("button", { name, exact: true })
+      .focus();
+    const tip = (await page
+      .getByRole("tooltip")
+      .filter({ visible: true })
+      .boundingBox())!;
     expect(tip.x).toBeGreaterThanOrEqual(0);
     expect(tip.x + tip.width).toBeLessThanOrEqual(390);
   }
   // Reduced motion disables CSS animation on KPI values.
   expect(
-    await page.locator(".kpi-value").first().evaluate((el) => getComputedStyle(el).animationName),
+    await page
+      .locator(".kpi-value")
+      .first()
+      .evaluate((el) => getComputedStyle(el).animationName),
   ).toBe("none");
+});
+
+test("benchmark section and drawdown series toggle use one aligned comparison sample", async ({
+  page,
+}) => {
+  await showLongResult(page);
+  const section = page.locator("section:has(#benchmark-title)");
+  await expect(
+    section.getByRole("heading", { name: "Relative to SPY." }),
+  ).toBeVisible();
+  const a = longResult.benchmarkAnalytics;
+  if (!a.comparison.available)
+    throw new Error("fixture must have a comparison sample");
+  await expect(section).toContainText(
+    `${a.comparison.sample.startDate} → ${a.comparison.sample.endDate}`,
+  );
+  await expect(
+    section.getByText("Aligned observations").locator(".."),
+  ).toContainText(String(a.comparison.sample.returnCount));
+  for (const label of [
+    "Beta",
+    "CAPM alpha",
+    "Correlation",
+    "R²",
+    "Annualized active return",
+    "Tracking error",
+    "Information ratio",
+  ])
+    await expect(
+      section
+        .getByRole("term")
+        .filter({ hasText: new RegExp(`^${label.replace("²", "\\u00b2")}`) }),
+    ).toBeVisible();
+  await expect(section.locator("dl.kpi-strip")).toHaveCount(2);
+  for (const strip of await section.locator("dl.kpi-strip").all())
+    await expect(strip).not.toContainText("N/A");
+  await expect(section.locator("table.comparison-table")).toContainText("CAGR");
+  await section
+    .getByRole("button", { name: "About Information ratio" })
+    .focus();
+  await expect(
+    page.getByRole("tooltip").filter({ visible: true }),
+  ).toContainText("mean(active)");
+  // Drawdown series toggle: keyboard-operable radio group.
+  const drawdowns = page.locator("section:has(#drawdowns-title)");
+  await drawdowns.getByRole("radio", { name: "Portfolio" }).focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(drawdowns.getByRole("radio", { name: "SPY" })).toBeChecked();
+  await expect(
+    drawdowns.getByRole("heading", { name: "SPY drawdown" }),
+  ).toBeVisible();
+  await drawdowns.getByRole("radio", { name: "Both" }).check();
+  await expect(drawdowns.locator("dl.drawdown-stats")).toHaveCount(2);
+  const chart = drawdowns.locator("figure");
+  await expect(chart.locator(".recharts-area-area")).toHaveCount(1);
+  await expect(chart.locator(".recharts-line-curve")).toHaveCount(1);
+  await expect(chart.locator(".chart-legend")).toContainText("Portfolio");
+  await expect(chart.locator(".chart-legend")).toContainText("SPY");
 });

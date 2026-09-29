@@ -1,8 +1,10 @@
 "use client";
+import { useState } from "react";
 import {
   Area,
-  AreaChart,
   CartesianGrid,
+  ComposedChart,
+  Line,
   ReferenceArea,
   ReferenceDot,
   ReferenceLine,
@@ -13,7 +15,13 @@ import {
   type TooltipContentProps,
   type TooltipValueType,
 } from "recharts";
-import type { DrawdownPoint, PerformanceSummary } from "@/lib/types/analytics";
+import type {
+  BenchmarkAnalytics,
+  DrawdownEpisode,
+  DrawdownPoint,
+  Metric,
+  PerformanceSummary,
+} from "@/lib/types/analytics";
 import {
   axisTicks,
   downsample,
@@ -25,6 +33,19 @@ import { CHART, usePrefersReducedMotion } from "@/components/charts/theme";
 import { InfoTip } from "@/components/metrics/InfoTip";
 
 const MAX_POINTS = 640;
+type Mode = "portfolio" | "benchmark" | "both";
+type View = {
+  key: "portfolio" | "benchmark";
+  name: string;
+  color: string;
+  series: DrawdownPoint[];
+  maximumDrawdown: Metric;
+  currentDrawdown: Metric;
+  episode: DrawdownEpisode | null;
+  episodes: DrawdownEpisode[];
+  episodeCount: number;
+};
+type Row = { date: string; portfolio?: number; benchmark?: number };
 
 function DrawdownTooltip({
   active,
@@ -35,51 +56,32 @@ function DrawdownTooltip({
   return (
     <div className="chart-tooltip">
       <p>{shortDate(String(label))}</p>
-      <div className="tooltip-row">
-        <span
-          className="line-key"
-          style={{ background: CHART.portfolio }}
-          aria-hidden
-        />
-        <strong>{percent(Number(payload[0].value))}</strong>
-        <span>below running peak</span>
-      </div>
+      {payload.map((p) => (
+        <div className="tooltip-row" key={String(p.dataKey)}>
+          <span
+            className="line-key"
+            style={{ background: p.color }}
+            aria-hidden
+          />
+          <strong>{percent(Number(p.value))}</strong>
+          <span>{p.name} below its running peak</span>
+        </div>
+      ))}
     </div>
   );
 }
 
 const days = (n: number | null) => (n === null ? "—" : n.toLocaleString());
+const pct = (m: Metric) => (m.available ? percent(m.value) : "N/A");
 
-export function DrawdownLab({
-  performance,
-}: {
-  performance: PerformanceSummary;
-}) {
-  const reduced = usePrefersReducedMotion();
-  const episode = performance.maximumDrawdownEpisode;
-  const annotated = new Set(
-    episode
-      ? [episode.peakDate, episode.troughDate, episode.recoveryDate].filter(
-          Boolean,
-        )
-      : [],
-  );
-  const data = downsample<DrawdownPoint>(
-    performance.drawdown,
-    MAX_POINTS,
-    (d) => [d.drawdown],
-    (d) => annotated.has(d.date),
-  );
-  const { ticks, unit } = axisTicks(data.map((d) => d.date));
-  const last = performance.drawdown.at(-1)!;
-  const mdd = performance.risk.maximumDrawdown;
-  const current = performance.currentDrawdown;
-  const yTicks = drawdownTicks(mdd.available ? mdd.value : 0);
-  const stats: { label: string; value: string; tip?: string }[] = [
+function DrawdownStats({ view, heading }: { view: View; heading: boolean }) {
+  const { episode, currentDrawdown: current } = view;
+  const last = view.series.at(-1)!;
+  const stats: { label: string; value: string; tip: string }[] = [
     {
       label: "Maximum drawdown",
-      value: mdd.available ? percent(mdd.value) : "N/A",
-      tip: "min over dates of wealth ÷ running peak − 1, on compounded daily-close wealth (initial $10,000 counts as a peak). Intraday losses can be larger.",
+      value: pct(view.maximumDrawdown),
+      tip: "min over dates of wealth ÷ running peak − 1, on compounded daily-close wealth (the starting $10,000 counts as a peak). Intraday losses can be larger.",
     },
     {
       label: "Peak date",
@@ -118,12 +120,27 @@ export function DrawdownLab({
   ];
   return (
     <>
-      <dl className="drawdown-stats">
+      {heading && (
+        <p className="stats-label">
+          <span
+            className="line-key"
+            style={{ background: view.color }}
+            aria-hidden
+          />
+          {view.name}
+        </p>
+      )}
+      <dl
+        className="drawdown-stats"
+        aria-label={`${view.name} drawdown statistics`}
+      >
         {stats.map((s) => (
           <div key={s.label}>
             <dt>
               {s.label}
-              {s.tip && <InfoTip label={s.label}>{s.tip}</InfoTip>}
+              <InfoTip label={`${view.name} ${s.label.toLowerCase()}`}>
+                {s.tip}
+              </InfoTip>
             </dt>
             <dd>{s.value}</dd>
           </div>
@@ -131,10 +148,158 @@ export function DrawdownLab({
       </dl>
       {episode && episode.recoveryDate === null && (
         <p className="hint">
-          Still underwater from the {episode.peakDate} peak:{" "}
+          {view.name} still underwater from the {episode.peakDate} peak:{" "}
           {episode.underwaterCalendarDays.toLocaleString()} calendar days and{" "}
           {episode.underwaterTradingDays.toLocaleString()} sessions through{" "}
           {last.date}. Recovery after the effective end is not reported.
+        </p>
+      )}
+    </>
+  );
+}
+
+const describe = (v: View) =>
+  v.episode
+    ? `${v.name}: deepest decline ${percent(v.episode.depth)} from ${shortDate(v.episode.peakDate)} to ${shortDate(v.episode.troughDate)}; ${
+        v.episode.recoveryDate
+          ? `recovered ${shortDate(v.episode.recoveryDate)}`
+          : "not recovered"
+      }.`
+    : `${v.name}: no drawdown; wealth never closed below a prior peak.`;
+
+export function DrawdownLab({
+  performance,
+  benchmark,
+}: {
+  performance: PerformanceSummary;
+  benchmark?: BenchmarkAnalytics;
+}) {
+  const reduced = usePrefersReducedMotion();
+  const [mode, setMode] = useState<Mode>("portfolio");
+  const portfolio: View = {
+    key: "portfolio",
+    name: "Portfolio",
+    color: CHART.portfolio,
+    series: performance.drawdown,
+    maximumDrawdown: performance.risk.maximumDrawdown,
+    currentDrawdown: performance.currentDrawdown,
+    episode: performance.maximumDrawdownEpisode,
+    episodes: performance.episodes,
+    episodeCount: performance.episodeCount,
+  };
+  const bd = benchmark?.drawdown;
+  const bench: View | null =
+    benchmark && bd?.available
+      ? {
+          key: "benchmark",
+          name: benchmark.ticker,
+          color: CHART.benchmark,
+          series: bd.series,
+          maximumDrawdown: bd.maximumDrawdown,
+          currentDrawdown: bd.currentDrawdown,
+          episode: bd.maximumDrawdownEpisode,
+          episodes: bd.episodes,
+          episodeCount: bd.episodeCount,
+        }
+      : null;
+  const active: Mode = bench ? mode : "portfolio";
+  const views =
+    active === "both"
+      ? [portfolio, bench!]
+      : [active === "benchmark" ? bench! : portfolio];
+  // Annotations (shaded episode, trough marker) and the episode table follow one series.
+  const primary = views[0];
+  const episode = primary.episode;
+
+  // Merge visible series by date. Portfolio sessions contain every benchmark date;
+  // the benchmark starts at its comparison start and is simply absent before it.
+  const byDate = new Map<string, Row>();
+  for (const v of views)
+    for (const p of v.series)
+      byDate.set(p.date, {
+        ...(byDate.get(p.date) ?? { date: p.date }),
+        [v.key]: p.drawdown,
+      });
+  const merged = [...byDate.values()].sort((a, b) =>
+    a.date.localeCompare(b.date),
+  );
+  const annotated = new Set(
+    episode
+      ? [episode.peakDate, episode.troughDate, episode.recoveryDate].filter(
+          Boolean,
+        )
+      : [],
+  );
+  const data = downsample<Row>(
+    merged,
+    MAX_POINTS,
+    (r) => views.map((v) => r[v.key] ?? 0),
+    (r) => annotated.has(r.date),
+  );
+  const { ticks, unit } = axisTicks(data.map((d) => d.date));
+  const deepest = Math.min(
+    ...views.map((v) =>
+      v.maximumDrawdown.available ? v.maximumDrawdown.value : 0,
+    ),
+  );
+  const yTicks = drawdownTicks(deepest);
+  const lastDate = merged.at(-1)!.date;
+  const comparison = benchmark?.comparison;
+  const lateBenchmark =
+    !!bench &&
+    active !== "portfolio" &&
+    comparison?.available &&
+    comparison.leadingIntervalsExcluded > 0;
+  const title =
+    active === "both"
+      ? `Portfolio vs ${bench!.name} drawdown`
+      : `${primary.name} drawdown`;
+  const options: { value: Mode; label: string }[] = [
+    { value: "portfolio", label: "Portfolio" },
+    { value: "benchmark", label: benchmark?.ticker ?? "Benchmark" },
+    { value: "both", label: "Both" },
+  ];
+
+  return (
+    <>
+      <div className="series-control">
+        <fieldset
+          className="segmented"
+          aria-describedby={bench ? undefined : "dd-bench-reason"}
+        >
+          <legend className="sr-only">Drawdown series</legend>
+          {options.map((o) => (
+            <label
+              key={o.value}
+              className={active === o.value ? "selected" : undefined}
+            >
+              <input
+                type="radio"
+                name="drawdown-series"
+                value={o.value}
+                checked={active === o.value}
+                disabled={o.value !== "portfolio" && !bench}
+                onChange={() => setMode(o.value)}
+              />
+              {o.label}
+            </label>
+          ))}
+        </fieldset>
+        {!bench && benchmark && (
+          <span className="hint" id="dd-bench-reason">
+            Benchmark drawdown unavailable:{" "}
+            {bd && !bd.available ? bd.reason : "no benchmark path."}
+          </span>
+        )}
+      </div>
+      {views.map((v) => (
+        <DrawdownStats key={v.key} view={v} heading={views.length > 1} />
+      ))}
+      {lateBenchmark && (
+        <p className="hint">
+          {bench!.name} drawdown begins {bench!.series[0].date}, the start of
+          continuous benchmark coverage, and its running peak starts there. The
+          portfolio drawdown keeps its full-history running peak.
         </p>
       )}
       <figure
@@ -143,21 +308,31 @@ export function DrawdownLab({
       >
         <div className="chart-head">
           <div>
-            <h3 id="drawdown-chart-title">Portfolio drawdown</h3>
+            <h3 id="drawdown-chart-title">{title}</h3>
             <p id="drawdown-chart-summary" className="hint">
-              {episode
-                ? `Deepest decline ${percent(episode.depth)} from ${shortDate(episode.peakDate)} to ${shortDate(episode.troughDate)}; ${
-                    episode.recoveryDate
-                      ? `recovered ${shortDate(episode.recoveryDate)}`
-                      : "not recovered"
-                  }. Shaded: peak to ${episode.recoveryDate ? "recovery" : "effective end"}.`
-                : "No drawdown: wealth never closed below a prior peak."}
+              {views.map(describe).join(" ")}
+              {episode &&
+                ` Shaded: ${primary.name} peak to ${episode.recoveryDate ? "recovery" : "effective end"}.`}
             </p>
           </div>
+          {views.length > 1 && (
+            <div className="chart-legend" aria-label="Series">
+              {views.map((v) => (
+                <span className="legend-item" key={v.key}>
+                  <span
+                    className="line-key"
+                    style={{ background: v.color }}
+                    aria-hidden
+                  />
+                  {v.name}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
         <div className="chart-frame" style={{ height: 240 }}>
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart
+            <ComposedChart
               data={data}
               margin={{ top: 12, right: 24, bottom: 4, left: 4 }}
             >
@@ -183,7 +358,7 @@ export function DrawdownLab({
               {episode && (
                 <ReferenceArea
                   x1={episode.peakDate}
-                  x2={episode.recoveryDate ?? last.date}
+                  x2={episode.recoveryDate ?? lastDate}
                   fill={CHART.reference}
                   fillOpacity={0.12}
                   stroke="none"
@@ -195,36 +370,58 @@ export function DrawdownLab({
                 cursor={{ stroke: CHART.reference, strokeWidth: 1 }}
                 isAnimationActive={false}
               />
-              <Area
-                dataKey="drawdown"
-                name="Drawdown"
-                type="linear"
-                stroke={CHART.portfolio}
-                strokeWidth={2}
-                fill={CHART.portfolio}
-                fillOpacity={0.1}
-                baseValue={0}
-                activeDot={{ r: 4, stroke: CHART.surface, strokeWidth: 2 }}
-                isAnimationActive={!reduced}
-                animationDuration={CHART.animationMs}
-              />
+              {views.map((v) =>
+                v === primary ? (
+                  <Area
+                    key={v.key}
+                    dataKey={v.key}
+                    name={v.name}
+                    type="linear"
+                    stroke={v.color}
+                    strokeWidth={2}
+                    fill={v.color}
+                    fillOpacity={0.1}
+                    baseValue={0}
+                    activeDot={{ r: 4, stroke: CHART.surface, strokeWidth: 2 }}
+                    isAnimationActive={!reduced}
+                    animationDuration={CHART.animationMs}
+                  />
+                ) : (
+                  <Line
+                    key={v.key}
+                    dataKey={v.key}
+                    name={v.name}
+                    type="linear"
+                    stroke={v.color}
+                    strokeWidth={2}
+                    dot={false}
+                    activeDot={{ r: 4, stroke: CHART.surface, strokeWidth: 2 }}
+                    isAnimationActive={!reduced}
+                    animationDuration={CHART.animationMs}
+                  />
+                ),
+              )}
               {episode && (
                 <ReferenceDot
                   x={episode.troughDate}
                   y={episode.depth}
                   r={4}
-                  fill={CHART.portfolio}
+                  fill={primary.color}
                   stroke={CHART.surface}
                   strokeWidth={2}
-                  label={{
-                    value: `Max ${percent(episode.depth)}`,
-                    position: "bottom",
-                    fill: "#f4f1ea",
-                    fontSize: 11,
-                  }}
+                  label={
+                    views.length === 1
+                      ? {
+                          value: `Max ${percent(episode.depth)}`,
+                          position: "bottom",
+                          fill: "#f4f1ea",
+                          fontSize: 11,
+                        }
+                      : undefined
+                  }
                 />
               )}
-            </AreaChart>
+            </ComposedChart>
           </ResponsiveContainer>
         </div>
         <details className="chart-table">
@@ -237,16 +434,29 @@ export function DrawdownLab({
               <thead>
                 <tr>
                   <th>Date</th>
-                  <th>Drawdown</th>
+                  {views.map((v) => (
+                    <th key={v.key}>
+                      {views.length > 1 ? v.name : "Drawdown"}
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
-                {monthEndRows(performance.drawdown).map((row) => (
+                {monthEndRows(merged).map((row) => (
                   <tr key={row.date}>
                     <td>{row.date}</td>
-                    <td>
-                      {row.drawdown === 0 ? "0.00%" : percent(row.drawdown)}
-                    </td>
+                    {views.map((v) => {
+                      const x = row[v.key];
+                      return (
+                        <td key={v.key}>
+                          {x === undefined
+                            ? "—"
+                            : x === 0
+                              ? "0.00%"
+                              : percent(x)}
+                        </td>
+                      );
+                    })}
                   </tr>
                 ))}
               </tbody>
@@ -254,14 +464,13 @@ export function DrawdownLab({
           </div>
         </details>
       </figure>
-      {performance.episodes.length > 0 && (
+      {primary.episodes.length > 0 && (
         <div className="table-wrap">
           <table>
             <caption>
-              Deepest drawdown episodes ·{" "}
-              {Math.min(5, performance.episodes.length)} of{" "}
-              {performance.episodeCount.toLocaleString()} peak-to-recovery
-              episodes
+              {primary.name} · deepest drawdown episodes ·{" "}
+              {Math.min(5, primary.episodes.length)} of{" "}
+              {primary.episodeCount.toLocaleString()} peak-to-recovery episodes
             </caption>
             <thead>
               <tr>
@@ -274,7 +483,7 @@ export function DrawdownLab({
               </tr>
             </thead>
             <tbody>
-              {performance.episodes.slice(0, 5).map((e) => (
+              {primary.episodes.slice(0, 5).map((e) => (
                 <tr key={e.peakDate}>
                   <td>{percent(e.depth)}</td>
                   <td>{e.peakDate}</td>

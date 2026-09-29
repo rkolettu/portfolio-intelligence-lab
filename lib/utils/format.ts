@@ -65,3 +65,9 @@ export const axisDate = (date: string, unit: "year" | "month") =>
         year: "numeric",
         timeZone: "UTC",
       }).format(new Date(`${date}T00:00:00Z`));
+/** Plain two-decimal coefficient (beta, correlation, R²): minus sign only. */
+export const decimal = (value: number) =>
+  new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value);

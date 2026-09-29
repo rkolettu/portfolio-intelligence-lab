@@ -30,3 +30,14 @@ export const PERFORMANCE_METHODOLOGY = {
   shortSampleReturns: 252,
   episodeLimit: 10,
 } as const;
+
+/** Phase 3 benchmark-relative conventions (separate version; Phase 1/2 unchanged). */
+export const BENCHMARK_METHODOLOGY = {
+  version: "benchmark-v1",
+  riskAnnualization: METHODOLOGY.riskAnnualization,
+  /** Minimum aligned returns for beta, correlation, active return, TE and IR. */
+  minimumReturns: 2,
+  /** OLS with an intercept needs at least three rows. */
+  minimumRegressionRows: 3,
+  shortSampleReturns: 252,
+} as const;

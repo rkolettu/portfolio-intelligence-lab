@@ -13,6 +13,7 @@ import { quoteAfterElapsed } from "@/lib/market-data/quotes";
 import { MetricStrip } from "@/components/metrics/MetricStrip";
 import { GrowthChart } from "@/components/charts/GrowthChart";
 import { DrawdownLab } from "@/components/drawdown/DrawdownLab";
+import { BenchmarkSection } from "@/components/benchmark/BenchmarkSection";
 import { money, percent, timestamp } from "@/lib/utils/format";
 import type { BacktestResult } from "@/lib/types/analytics";
 import type {
@@ -614,20 +615,35 @@ export function PortfolioWorkspace({ today }: { today: string }) {
               </p>
             )}
           </section>
+          <section className="results" aria-labelledby="benchmark-title">
+            <div className="section-heading">
+              <div>
+                <p className="eyebrow">04 / Benchmark</p>
+                <h2 id="benchmark-title">
+                  Relative to {result.benchmarkAnalytics.ticker}.
+                </h2>
+              </div>
+              <span className="tag">One aligned comparison sample</span>
+            </div>
+            <BenchmarkSection analytics={result.benchmarkAnalytics} />
+          </section>
           <section className="results" aria-labelledby="drawdowns-title">
             <div className="section-heading">
               <div>
-                <p className="eyebrow">04 / Drawdowns</p>
+                <p className="eyebrow">05 / Drawdowns</p>
                 <h2 id="drawdowns-title">Peak-to-trough losses.</h2>
               </div>
               <span className="tag">From compounded wealth</span>
             </div>
-            <DrawdownLab performance={result.performance} />
+            <DrawdownLab
+              performance={result.performance}
+              benchmark={result.benchmarkAnalytics}
+            />
           </section>
           <section className="results" aria-labelledby="results-title">
             <div className="section-heading">
               <div>
-                <p className="eyebrow">05 / Historical ledger</p>
+                <p className="eyebrow">06 / Historical ledger</p>
                 <h2 id="results-title">A traceable return ledger.</h2>
               </div>
               <span className="tag">
@@ -692,6 +708,18 @@ export function PortfolioWorkspace({ today }: { today: string }) {
                 the effective end. Undefined statistics show N/A with a reason,
                 never NaN or infinity.
               </p>
+              <p>
+                Benchmark ({result.benchmarkAnalytics.methodologyVersion}): one
+                canonical sample pairs each portfolio interval with a benchmark
+                return only when the ETF has adjusted closes at both interval
+                endpoints; missing sessions are excluded, never filled. Beta,
+                correlation, active return, tracking error, information ratio
+                and CAPM alpha all use that sample; alpha additionally requires
+                every interval&rsquo;s prior-known DGS3MO accrual and is
+                otherwise unavailable. Alpha is the OLS intercept of excess
+                returns, annualized × 252. Geometric CAGR and cumulative
+                comparisons and benchmark drawdown require continuous coverage.
+              </p>
               <ul>
                 {result.metadata.warnings.map((w) => (
                   <li key={w}>{w}</li>
@@ -752,7 +780,7 @@ export function PortfolioWorkspace({ today }: { today: string }) {
       <section className="current-context" aria-labelledby="context-title">
         <div className="section-heading">
           <div>
-            <p className="eyebrow">06 / Separate current context</p>
+            <p className="eyebrow">07 / Separate current context</p>
             <h2 id="context-title">Latest observations.</h2>
           </div>
           <span className="muted">Excluded from the historical engine</span>
