@@ -84,7 +84,8 @@ export function portfolioReducer(draft: Draft, action: DraftAction): Draft {
         ),
       };
     case "add":
-      return draft.holdings.length >= 20
+      // 20 risky rows plus one CASH row.
+      return draft.holdings.length >= 21
         ? draft
         : {
             ...draft,

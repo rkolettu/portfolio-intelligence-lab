@@ -17,6 +17,7 @@ import { BenchmarkSection } from "@/components/benchmark/BenchmarkSection";
 import { RiskSection } from "@/components/risk/RiskSection";
 import { RollingSection } from "@/components/rolling/RollingSection";
 import { StressLab } from "@/components/stress/StressLab";
+import { ConstructionSection } from "@/components/construction/ConstructionSection";
 import { money, percent, timestamp } from "@/lib/utils/format";
 import type { BacktestResult } from "@/lib/types/analytics";
 import type {
@@ -196,8 +197,8 @@ export function PortfolioWorkspace({ today }: { today: string }) {
         <div>
           <p className="eyebrow">01 / Portfolio workspace</p>
           <h1>
-            Portfolio Risk
-            <br className="desktop-break" /> &amp; Analytics Lab
+            Portfolio Intelligence
+            <br className="desktop-break" /> &amp; Construction Lab
             <span className="title-dot">.</span>
           </h1>
         </div>
@@ -237,7 +238,8 @@ export function PortfolioWorkspace({ today }: { today: string }) {
             <div className="panel-heading">
               <h2 id="allocation-title">Target allocation</h2>
               <span className="muted">
-                {draft.holdings.length} / 20 holdings
+                {draft.holdings.filter((h) => h.ticker !== "CASH").length} / 20
+                risky + CASH
               </span>
             </div>
             <div className="holding-labels">
@@ -300,7 +302,7 @@ export function PortfolioWorkspace({ today }: { today: string }) {
               <button
                 type="button"
                 className="text-action"
-                disabled={draft.holdings.length >= 20}
+                disabled={draft.holdings.length >= 21}
                 onClick={() => edit({ type: "add" })}
               >
                 + Add holding
@@ -685,10 +687,29 @@ export function PortfolioWorkspace({ today }: { today: string }) {
               today={today}
             />
           </section>
+          <section className="results" aria-labelledby="constructor-title">
+            <div className="section-heading">
+              <div>
+                <p className="eyebrow">09 / Portfolio Constructor</p>
+                <h2 id="constructor-title">
+                  Mathematical alternative allocations.
+                </h2>
+              </div>
+              <span className="tag">Allocation sandbox · not advice</span>
+            </div>
+            <ConstructionSection
+              key={result.metadata.snapshotHash}
+              config={result.config}
+              analysisHash={result.metadata.snapshotHash}
+              today={today}
+              builder={draft}
+              onApply={(next) => edit({ type: "replace", draft: next })}
+            />
+          </section>
           <section className="results" aria-labelledby="results-title">
             <div className="section-heading">
               <div>
-                <p className="eyebrow">09 / Historical ledger</p>
+                <p className="eyebrow">10 / Historical ledger</p>
                 <h2 id="results-title">A traceable return ledger.</h2>
               </div>
               <span className="tag">
@@ -799,6 +820,20 @@ export function PortfolioWorkspace({ today }: { today: string }) {
                 proxy-filled. Event active return is portfolio minus benchmark
                 cumulative return; holding returns are standalone.
               </p>
+              <p>
+                Construction (construction-v1, separate request and snapshot
+                hash): every risky holding in the analyzed configuration is
+                eligible, zero weights included, estimated on one common sample.
+                Σ_construction = 252 × [(1 − δ)S + δμI], Ledoit–Wolf shrinkage
+                of the n − 1 sample covariance toward a scaled identity; the
+                Historical Risk Analysis above keeps the sample matrix. CASH is
+                fixed outside Σ; long-only bounds are fractions of the whole
+                portfolio and are checked for feasibility before solving. Equal
+                weight and inverse volatility are exact Euclidean projections;
+                minimum variance and equal risk contribution are certified by
+                independent residual checks. Comparisons are in-sample and
+                retrospective, never recommendations.
+              </p>
               <ul>
                 {result.metadata.warnings.map((w) => (
                   <li key={w}>{w}</li>
@@ -859,7 +894,7 @@ export function PortfolioWorkspace({ today }: { today: string }) {
       <section className="current-context" aria-labelledby="context-title">
         <div className="section-heading">
           <div>
-            <p className="eyebrow">10 / Separate current context</p>
+            <p className="eyebrow">11 / Separate current context</p>
             <h2 id="context-title">Latest observations.</h2>
           </div>
           <span className="muted">Excluded from the historical engine</span>

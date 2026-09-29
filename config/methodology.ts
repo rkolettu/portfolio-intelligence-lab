@@ -66,6 +66,66 @@ export const ROLLING_METHODOLOGY = {
   riskAnnualization: METHODOLOGY.riskAnnualization,
 } as const;
 
+/** Phase 6 construction conventions (separate version; Phase 1–5 unchanged).
+ * Tolerances are deliberately distinct: no single epsilon serves every check. */
+export const CONSTRUCTION_METHODOLOGY = {
+  version: "construction-v1",
+  covariance: {
+    estimator: "ledoit-wolf-2004",
+    target: "scaled_identity",
+    version: "lw-scaled-identity-v1",
+    sampleConvention:
+      "n − 1 sample covariance; δ from the published n-denominator formula (scale-invariant)",
+  },
+  solverVersion: "construction-solver-v1",
+  riskAnnualization: METHODOLOGY.riskAnnualization,
+  /** Common observations: < 60 unavailable, 60–251 limited, ≥ 252 normal (sample size only). */
+  minimumObservations: 60,
+  normalObservations: 252,
+  tolerances: {
+    /** Budget and bound violations, decimal portfolio weights. */
+    weight: 1e-10,
+    /** Symmetry / PSD / rank, relative to matrix scale. */
+    matrixRelative: 1e-10,
+    /** Normalized projected-gradient and KKT residuals required to certify a solution. */
+    stationarity: 1e-8,
+    /** max |PCR_i − 1/N| for exact equal risk contribution. */
+    parity: 1e-6,
+    /** Internal convergence target, far below the certification threshold. */
+    solverTarget: 1e-14,
+    /** Holding returns / weights treated as equal for binding and tie reporting. */
+    binding: 1e-10,
+    /** ERC second-order check: normalized curvature (× B²) below −curvature on the
+     * critical cone is a feasible negative-curvature direction, i.e. not a local minimum. */
+    curvature: 1e-6,
+    /** A bound whose normalized KKT multiplier (× B) is at most this is weakly active
+     * and its feasible one-sided directions are probed for negative curvature. */
+    weakMultiplier: 1e-6,
+    /** Starts closer than this (× B, max-abs) are the same start. */
+    distinctStart: 1e-9,
+    /** A released bound's component of a unit critical-cone direction must exceed
+     * this (with the feasible sign) for the direction to lie inside that cone face. */
+    coneDirection: 1e-9,
+    /** Roundoff bound on analytic-Hessian curvature, in units of N·ε·κ_V·‖|H|‖_F·B²
+     * (κ_V = |w|ᵀ|Σ||w| / wᵀΣw). Curvature within this bound of −curvature is
+     * unverifiable, never verified. */
+    curvatureRoundoff: 64,
+  },
+  limits: {
+    eigenSweeps: 100,
+    minimumVarianceIterations: 100_000,
+    ercIterationsPerStart: 50_000,
+    /** Negative-curvature escapes allowed per ERC start. */
+    ercEscapes: 10,
+    /** Weakly active bounds the critical-cone check enumerates (2^k faces); more is
+     * reported as second-order unverifiable. */
+    ercConeBounds: 10,
+    tieBreakIterations: 100_000,
+  },
+  tieRule:
+    "Among numerically optimal minimum-variance allocations, the one closest (Euclidean) to the constrained equal-weight allocation.",
+} as const;
+
 /** Phase 5 stress conventions (separate version; Phase 1–4 unchanged). Each event
  * re-initializes at target weights on its start-session close and reuses the
  * Phase 1 simulation unchanged, including monthly closing resets. */

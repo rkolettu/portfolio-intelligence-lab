@@ -89,3 +89,57 @@ describe("date-only arithmetic", () => {
     expect(yearsBefore("2024-02-29", 1)).toBe("2023-02-28");
   });
 });
+it("normalizes weights idempotently: re-parsing a parsed configuration changes nothing", () => {
+  const cfg = {
+    holdings: [
+      { ticker: "SPY", weight: 0.6 },
+      { ticker: "QQQ", weight: 0.3 },
+      { ticker: "IWM", weight: 0.1 },
+    ],
+    benchmark: "SPY",
+    requestedStartDate: "2024-05-30",
+    endDate: "2024-06-03",
+    rebalanceFrequency: "monthly",
+    cashPolicy: "historical_proxy",
+  };
+  // 0.6 + 0.3 + 0.1 is 0.9999999999999999 in binary floating point.
+  const once = parsePortfolio(cfg, "2024-06-04");
+  expect(parsePortfolio(once, "2024-06-04")).toEqual(once);
+  // A genuine accepted residual is still normalized, once.
+  const residual = parsePortfolio(
+    {
+      ...cfg,
+      holdings: [
+        { ticker: "SPY", weight: 0.5000005 },
+        { ticker: "QQQ", weight: 0.5 },
+      ],
+    },
+    "2024-06-04",
+  );
+  expect(residual.holdings[0].weight).not.toBe(0.5000005);
+  expect(parsePortfolio(residual, "2024-06-04")).toEqual(residual);
+});
+it("allows 20 risky holdings plus CASH: CASH never consumes a risky slot", () => {
+  const risky = Array.from({ length: 20 }, (_, i) => ({
+    ticker: `R${String(i + 1).padStart(2, "0")}`,
+    weight: 0.045,
+  }));
+  const max = parsePortfolio(
+    { ...base, holdings: [...risky, { ticker: "CASH", weight: 0.1 }] },
+    "2024-01-02",
+  );
+  expect(max.holdings).toHaveLength(21);
+  expect(() =>
+    parsePortfolio(
+      {
+        ...base,
+        holdings: [
+          ...risky,
+          { ticker: "R21", weight: 0 },
+          { ticker: "CASH", weight: 0.1 },
+        ],
+      },
+      "2024-01-02",
+    ),
+  ).toThrow(/at most 20 risky holdings/);
+});

@@ -6,7 +6,7 @@ const stored = z.object({
   draft: z.object({
     holdings: z
       .array(z.object({ ticker: z.string(), weight: z.string() }))
-      .max(20),
+      .max(21),
     benchmark: z.string(),
     requestedStartDate: z.string(),
     endDate: z.string(),

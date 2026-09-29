@@ -140,10 +140,20 @@ it("accepts the browser host behind a Next internal URL while rejecting cross-ho
 
 it("expires a cached live claim independently of the quote cache TTL", async () => {
   const data = service();
-  const quote = normalizeQuote({ ticker: "SPY", price: 100, provider: "qualified fixture",
-    marketTimestamp: "2024-05-31T19:58:20Z", fetchedAt: "2024-05-31T20:00:00Z",
-    claimedStatus: "live", liveQualified: true, delaySeconds: 0, session: "regular",
-  }, "2024-05-31T20:00:00Z");
+  const quote = normalizeQuote(
+    {
+      ticker: "SPY",
+      price: 100,
+      provider: "qualified fixture",
+      marketTimestamp: "2024-05-31T19:58:20Z",
+      fetchedAt: "2024-05-31T20:00:00Z",
+      claimedStatus: "live",
+      liveQualified: true,
+      delaySeconds: 0,
+      session: "regular",
+    },
+    "2024-05-31T20:00:00Z",
+  );
   let clock = 0;
   data.cache = new DataCache(128, () => clock);
   data.quotes = { name: "fixture", getCurrentQuote: async () => quote };
@@ -161,14 +171,19 @@ it("expires a cached live claim independently of the quote cache TTL", async () 
 
 it("streams a lossless result above the Vercel buffered-response limit in bounded chunks", async () => {
   const payload = { ok: true, value: "€".repeat(1_600_000), last: "complete" };
-  const response = await handleJson(new Request("http://localhost/api/analysis", {
-    method: "POST", body: "{}",
-  }), async () => payload);
+  const response = await handleJson(
+    new Request("http://localhost/api/analysis", {
+      method: "POST",
+      body: "{}",
+    }),
+    async () => payload,
+  );
   expect(response.status).toBe(200);
   expect(response.headers.has("content-length")).toBe(false);
   const reader = response.body!.getReader();
   const decoder = new TextDecoder();
-  let text = "", size = 0;
+  let text = "",
+    size = 0;
   for (;;) {
     const part = await reader.read();
     if (part.done) break;
@@ -183,9 +198,18 @@ it("streams a lossless result above the Vercel buffered-response limit in bounde
 
 it("marks a cached Friday close stale on read once Monday's session has closed", async () => {
   const data = service();
-  const close = normalizeQuote({ ticker: "SPY", price: 100, provider: "fixture", claimedStatus: "end_of_day",
-    marketTimestamp: "2026-09-25T20:00:00Z", fetchedAt: "2026-09-27T12:00:00Z", session: "regular",
-  }, "2026-09-27T12:00:00Z");
+  const close = normalizeQuote(
+    {
+      ticker: "SPY",
+      price: 100,
+      provider: "fixture",
+      claimedStatus: "end_of_day",
+      marketTimestamp: "2026-09-25T20:00:00Z",
+      fetchedAt: "2026-09-27T12:00:00Z",
+      session: "regular",
+    },
+    "2026-09-27T12:00:00Z",
+  );
   data.quotes = { name: "fixture", getCurrentQuote: async () => close };
   let clock = 0;
   data.cache = new DataCache(128, () => clock);
@@ -214,12 +238,35 @@ it("bounds retained cache bytes, evicting oldest entries and never retaining ove
 });
 
 it("permits CDN compression of streamed snapshots and releases them on client cancel", async () => {
-  const response = await handleJson(new Request("http://localhost/api/analysis", {
-    method: "POST", body: "{}",
-  }), async () => ({ ok: true, value: "x".repeat(200_000) }));
+  const response = await handleJson(
+    new Request("http://localhost/api/analysis", {
+      method: "POST",
+      body: "{}",
+    }),
+    async () => ({ ok: true, value: "x".repeat(200_000) }),
+  );
   expect(response.headers.get("cache-control")).toBe("no-store");
   const reader = response.body!.getReader();
   expect((await reader.read()).value!.byteLength).toBe(65536);
   await reader.cancel();
   expect((await reader.read()).done).toBe(true);
+});
+it("accepts current quotes for 20 risky holdings plus CASH and a benchmark (22 tickers)", async () => {
+  const tickers = [
+    ...Array.from(
+      { length: 20 },
+      (_, i) => `R${String(i + 1).padStart(2, "0")}`,
+    ),
+    "CASH",
+    "SPY",
+  ];
+  const quotes = await currentQuotes(
+    tickers,
+    "2024-06-04T12:00:00Z",
+    service(),
+  );
+  expect(quotes).toHaveLength(21);
+  await expect(
+    currentQuotes([...tickers, "QQQ"], "2024-06-04T12:00:00Z", service()),
+  ).rejects.toThrow(/at most 22/);
 });

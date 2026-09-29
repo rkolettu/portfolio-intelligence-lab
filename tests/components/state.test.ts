@@ -84,3 +84,29 @@ it("does not turn empty or invalid display weights into zero", () => {
   d.holdings[0].weight = "";
   expect(() => draftConfig(d, today)).toThrow();
 });
+it("lets the builder hold 20 risky rows plus CASH and restores them", () => {
+  const today = "2024-06-04";
+  let d = toDraft(samplePortfolio(today));
+  for (let k = 0; k < 25; k++) d = portfolioReducer(d, { type: "add" });
+  expect(d.holdings).toHaveLength(21);
+  const stored: Record<string, string> = {};
+  const storage = {
+    setItem: (k: string, v: string) => (stored[k] = v),
+    getItem: (k: string) => stored[k] ?? null,
+  };
+  const full = {
+    ...d,
+    holdings: [
+      ...Array.from({ length: 20 }, (_, i) => ({
+        ticker: `R${String(i + 1).padStart(2, "0")}`,
+        weight: "4.5",
+      })),
+      { ticker: "CASH", weight: "10" },
+    ],
+  };
+  expect(persistDraft(storage, full)).toBe(true);
+  expect(
+    restoreDraft(storage, toDraft(samplePortfolio(today)), today).draft
+      .holdings,
+  ).toHaveLength(21);
+});

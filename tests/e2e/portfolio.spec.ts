@@ -2,6 +2,12 @@ import { expect, test } from "@playwright/test";
 import { simulate } from "../../lib/backtest/engine";
 import { runStress } from "../../lib/backtest/stress";
 import type { StressWindowDefinition } from "../../lib/types/analytics";
+import { runConstruction } from "../../lib/backtest/construction";
+import { toDraft } from "../../lib/state/portfolioReducer";
+import {
+  constructionConfig,
+  constructionInput,
+} from "../fixtures/construction";
 import { series, sessions } from "../fixtures/helpers";
 const dates = ["2024-05-30", "2024-05-31", "2024-06-03"];
 const simulation = simulate({
@@ -19,6 +25,9 @@ const simulation = simulate({
   now: "2024-06-04T10:00:00Z",
 });
 test.beforeEach(async ({ page }) => {
+  await page.route("**/api/construction", (route) =>
+    route.fulfill({ json: { ok: true, value: constructionResult } }),
+  );
   // Deterministic Stress Lab data; the fixture is defined below with the long result.
   await page.route("**/api/stress", (route) =>
     route.fulfill({
@@ -521,6 +530,113 @@ test("rolling and stress sections stay within a mobile viewport", async ({
   ).toBeVisible();
   await stress.getByRole("radio", { name: "Custom window" }).check();
   await expect(stress.getByLabel("Window start")).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+});
+
+// Phase 6: the analyzed portfolio and the construction share one fixture, so the
+// constructor's universe (AAA, BBB, zero-weight CCC, CASH) matches the analysis.
+const constructionFixture = constructionInput();
+const constructionAnalysis = simulate({
+  config: constructionConfig,
+  prices: constructionFixture.estimation.prices,
+  treasury: constructionFixture.estimation.treasury,
+  sessions: constructionFixture.estimation.sessions,
+  now: constructionFixture.now,
+});
+const constructionResult = runConstruction(constructionFixture);
+async function showConstructionResult(page: import("@playwright/test").Page) {
+  await page.route("**/api/analysis", (route) =>
+    route.fulfill({ json: { ok: true, value: constructionAnalysis } }),
+  );
+  // Construction requires the builder to hold the analyzed portfolio, so seed the
+  // builder with the fixture portfolio through the app's stored preferences.
+  await page.addInitScript(
+    (draft) =>
+      window.localStorage.setItem(
+        "portfolio-lab:preferences:v1",
+        JSON.stringify({ version: 1, draft }),
+      ),
+    toDraft(constructionConfig),
+  );
+  await page.goto("/");
+  await page.getByRole("button", { name: "Analyze portfolio" }).click();
+  await expect(
+    page.getByRole("heading", {
+      name: "Mathematical alternative allocations.",
+    }),
+  ).toBeVisible();
+  return page.locator("section:has(#constructor-title)");
+}
+
+test("portfolio constructor: generate, compare, stale guard and full-precision apply", async ({
+  page,
+}) => {
+  const section = await showConstructionResult(page);
+  await expect(section.getByLabel("Minimum weight CCC")).toBeVisible();
+  await section.getByRole("button", { name: "Generate allocation" }).click();
+  await expect(
+    section.getByRole("heading", { name: "Minimum-Variance Allocation" }),
+  ).toBeVisible();
+  await expect(section.getByText("Estimated One-Way Turnover")).toBeVisible();
+  await expect(section.getByRole("note")).toContainText(
+    "IN-SAMPLE RETROSPECTIVE ANALYSIS",
+  );
+  await expect(
+    section.getByRole("table", { name: /Stress comparison/ }),
+  ).toContainText("Incomplete Historical Coverage · missing CCC");
+  await expect(
+    section
+      .locator("figure")
+      .filter({ hasText: "Current vs Proposed" })
+      .locator(".recharts-line-curve"),
+  ).toHaveCount(2);
+  await section.getByRole("radio", { name: "Equal Risk Contribution" }).check();
+  await expect(
+    section.getByRole("heading", {
+      name: "Equal-Risk-Contribution Allocation",
+    }),
+  ).toBeVisible();
+  await section.getByRole("radio", { name: "Minimum Variance" }).check();
+  // Changing an input makes the proposal stale; restoring it makes it current again.
+  const apply = section.getByRole("button", { name: /Apply proposed weights/ });
+  await section.getByLabel("Maximum weight AAA").fill("90");
+  await expect(
+    section.getByText(/Inputs changed since this proposal/),
+  ).toBeVisible();
+  await expect(apply).toBeDisabled();
+  await section.getByLabel("Maximum weight AAA").fill("100");
+  await expect(apply).toBeEnabled();
+  await apply.click();
+  const mv = constructionResult.proposals.find(
+    (p) => p.method === "minimum_variance",
+  )!;
+  const aaa = mv.weights!.find((w) => w.ticker === "AAA")!.weight;
+  const typed = await page.getByLabel("Weight 1", { exact: true }).inputValue();
+  expect(Math.abs(Number(typed) / 100 - aaa)).toBeLessThan(1e-15);
+  await expect(
+    page.getByText(/Your edited draft has not been analyzed/),
+  ).toBeVisible();
+  for (const part of await section.locator("table, dl, figure").all())
+    await expect(part).not.toContainText(/NaN|Infinity/);
+  await expect(section).not.toContainText(
+    /Recommended Portfolio|Best Allocation|You Should (Buy|Sell)/,
+  );
+});
+
+test("portfolio constructor stays within a mobile viewport", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const section = await showConstructionResult(page);
+  await section.getByRole("button", { name: "Generate allocation" }).click();
+  await expect(
+    section.getByRole("heading", { name: "Minimum-Variance Allocation" }),
+  ).toBeVisible();
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= window.innerWidth,

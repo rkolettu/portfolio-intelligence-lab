@@ -164,8 +164,9 @@ export async function currentQuotes(
   now: string,
   data: DataServices = services,
 ): Promise<Result<CurrentQuote>[]> {
-  if (!Array.isArray(tickers) || tickers.length > 21)
-    fail("INVALID_INPUT", "Request at most 21 current quotes.");
+  // 20 risky holdings, CASH and the benchmark.
+  if (!Array.isArray(tickers) || tickers.length > 22)
+    fail("INVALID_INPUT", "Request at most 22 current quotes.");
   const normalized = [
     ...new Set(tickers.map((t) => symbolSchema.parse(t))),
   ].filter((t) => t !== "CASH");

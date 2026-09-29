@@ -6,7 +6,7 @@ import "@fontsource/inter/600.css";
 import "@fontsource/inter/700.css";
 import "./globals.css";
 export const metadata: Metadata = {
-  title: "Portfolio Risk & Analytics Lab | Rishab Kolettu",
+  title: "Portfolio Intelligence & Construction Lab | Rishab Kolettu",
   description:
     "Reproducible portfolio simulations with explicit historical data coverage and methodology.",
 };

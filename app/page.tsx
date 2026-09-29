@@ -12,7 +12,7 @@ export default function Page() {
           Rishab Kolettu <span aria-hidden>↗</span>
         </a>
         <span className="header-status">
-          Portfolio lab <span>/ Stress</span>
+          Portfolio lab <span>/ Construction</span>
         </span>
         <nav aria-label="Primary">
           <a href="#builder">Workspace</a>
@@ -22,6 +22,7 @@ export default function Page() {
           <a href="#drawdowns-title">Drawdowns</a>
           <a href="#rolling-title">Rolling</a>
           <a href="#stress-title">Stress</a>
+          <a href="#constructor-title">Constructor</a>
           <a href="#context-title">Market context</a>
         </nav>
       </header>
@@ -34,8 +35,8 @@ export default function Page() {
             investment advice.
           </p>
           <div>
-            <span>Portfolio Risk &amp; Analytics Lab</span>
-            <span>Phase 5 · Stress &amp; rolling</span>
+            <span>Portfolio Intelligence &amp; Construction Lab</span>
+            <span>Phase 6 · Construction</span>
           </div>
         </footer>
       </main>

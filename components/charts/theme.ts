@@ -7,6 +7,8 @@ import { useSyncExternalStore } from "react";
 export const CHART = {
   portfolio: "#3987e5",
   benchmark: "#d95926",
+  /** Construction "Proposed" series (dataviz slot 3; blue/aqua CVD ΔE 19.6 on #1e1e1d). */
+  proposed: "#199e70",
   grid: "rgba(244, 241, 234, 0.08)",
   axis: "rgba(244, 241, 234, 0.18)",
   tick: "#969188",

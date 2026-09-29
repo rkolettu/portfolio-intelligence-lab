@@ -1,10 +1,10 @@
-# Phase 1 methodology — phase1-v1
+# Methodology — Portfolio Intelligence & Construction Lab
 
-Scope: normalized data, validation, coverage, arithmetic daily returns, synthetic wealth, drift, monthly resets, CASH/risk-free alignment, basic continuous benchmark wealth and reproducibility. No CAGR, volatility, Sharpe, Sortino, drawdowns, risk decomposition, stress, or optimization has been implemented.
+Scope: the Phase 1 engine (`phase1-v1`: normalized data, validation, coverage, arithmetic daily returns, synthetic wealth, drift, monthly resets, CASH/risk-free alignment, continuous benchmark wealth and reproducibility) and every layer built on it. The layers are performance (Phase 2), benchmark-relative (Phase 3), portfolio risk (Phase 4), rolling and stress (Phase 5) and portfolio construction (Phase 6). Each layer carries its own methodology version and reuses the engine unchanged. No expected-return optimization or AI layer exists.
 
 ## Inputs and units
 
-USD U.S.-listed equities/ETFs and CASH, long only, 1–20 unique normalized symbols. Display weights are percentages; all domain weights, returns, and annual yields are decimals. Total weights must be within 1e-6 of one; accepted residuals are explicitly normalized. Zero-weight rows stay editable but do not affect coverage. Requested dates are ISO date-only strings, not UTC timestamps. Dates must be real, ordered, nonfuture and within a 50-year span. The versioned session artifact supports 1976–2028; ranges outside it fail explicitly.
+USD U.S.-listed equities/ETFs and CASH, long only, unique normalized symbols: at most 20 risky holdings plus CASH, which is the special asset and never uses a risky slot (the builder holds up to 21 rows; the quotes route accepts 22 tickers including CASH and the benchmark). This one rule applies to analysis, stress, construction and Apply. Display weights are percentages; all domain weights, returns, and annual yields are decimals. Total weights must be within 1e-6 of one; accepted residuals are explicitly normalized, once. A total that differs from 1 only by floating-point noise (≤ 1e-13, e.g. 0.6 + 0.3 + 0.1 = 0.9999999999999999) is left as entered, so parsing a parsed configuration is idempotent and replay is exact. Zero-weight rows stay editable but do not affect coverage. Requested dates are ISO date-only strings, not UTC timestamps. Dates must be real, ordered, nonfuture and within a 50-year span. The versioned session artifact supports 1976–2028; ranges outside it fail explicitly.
 
 ## Historical data and coverage
 
@@ -114,7 +114,7 @@ CAPM alpha against a chosen ETF is a single-factor excess-return intercept relat
 
 **Thresholds.** Fewer than 60 common observations makes covariance-based risk unavailable: covariance, correlation, standalone and target volatility, MRC/CRC/PCR, weighted volatility and diversification ratio. 60–251 is shown as limited history; 252+ is normal. Capital concentration and return contribution do not depend on this sample.
 
-**Covariance and annualization.** `Σ_daily` is the sample (n − 1) covariance matrix, computed once per upper-triangle cell and mirrored, so it is exactly symmetric. `Σ_annual = 252 × Σ_daily`. Diagonals equal each holding's sample variance. Eigenvalues (cyclic Jacobi) confirm positive semidefiniteness. Roundoff-sized negative eigenvalues (≥ −1e-10 × the largest) are tolerated; larger ones make the covariance family unavailable with the reason and are never repaired. A rank-deficient matrix (duplicate, perfectly correlated or constant holdings) is disclosed as singular; target-weight risk remains defined. Historical sample covariance describes the window; it is not a forecast.
+**Covariance and annualization.** `Σ_daily` is the sample (n − 1) covariance matrix, computed once per upper-triangle cell and mirrored, so it is exactly symmetric. `Σ_annual = 252 × Σ_daily`. Diagonals equal each holding's sample variance. Eigenvalues (cyclic Jacobi) confirm positive semidefiniteness. Since Phase 6 the shared validator (`lib/analytics/matrix.ts`) also rejects non-square and non-finite matrices, eigensolver non-convergence and non-finite intermediate arithmetic. Before any convergence arithmetic, Jacobi normalizes the matrix by an exact power of two (2^⌊log₂ max|a_ij|⌋) and stops relative to the normalized Frobenius norm, rescaling eigenvalues on return. The same matrix therefore gets the same PSD verdict at any finite scale (tested from 1e-300 to 1e300). Power-of-two scaling is exact, so outputs for normal-scale matrices are unchanged (bitwise, by replay). Roundoff-sized negative eigenvalues (≥ −1e-10 × the largest) are tolerated; larger ones make the covariance family unavailable with the reason and are never repaired. A rank-deficient matrix (duplicate, perfectly correlated or constant holdings) is disclosed as singular; target-weight risk remains defined. Historical sample covariance describes the window; it is not a forecast.
 
 **Target-weight risk contribution ("Risk Contribution at Target Weights — CASH treated as locally riskless").** `w` is the configured target weight of each risky holding, not renormalized to the risky sleeve.
 
@@ -197,10 +197,151 @@ Stress runs through its own `/api/stress` request, independent of `/api/analysis
 
 Today's configured holdings applied to past windows carry selection and survivorship bias. Results are gross of costs and describe what happened, not what will happen.
 
+## Portfolio construction (Phase 6, `construction-v1`)
+
+Construction produces mathematically valid alternative allocations under explicit methodology and constraints. They are **not recommendations**, and no expected-return, mean-variance, Maximum Sharpe or historical-CAGR objective exists. Historical Sharpe is a comparison statistic only. It runs through its own `/api/construction` request with its own snapshot and hash; the analysis is untouched.
+
+**Eligible universe and estimation sample.** Every risky ticker in the analyzed configuration is eligible, **zero-weight rows included**; CASH is excluded. The analysis ignores zero-weight holdings for coverage, but construction does not. To add a candidate, add it as a 0% holding and re-run the analysis. Before solving, the following are frozen:
+
+- the universe and its canonical order (all arithmetic on lexicographically sorted tickers, so holding order never changes a weight);
+- the estimation window: the analysis's requested period and finalized cutoff, with the effective start at the latest first valid session across **all** eligible assets;
+- the common valid intervals: Phase 1 coverage rules applied to every eligible asset (no pairwise samples, no forward-fill, no bridging, no silent dropping; an unexplained gap fails explicitly). The one exception, where neither portfolio can hold a risky asset, is under **CASH and the risky budget** below;
+- current weights, the CASH weight, bounds, required holdings and the covariance version.
+
+Sample-size status: fewer than 60 common returns makes the risk model unavailable (inverse volatility, minimum variance and ERC report `insufficient_history`; equal weight remains available). 60–251 is Limited History. 252+ is "normal", which describes sample size only and does not imply forecasting reliability.
+
+**Two covariance matrices, never mixed.** The Phase 4 Historical Risk Analysis keeps the **sample** covariance. Construction uses **Σ_construction = 252 × [(1 − δ)S + δμI]**: Ledoit–Wolf (2004) linear shrinkage of the daily n − 1 sample covariance S toward a scaled identity, with μ = trace(S)/N.
+
+- δ is computed exactly as published, on the n-denominator S_n with centered returns x_k and ‖A‖² = tr(AAᵀ)/N:
+  - m = tr(S_n)/N
+  - d² = ‖S_n − mI‖²
+  - b̄² = n⁻² Σ_k ‖x_k x_kᵀ − S_n‖²
+  - δ = min(b̄², d²)/d², or 0 when d² = 0
+- δ is a ratio of quantities that scale together, so it is unaffected by the denominator. Applying it to S gives the published estimator × n/(n − 1), the lab's uniform convention.
+- Recorded: δ, the target, the sample convention, μ, λmin/λmax and condition numbers before and after shrinkage, and a covariance hash (tickers, interval-set id, version, matrix).
+- There is no emergency ridge and no fallback estimator. Both matrices must pass the hardened validator (dimensions, finiteness, scale-aware symmetry and PSD at 1e-10 relative, eigensolver convergence); otherwise the risk-based methods are `invalid_covariance`.
+
+**Zero-volatility assets.** A risky asset whose raw daily returns have zero or undefined dispersion (the Phase 2 rule) makes inverse volatility, minimum variance and ERC `invalid_inputs`, naming the asset: shrinkage must not mask unusable data. Equal weight remains available.
+
+**CASH and the risky budget.** CASH stays outside Σ and is **fixed**: at its current weight by default, or at an explicit user weight. It is never optimized, so no method can move the portfolio into zero-risk CASH. B = 1 − CASH, and every method allocates only B. Historical comparisons keep the Treasury-based CASH accrual.
+
+**Constraints and feasibility.** V1 is long only, fully invested, with no leverage, borrowing or shorting. For each risky asset, 0 ≤ lower ≤ upper ≤ 1 as a fraction of the **whole** portfolio. A positive minimum applies unconditionally, never as "0% or at least the minimum". A required holding needs a positive minimum. Checked before any optimizer runs:
+
+- finite values and valid bounds;
+- the CASH weight;
+- Σ lower ≤ B ≤ Σ upper.
+
+Consequences: with B = 0, all-CASH is feasible only if every minimum is 0. Equal weight, inverse volatility and minimum variance are then the all-CASH allocation ("All-CASH Allocation (zero risky budget)") and need no risky history or covariance. ERC is unavailable (no risky allocation, no risk-budget problem). Model risk is exactly zero with CASH contributing 0, and the comparison uses the Treasury CASH path on the session calendar, or reports the typed Treasury-unavailable state. When the current allocation is also all-CASH, neither compared portfolio can hold a risky asset. A zero-weight candidate's price history is then not a dependency and may be missing entirely: the window is the session calendar, no risk model is estimated, and the server does not fail on that candidate's fetch. If the current allocation holds a risky asset, or B > 0 (a proposal can hold one), every eligible asset's history is required as before. With B > 0 and no eligible risky asset, the problem is infeasible. Constraints are never relaxed, CASH is never changed, and required holdings are never dropped. Example: 20% CASH with two risky assets capped at 35% has 70% capacity against an 80% budget, so it is infeasible.
+
+**Bounded projection.** One exact solver serves equal weight, inverse volatility and every solver step: argmin ‖w − r‖² subject to Σw = B and l ≤ w ≤ u. The solution is w_i = clip(r_i − τ, l_i, u_i), with τ found on the sorted breakpoints of the nonincreasing piecewise-linear Σ clip(r_i − τ) and solved in closed form. It never clips and renormalizes.
+
+**Methods.** Each method's output:
+
+| Method | Definition | Output |
+| --- | --- | --- |
+| Equal weight | Reference B/N; with bounds, its projection | Equal-Weight or Constrained Equal-Weight Allocation |
+| Inverse volatility | σ_i = √Σ_construction[i,i]; reference B(1/σ_i)/Σ(1/σ_j); with bounds, the same projection. Not risk parity | Inverse-Volatility or Constrained Inverse-Volatility Allocation |
+| Minimum variance | minimize wᵀΣ_construction w subject to Σw = B, l ≤ w ≤ u | Minimum-Variance Allocation |
+| Equal risk contribution | With PCR_i = w_i(Σw)_i / wᵀΣw and N the eligible risky count fixed **before** solving: minimize Σ(PCR_i − 1/N)² subject to Σw = B, l ≤ w ≤ u | Equal-Risk-Contribution Allocation, or Constrained Risk-Balance Approximation |
+
+How each solver works:
+
+- **Minimum variance: solver.** FISTA projected gradient with gradient restart, step 1/L (L = 2λmax), each step an exact projection, starting from the constrained equal-weight allocation.
+- **Minimum variance: polish.** After certification, an active-set polish solves the KKT system exactly on the identified free set. It is kept only if it satisfies the bounds exactly and certifies at least as well.
+- **Minimum variance: tie rule.** Used only for a singular Σ. Every optimum shares Σw, so the optimal set is a polyhedron, and Dykstra's projections select its point nearest the constrained equal-weight allocation. With δ > 0, Σ_construction is positive definite and the optimum is unique.
+- **ERC: starts.** Projected gradient with Armijo backtracking and Barzilai–Borwein steps over deterministic starts in fixed order:
+  1. constrained equal weight;
+  2. constrained inverse volatility;
+  3. current allocation when feasible;
+  4. the log-barrier risk-budget allocation (Spinu's convex formulation, used only as an initializer) projected onto the bounds;
+  5. one tilt per asset, the projection of B(1 + e_k)/(N + 1).
+
+  A start within 1e-9·B of an earlier start is recorded as coincident and not run twice. A zero-variance start lies outside the domain and is skipped. Each run stops when its residual reaches 1e-14 or stops improving for 2,000 iterations while within certification.
+- **ERC: exact-parity acceptance.** F = Σ(PCR_i − 1/N)² is nonnegative. A feasible, finite endpoint with max|PCR_i − 1/N| ≤ 1e-6 has F ≤ N·10⁻¹², so it is within N·10⁻¹² of the global minimum. It is accepted as `parity_achieved` and no curvature estimate can overturn it. (Second review counterexample: Σ = diag(1, 1/2.25e12) has exact ERC [6.666662222e-7, 0.9999993333], parity ~1e-16. A fixed-step finite-difference Hessian reported curvature −2.4e11 there, rejected it and selected a ~50/50 plateau.)
+- **ERC: second-order certification.** Every other first-order stationary endpoint can be a saddle. The first review counterexample is equal weight on Σ = [[1,0,−⅔],[0,1,−⅔],[−⅔,−⅔,1]], with PCR [1, 1, −1] and zero gradient. Such endpoints are checked on the **critical cone**. The constraints are linear, so the second-order necessary condition is dᵀ∇²F d ≥ 0 for every d with:
+  - Σd = 0, and d_i = 0 where l_i = u_i;
+  - d_i ≥ 0 at a lower bound and d_i ≤ 0 at an upper bound;
+  - ∇Fᵀd = 0.
+
+  How the check works:
+  - **Hessian.** ∇²F is **analytic**: with J = (1/V)[diag(m) + diag(w)Σ − 2p mᵀ], a = eᵀp and c = e∘m + Σ(e∘w), ∇²F = 2JᵀJ + 2[(e_j + e_k − 2a)Σ_jk/V − 2(c_j m_k + m_j c_k)/V² + 8a m_j m_k/V²]. No step size is involved, so tiny weights are exact.
+  - **Independent check of the Hessian.** It matches an exact-rational finite-difference Hessian to 4e-16 relative.
+  - **Which bounds are released.** ∇Fᵀd = 0 forces d_i = 0 for any bound whose multiplier is positive under some valid KKT multiplier. With free assets, ν = their mean gradient. With none, ν ranges over [max ∇F at caps, min ∇F at floors], so an **empty free set is never taken as proof of optimality**. Bounds whose multiplier is at most 1e-6 (normalized) for every valid ν are released: they may move inward, alone or jointly.
+  - **Where the minimum is found.** The cone's minimum curvature lies in the relative interior of one face: the free assets plus a subset of released bounds. There it is a minimum eigenvector of the Hessian restricted to that face's budget-preserving subspace (Helmert basis, Jacobi).
+  - **Fast path.** If the subspace of every released bound has no curvature below −1e-6, the cone has none.
+  - **Full enumeration.** Otherwise all 2^k faces are enumerated, up to 10 released bounds (beyond that the verdict is unverifiable). A face's minimum eigenvector counts only if it, or its negation, moves each released bound strictly inward (component > 1e-9).
+  - **Verdicts.** Normalized curvature (× B²) carries an explicit roundoff bound, 64·N·ε·κ_V·‖|∇²F|‖_F·B², where κ_V = |w|ᵀ|Σ||w| / wᵀΣw.
+    - `violated`: below −1e-6 by more than that bound.
+    - `unverifiable`: within the bound of the threshold, or with an unresolved eigenspace. Never collapsed into verified.
+    - `verified`: otherwise.
+  - A `violated` point is escaped along its cone direction (up to 10 escapes per start) and the run continues. An `unverifiable` start does not certify, and the other deterministic starts decide.
+  - A start certifies only with `parity_achieved`, or with first-order stationarity (projected-gradient and KKT residuals ≤ 1e-8) **and** `verified`.
+  - The best certified start wins (objective, then parity, then order). No global-optimality claim is made except for exact parity.
+- **ERC: reporting and wording.** Solver certification and achieved parity are reported separately. A certified result whose parity exceeds tolerance is labeled **Constrained Risk-Balance Approximation**, never exact ERC. The message claims the constraints make exact parity **infeasible** only when that is proven: Σ_construction is positive definite (so the long-only ERC allocation is unique; Maillard, Roncalli & Teiletche 2010), the log-barrier solution verifiably has PCR = 1/N, and scaled to B it breaks a bound, which the message names. Otherwise the message reads "Exact risk parity was not achieved by the solver under the selected constraints … It has not been shown that the constraints make exact parity impossible."
+
+**Certification and diagnostics.** A result is usable only if, independently of the solver's stopping reason, it is finite, meets the budget and bounds within tolerance, and has normalized stationarity within tolerance. For ERC, exact parity is the alternative: a feasible, finite point with parity ≤ 1e-6 is the global minimum within N·10⁻¹². Stationarity is measured two ways: the gradient-mapping residual ‖w − P(w − s∇f)‖∞/B, and a multiplier-based KKT residual (free g_i = ν, lower-bound g_i ≥ ν, upper-bound g_i ≤ ν). Iteration exhaustion without certification is `non_converged`; non-finite arithmetic is `numerical_failure`; a small objective change alone never counts as convergence.
+
+The result contract distinguishes:
+
+- `success`
+- `infeasible`
+- `invalid_inputs`
+- `insufficient_history`
+- `invalid_covariance`
+- `numerical_failure`
+- `non_converged`
+- `converged_but_parity_not_achieved`
+
+Recorded with each result:
+
+- the method, full-precision weights and objective;
+- iterations and the termination reason;
+- budget, bound, stationarity, KKT and parity residuals;
+- binding floors, caps and fixed positions;
+- the per-start ERC record and the tie rule;
+- δ, the estimation window, the observation count, and warnings.
+
+Each proposal also carries plain observations: 0% floors, binding caps, concentration above 50% of the risky budget, negative risk contributions, turnover above 50%, and, for minimum variance, "lower modeled variance does not imply better returns, smaller future drawdowns or suitability". Strange but valid results are shown and explained, never replaced.
+
+**Tolerances** (`CONSTRUCTION_METHODOLOGY.tolerances`, versioned, one purpose each):
+
+| Check | Tolerance |
+| --- | --- |
+| Budget and bound violations | 1e-10 (decimal weights) |
+| Matrix symmetry and PSD | 1e-10 (relative) |
+| Stationarity / KKT | 1e-8 (normalized) |
+| ERC parity (max \|PCR_i − 1/N\|) | 1e-6 |
+| Internal solver target | 1e-14 |
+| ERC negative curvature on the critical cone (× B²) | −1e-6 |
+| Curvature roundoff bound | 64·N·ε·κ_V·‖\|∇²F\|‖_F·B² |
+| Weakly active bound (normalized multiplier) | 1e-6 |
+| Cone-face direction (released-bound component) | 1e-9 |
+| Released bounds enumerated (2^k faces) | at most 10 |
+| Coincident starts (max-abs, × B) | 1e-9 |
+
+**Turnover.** Estimated One-Way Turnover = ½ Σ |proposed − current| over the union of holdings, with a missing weight counting as 0 and CASH included. It is a distance between target allocations, not traded notional or backtest rebalancing turnover. No transaction costs are estimated.
+
+**Comparisons.**
+
+- **Construction Model Risk:** current and proposed allocations on the **same** Σ_construction (model volatility, standalone volatility, MRC, CRC, PCR and diversification ratio, via the Phase 4 Euler functions). It is labeled separately from the Phase 4 Historical Risk Analysis.
+- **Historical comparison:** both target allocations are simulated by the unchanged engine, each re-initialized at target weights on the **same** start, the estimation sample's first session. A later-listing candidate therefore moves both starts. The data are identical (prices, Treasury, sessions, benchmark intervals, rebalancing) and every metric definition is unchanged. It is labeled **IN-SAMPLE RETROSPECTIVE ANALYSIS**: the weights were estimated on the same history, so this is not an out-of-sample backtest and does not validate any prediction.
+- **Stress comparison:** the unchanged Phase 5 engine runs for each allocation on the same event snapshot. An event compares only when **both** portfolios cover it, i.e. the union of holdings; otherwise it reports Incomplete Historical Coverage with the missing tickers and no partial comparison. Benchmark-only failures stay isolated. Applying weights estimated later to earlier windows is a retrospective scenario, not a portfolio that could have been known at the time, and not a forecast.
+
+**Proposal state and Apply.**
+
+- A proposal is kept beside the builder draft and never mutates the current portfolio. One generation solves all four methods on the same frozen inputs, and the method selector only chooses the view.
+- Construction is defined only while the builder still holds exactly the analyzed configuration (holdings, weights, CASH, benchmark, dates, CASH policy). Generate is disabled, with the reason shown, whenever the builder differs.
+- The proposal is keyed by the analysis snapshot hash, the analyzed configuration, the builder configuration at generation, the constraints and the CASH choice. Any change marks it stale, and a stale proposal cannot be applied. A response keeps the key captured when its request was sent, so edits made while it was outstanding leave it stale.
+- `applyProposal` enforces staleness itself: it re-checks builder consistency (a caller's stale key does not help), so newer edits are never overwritten.
+- Apply uses full-precision weights (plain-decimal percent strings, ~1e-16 round-trip error). It revalidates the proposal itself before and after conversion: each eligible ticker present exactly once, CASH present when expected, no unknown tickers, the budget, the frozen bounds, the current editor bounds and the fixed CASH weight. It then replaces the builder's holdings. The analysis must be re-run to evaluate the applied allocation.
+- Current quotes never enter construction.
+
+Required text on every construction view: "For educational and analytical purposes only. Allocation outputs are mathematical results based on selected inputs, assumptions and constraints, not personalized recommendations."
+
 ## Reproducibility and limitations
 
 Results contain normalized source observations, UTC sessions, original configuration, finalized-data cutoff, fetch/source provenance, versioned methodology/calendar, interval-set hash and SHA-256 snapshot identity. Replaying `simulate({...result.snapshot, config: result.config, now: result.metadata.generatedAt})` reproduces the ledger. No durable server snapshot retention is claimed; future provider revisions can change newly fetched results. Hashes alone cannot recover old data. Production redistribution and retention permissions remain a release gate.
 
-The API rejects detailed responses larger than 4 MB and asks for a shorter period/fewer holdings, rather than silently downsampling calculation inputs. A later transport/retention design is required for the largest 20-holding/50-year payloads.
+API results stream losslessly in pull-based chunks (DATA-PROVIDERS.md, Large snapshot transport); no calculation input is downsampled and no size cap truncates a result. The largest 20-holding, ~46-year analysis is about 48 MB uncompressed, including about 2.4 MB of rolling series. Stress (~0.35 MB for the sample) and construction (~1.2 MB for the sample) responses are separate. The browser buffers each whole response; server-side display summarization remains a later option. Stress and construction replay the same way: `runStress({...snapshot, config, now})` and `runConstruction({config, constraints, cash, ...snapshot, now})`.
 
 Sources: [H.15 publication schedule](https://www.federalreserve.gov/releases/h15/), [DGS3MO definition](https://fred.stlouisfed.org/series/DGS3MO), [FRED real-time/vintage periods](https://fred.stlouisfed.org/docs/api/fred/realtime_period.html), [NYSE sessions](https://www.nyse.com/trade/hours-calendars), [exchange_calendars](https://github.com/gerrymanoim/exchange_calendars).

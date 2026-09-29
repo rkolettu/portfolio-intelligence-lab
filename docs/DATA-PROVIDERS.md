@@ -89,6 +89,10 @@ Observed live (2026-09-29): Yahoo answers a range entirely before a security's l
 
 Live smoke of the sample (1.3 s, 351 KB): all three windows complete. With a VT benchmark, the GFC event keeps its portfolio result while benchmark and active results are unavailable, because VT's provider-reported first trade is 2008-06-26.
 
+## Construction data (Phase 6)
+
+`/api/construction` fetches every eligible ticker, zero-weight candidates included, plus the benchmark over the analysis's requested window, using the analysis's cache keys, TTL, concurrency and fallback registry. DGS3MO is fetched over the same window. It also fetches the fixed stress preset span with the Stress Lab's keys (and DGS3MO there when CASH is held or fixed above zero). An eligible asset whose history cannot be fetched fails the request with its ticker; it is never silently dropped from the universe. The one exception is a request where neither portfolio can hold a risky asset (current allocation all-CASH and CASH fixed at 100%): candidate history is then unused, and the all-CASH comparison runs on the session calendar and Treasury data. A benchmark failure only disables benchmark-relative comparison metrics. Current quotes are never read. Live sample: 1.7 s, about 1.2 MB, including the replay snapshot.
+
 ## Cache, timeout and provenance
 
 Successful history is fetched as a coherent whole requested series (with ten days of boundary context); normalized in-memory cache TTL one hour. Quotes use 60 seconds. Treasury uses six hours. Vercel/Next fetch caching uses the same TTLs and may serve a stale response while revalidating, which provenance cache ages now expose. No chunk splicing across adjustment scales and no stale-as-complete historical fallback. Freshness records cache age separately from market observation age, source response/fetch time, last successful refresh and observation date.

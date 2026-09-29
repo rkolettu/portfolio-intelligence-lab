@@ -201,3 +201,20 @@ it("zero-CASH outage fallback applies even to intervals with available Treasury 
   expect(result.ledger[0].riskFreeReturn).toBeNull();
   expect(result.ledger[1].riskFreeReturn).toBeCloseTo(0.000401095465251355, 14);
 });
+it("replays exactly from result.config when the weights' floating-point total is not exactly 1", () => {
+  const i = input();
+  i.config.holdings = [
+    { ticker: "SPY", weight: 0.6 },
+    { ticker: "QQQ", weight: 0.3 },
+    { ticker: "IWM", weight: 0.1 },
+  ];
+  i.prices.push(series("IWM", dates, [100, 102, 101]));
+  const r = simulate(i);
+  const replay = simulate({
+    ...r.snapshot,
+    config: r.config,
+    now: r.metadata.generatedAt,
+  });
+  expect(replay.metadata.snapshotHash).toBe(r.metadata.snapshotHash);
+  expect(replay.ledger).toEqual(r.ledger);
+});

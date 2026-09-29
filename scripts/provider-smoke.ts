@@ -6,6 +6,7 @@ import {
   services,
 } from "../lib/server/analyze";
 import { stress } from "../lib/server/stress";
+import { construct } from "../lib/server/construction";
 import { samplePortfolio } from "../config/samplePortfolio";
 import { PROVIDER_POLICY } from "../config/providers";
 import { CALENDAR_COVERAGE, CALENDAR_VERSION } from "../lib/backtest/calendar";
@@ -230,4 +231,57 @@ console.log(
   ),
 );
 if (!events.ok) process.exitCode = 1;
+// Portfolio construction: its own request, snapshot and hash; default constraints,
+// CASH fixed at the current weight. Mathematical allocations, not recommendations.
+const constructionStarted = Date.now();
+const built = result.ok
+  ? await construct(
+      {
+        config: result.value.config,
+        constraints: [],
+        cash: { mode: "current" },
+      },
+      now,
+    )
+  : null;
+console.log(
+  "CONSTRUCTION",
+  JSON.stringify(
+    built?.ok
+      ? {
+          ok: true,
+          ms: Date.now() - constructionStarted,
+          snapshotHash: built.value.metadata.snapshotHash,
+          responseBytes: Buffer.byteLength(JSON.stringify(built)),
+          estimation: built.value.estimation.available
+            ? {
+                ...built.value.estimation.sample,
+                status: built.value.estimation.status,
+              }
+            : built.value.estimation,
+          covariance: built.value.covariance.available
+            ? {
+                shrinkage: built.value.covariance.shrinkage,
+                conditioning: built.value.covariance.conditioning,
+                hash: built.value.covariance.hash,
+              }
+            : built.value.covariance,
+          proposals: built.value.proposals.map((p) => ({
+            method: p.method,
+            status: p.status,
+            label: p.label,
+            weights: p.weights,
+            turnover: p.turnover,
+            modelVolatility: p.modelRisk.available
+              ? p.modelRisk.volatility
+              : null,
+            residuals: p.diagnostics.residuals,
+            iterations: p.diagnostics.iterations,
+            binding: p.diagnostics.binding,
+          })),
+        }
+      : built,
+  ),
+);
+if (built && !built.ok) process.exitCode = 1;
 if (!result.ok) process.exitCode = 1;
