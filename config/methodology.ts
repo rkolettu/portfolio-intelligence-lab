@@ -1,0 +1,18 @@
+export const METHODOLOGY = {
+  version: "phase1-v1",
+  engineVersion: "0.1.0",
+  currency: "USD",
+  calendar: "XNYS",
+  returnConvention: "total_return_aware_adjusted",
+  initialWealth: 10_000,
+  maxHoldings: 20,
+  maxYears: 50,
+  weightTolerance: 1e-6,
+  numericalTolerance: 1e-10,
+  maxRateAgeDays: 7,
+  cashDayBasis: 365,
+  riskAnnualization: 252,
+  rebalance: "monthly_close_reset",
+  treasurySeries: "DGS3MO",
+  rateAvailability: "next_business_day_23_59_New_York_modeled",
+} as const;
