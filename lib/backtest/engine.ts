@@ -15,6 +15,7 @@ import { accrueCash, priorKnownRate } from "@/lib/treasury-data/alignment";
 import { portfolioCoverage } from "./coverage";
 import { benchmarkPath } from "./alignment";
 import { CALENDAR_VERSION } from "./calendar";
+import { summarizePerformance } from "@/lib/analytics/summary";
 import { FEDERAL_CALENDAR_VERSION } from "@/lib/treasury-data/normalize";
 import { snapshotHash, sampleMetadata } from "./metadata";
 export type SimulationInput = {
@@ -141,6 +142,12 @@ export function simulate(input: SimulationInput): BacktestResult {
     ledger,
     coverage,
     benchmark,
+    performance: summarizePerformance({
+      initialWealth: METHODOLOGY.initialWealth,
+      initialDate: sessions[0].date,
+      ledger,
+      sample,
+    }),
     quality: [
       limitingHoldings.length ? "partial_history" : "complete",
       ...(ratesMissing ? ["treasury_unavailable" as const] : []),

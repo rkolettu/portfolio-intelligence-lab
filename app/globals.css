@@ -647,6 +647,321 @@ footer > div {
     font-size: 10px;
   }
 }
+/* Phase 2 · overview, performance and drawdown */
+h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+}
+.kpi-strip {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  margin: 0 0 14px;
+  border-bottom: 1px solid var(--border);
+}
+.kpi {
+  padding: 16px 14px 16px 0;
+  min-width: 0;
+}
+.kpi + .kpi {
+  padding-left: 14px;
+  border-left: 1px solid var(--border);
+}
+.kpi dt,
+.drawdown-stats dt {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  color: var(--faint);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.kpi dd {
+  margin: 8px 0 0;
+}
+.kpi-value {
+  display: block;
+  font-size: 21px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  font-variant-numeric: proportional-nums;
+  animation: kpi-in 200ms ease-out both;
+}
+.kpi-na {
+  color: var(--muted);
+}
+.kpi-foot {
+  display: block;
+  margin-top: 5px;
+  font-size: 10px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+@keyframes kpi-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+}
+.info-tip {
+  position: relative;
+  display: inline-flex;
+}
+.info-trigger {
+  width: 15px;
+  height: 15px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1;
+  text-transform: none;
+}
+.info-trigger:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+.tip {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 8px);
+  left: -8px;
+  width: 260px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface-hover);
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0;
+  line-height: 1.5;
+  text-transform: none;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  /* Hidden tips take no layout space (no page overflow); aria-describedby still
+     resolves display:none content for assistive technology. */
+  display: none;
+  pointer-events: none;
+}
+.info-tip:hover .tip,
+.info-tip:focus-within .tip {
+  display: block;
+  animation: kpi-in 150ms ease-out both;
+}
+/* Open each tip toward the inside of its column: 7 columns on desktop. */
+.kpi:nth-last-child(-n + 3) .tip,
+.drawdown-stats > div:nth-last-child(-n + 3) .tip {
+  left: auto;
+  right: -8px;
+}
+.tip-note {
+  display: block;
+  margin-top: 6px;
+  color: var(--warning);
+}
+.chart-figure {
+  margin: 0 0 18px;
+}
+.chart-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 18px;
+  margin-bottom: 10px;
+}
+.chart-head .hint {
+  margin: 4px 0 0;
+}
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.legend-toggle {
+  cursor: pointer;
+}
+.legend-toggle.disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+.legend-toggle input {
+  width: 13px;
+  height: 13px;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  accent-color: var(--accent);
+}
+.line-key {
+  display: inline-block;
+  width: 14px;
+  height: 2px;
+  border-radius: 1px;
+}
+.chart-note {
+  margin: 0 0 10px;
+}
+.chart-frame {
+  width: 100%;
+  animation: chart-in 220ms ease-out both;
+}
+@keyframes chart-in {
+  from {
+    opacity: 0;
+  }
+}
+.chart-frame .recharts-surface:focus,
+.chart-frame .recharts-wrapper:focus {
+  outline: none;
+}
+.end-label {
+  fill: var(--text);
+  font-size: 11px;
+  font-weight: 500;
+}
+.chart-tooltip {
+  min-width: 170px;
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface-hover);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  font-size: 11px;
+}
+.chart-tooltip p {
+  margin: 0 0 6px;
+  color: var(--muted);
+}
+.tooltip-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.tooltip-row strong {
+  font-weight: 600;
+  color: var(--text);
+}
+.tooltip-row span:last-child {
+  color: var(--muted);
+}
+.chart-table {
+  margin-top: 8px;
+  font-size: 11px;
+}
+.chart-table summary {
+  color: var(--muted);
+  cursor: pointer;
+}
+.scroll-table {
+  max-height: 280px;
+  overflow-y: auto;
+}
+.drawdown-stats {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  margin: 0 0 12px;
+  border-bottom: 1px solid var(--border);
+}
+.drawdown-stats > div {
+  padding: 0 12px 14px 0;
+  min-width: 0;
+}
+.drawdown-stats > div + div {
+  padding-left: 12px;
+  border-left: 1px solid var(--border);
+}
+.drawdown-stats dd {
+  margin: 7px 0 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+@media (max-width: 1100px) {
+  .kpi-strip,
+  .drawdown-stats {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    border-bottom: 0;
+  }
+  .kpi,
+  .drawdown-stats > div {
+    border-bottom: 1px solid var(--border);
+  }
+  .kpi:nth-child(4n + 1),
+  .drawdown-stats > div:nth-child(4n + 1) {
+    padding-left: 0;
+    border-left: 0;
+  }
+  .drawdown-stats > div {
+    padding-top: 12px;
+  }
+  /* :nth-child(n) matches the desktop anchor rule's specificity so it resets. */
+  .kpi:nth-child(n) .tip,
+  .drawdown-stats > div:nth-child(n) .tip {
+    left: -8px;
+    right: auto;
+  }
+  .kpi:nth-child(4n) .tip,
+  .kpi:nth-child(4n + 3) .tip,
+  .drawdown-stats > div:nth-child(4n) .tip,
+  .drawdown-stats > div:nth-child(4n + 3) .tip {
+    left: auto;
+    right: -8px;
+  }
+}
+@media (max-width: 800px) {
+  .kpi-strip,
+  .drawdown-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .kpi:nth-child(4n + 1),
+  .drawdown-stats > div:nth-child(4n + 1) {
+    padding-left: 14px;
+    border-left: 1px solid var(--border);
+  }
+  .kpi:nth-child(odd),
+  .drawdown-stats > div:nth-child(odd) {
+    padding-left: 0;
+    border-left: 0;
+  }
+  .kpi-value {
+    font-size: 19px;
+  }
+  .chart-head {
+    flex-direction: column;
+    gap: 8px;
+  }
+  .tip {
+    width: min(240px, 70vw);
+  }
+  /* :nth-child(n) matches the desktop anchor rule's specificity so it resets. */
+  .kpi:nth-child(n) .tip,
+  .drawdown-stats > div:nth-child(n) .tip {
+    left: -8px;
+    right: auto;
+  }
+  .kpi:nth-child(even) .tip,
+  .drawdown-stats > div:nth-child(even) .tip {
+    left: auto;
+    right: -8px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;

@@ -16,3 +16,17 @@ export const METHODOLOGY = {
   treasurySeries: "DGS3MO",
   rateAvailability: "next_business_day_23_59_New_York_modeled",
 } as const;
+
+/** Phase 2 performance conventions. Separate from METHODOLOGY so Phase 1 replay
+ * identity (snapshot hash) is unchanged; results record this version. */
+export const PERFORMANCE_METHODOLOGY = {
+  version: "performance-v1",
+  /** CAGR elapsed years = actual calendar days / 365.25 (cash accrual stays ACT/365). */
+  cagrDayBasis: 365.25,
+  riskAnnualization: METHODOLOGY.riskAnnualization,
+  /** Minimum return observations for volatility, Sharpe and Sortino. */
+  minimumReturns: 2,
+  /** Below this many returns, annualized statistics carry a short-sample note. */
+  shortSampleReturns: 252,
+  episodeLimit: 10,
+} as const;

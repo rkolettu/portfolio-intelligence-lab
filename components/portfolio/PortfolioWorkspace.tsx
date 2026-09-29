@@ -10,6 +10,9 @@ import {
 import { persistDraft, restoreDraft } from "@/lib/state/persistence";
 import { errorResult } from "@/lib/utils/errors";
 import { quoteAfterElapsed } from "@/lib/market-data/quotes";
+import { MetricStrip } from "@/components/metrics/MetricStrip";
+import { GrowthChart } from "@/components/charts/GrowthChart";
+import { DrawdownLab } from "@/components/drawdown/DrawdownLab";
 import { money, percent, timestamp } from "@/lib/utils/format";
 import type { BacktestResult } from "@/lib/types/analytics";
 import type {
@@ -515,188 +518,241 @@ export function PortfolioWorkspace({ today }: { today: string }) {
         </div>
       )}
       {result && (
-        <section className="results" aria-labelledby="results-title">
-          <div className="section-heading">
-            <div>
-              <p className="eyebrow">02 / Historical simulation</p>
-              <h2 id="results-title">A traceable return ledger.</h2>
+        <>
+          <section className="results" aria-labelledby="overview-title">
+            <div className="section-heading">
+              <div>
+                <p className="eyebrow">02 / Overview</p>
+                <h2 id="overview-title">Performance overview.</h2>
+              </div>
+              <span className="tag">
+                {changed || pending
+                  ? "Last successful analysis"
+                  : "Historical data"}
+              </span>
             </div>
-            <span className="tag">
-              {changed || pending
-                ? "Last successful analysis"
-                : "Historical data"}
-            </span>
-          </div>
-          {(changed || pending) && (
-            <p className="notice">
-              These results belong to the last submitted allocation.{" "}
-              {changed
-                ? "Your edited draft has not been analyzed."
-                : "A new analysis is pending."}
-            </p>
-          )}
-          {result.config.cashPolicy === "zero_explicit" &&
-            result.config.holdings.some(
-              (h) => h.ticker === "CASH" && h.weight > 0,
-            ) && (
-              <p
-                className="notice"
-                role="note"
-                aria-label="Zero-return CASH methodology"
-              >
-                This historical result uses zero-return CASH for the entire run.
-                Missing historical risk-free observations remain unavailable.
+            {(changed || pending) && (
+              <p className="notice">
+                These results belong to the last submitted allocation.{" "}
+                {changed
+                  ? "Your edited draft has not been analyzed."
+                  : "A new analysis is pending."}
               </p>
             )}
-          <div className="summary-grid">
-            <div>
-              <span>Requested</span>
-              <strong>
-                {result.config.requestedStartDate} → {result.config.endDate}
-              </strong>
+            {result.config.cashPolicy === "zero_explicit" &&
+              result.config.holdings.some(
+                (h) => h.ticker === "CASH" && h.weight > 0,
+              ) && (
+                <p
+                  className="notice"
+                  role="note"
+                  aria-label="Zero-return CASH methodology"
+                >
+                  This historical result uses zero-return CASH for the entire
+                  run. Missing historical risk-free observations remain
+                  unavailable.
+                </p>
+              )}
+            <div className="summary-grid">
+              <div>
+                <span>Requested</span>
+                <strong>
+                  {result.config.requestedStartDate} → {result.config.endDate}
+                </strong>
+              </div>
+              <div>
+                <span>Effective daily sample</span>
+                <strong>
+                  {result.initialDate} → {result.metadata.effectiveEndDate}
+                </strong>
+              </div>
+              <div>
+                <span>Return observations</span>
+                <strong>{result.ledger.length.toLocaleString()}</strong>
+              </div>
+              <div>
+                <span>ETF benchmark</span>
+                <strong>{result.config.benchmark}</strong>
+              </div>
             </div>
-            <div>
-              <span>Effective daily sample</span>
-              <strong>
-                {result.initialDate} → {result.metadata.effectiveEndDate}
-              </strong>
-            </div>
-            <div>
-              <span>Return observations</span>
-              <strong>{result.ledger.length.toLocaleString()}</strong>
-            </div>
-            <div>
-              <span>ETF benchmark</span>
-              <strong>{result.config.benchmark}</strong>
-            </div>
-          </div>
-          <p className="hint">
-            Submitted allocation:{" "}
-            {result.config.holdings
-              .map((h) => `${h.ticker} ${(h.weight * 100).toFixed(2)}%`)
-              .join(" · ")}
-          </p>
-          {result.metadata.limitingHoldings.length > 0 && (
-            <p className="warning">
-              Analysis begins {result.initialDate} because{" "}
-              {result.metadata.limitingHoldings.join(", ")} lacks earlier valid
-              history.
-            </p>
-          )}
-          {!result.benchmark.ok ? (
-            <p className="warning">
-              Benchmark comparison unavailable: {result.benchmark.error.message}
-            </p>
-          ) : (
+            <MetricStrip performance={result.performance} />
             <p className="hint">
-              Continuous benchmark overlap:{" "}
-              {result.benchmark.value.sample.startDate} →{" "}
-              {result.benchmark.value.sample.endDate} ·{" "}
-              {result.benchmark.value.sample.returnCount} returns. Portfolio
-              path rebased without resetting weights.
+              Submitted allocation:{" "}
+              {result.config.holdings
+                .map((h) => `${h.ticker} ${(h.weight * 100).toFixed(2)}%`)
+                .join(" · ")}
             </p>
-          )}
-          <div className="table-wrap">
-            <table>
-              <caption>
-                Latest 10 historical ledger observations · indexed starting
-                wealth $10,000
-              </caption>
-              <thead>
-                <tr>
-                  <th>Interval</th>
-                  <th>Daily return</th>
-                  <th>Indexed wealth</th>
-                  <th>After close</th>
-                </tr>
-              </thead>
-              <tbody>
-                {result.ledger.slice(-10).map((row) => (
-                  <tr key={row.date}>
-                    <td>
-                      {row.startDate} → {row.date}
-                    </td>
-                    <td>{percent(row.return)}</td>
-                    <td>{money(row.wealth)}</td>
-                    <td>
-                      {row.rebalanced ? "Reset to targets" : "Weights drift"}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <details className="methodology" id="methodology">
-            <summary>
-              Methodology &amp; data lineage <span aria-hidden>+</span>
-            </summary>
-            <p>
-              Arithmetic adjusted-close returns compound geometrically. Holdings
-              drift during each month; fixed targets reset at month-end closing
-              value before the next session’s return. Distributions are already
-              embedded in adjusted prices.{" "}
-              {result.config.cashPolicy === "zero_explicit"
-                ? "Explicit outage fallback: CASH earns zero over this entire run; missing risk-free returns remain unavailable."
-                : "CASH uses prior-known DGS3MO with actual calendar days / 365."}
-            </p>
-            <ul>
-              {result.metadata.warnings.map((w) => (
-                <li key={w}>{w}</li>
-              ))}
-            </ul>
-            <p>
-              Methodology {result.metadata.version} ·{" "}
-              {result.metadata.calendarVersion}
-              {result.metadata.federalCalendarVersion &&
-                ` · ${result.metadata.federalCalendarVersion}`}
-            </p>
-            <p className="hash">
-              Snapshot SHA-256: {result.metadata.snapshotHash}
-            </p>
-            <p>
-              Generated {timestamp(result.metadata.generatedAt)}. Historical
-              sources: {result.metadata.historicalProviders.join(", ")}.
-              Treasury: {result.metadata.treasuryProvider ?? "Unavailable"}.
-            </p>
+            {result.metadata.limitingHoldings.length > 0 && (
+              <p className="warning">
+                Analysis begins {result.initialDate} because{" "}
+                {result.metadata.limitingHoldings.join(", ")} lacks earlier
+                valid history.
+              </p>
+            )}
+          </section>
+          <section className="results" aria-labelledby="performance-title">
+            <div className="section-heading">
+              <div>
+                <p className="eyebrow">03 / Performance</p>
+                <h2 id="performance-title">Growth of wealth.</h2>
+              </div>
+              <span className="tag">Daily closes · compounded</span>
+            </div>
+            <GrowthChart key={result.metadata.snapshotHash} result={result} />
+            {!result.benchmark.ok ? (
+              <p className="warning">
+                Benchmark comparison unavailable:{" "}
+                {result.benchmark.error.message}
+              </p>
+            ) : (
+              <p className="hint">
+                Continuous benchmark overlap:{" "}
+                {result.benchmark.value.sample.startDate} →{" "}
+                {result.benchmark.value.sample.endDate} ·{" "}
+                {result.benchmark.value.sample.returnCount} returns. Portfolio
+                path rebased without resetting weights.
+              </p>
+            )}
+          </section>
+          <section className="results" aria-labelledby="drawdowns-title">
+            <div className="section-heading">
+              <div>
+                <p className="eyebrow">04 / Drawdowns</p>
+                <h2 id="drawdowns-title">Peak-to-trough losses.</h2>
+              </div>
+              <span className="tag">From compounded wealth</span>
+            </div>
+            <DrawdownLab performance={result.performance} />
+          </section>
+          <section className="results" aria-labelledby="results-title">
+            <div className="section-heading">
+              <div>
+                <p className="eyebrow">05 / Historical ledger</p>
+                <h2 id="results-title">A traceable return ledger.</h2>
+              </div>
+              <span className="tag">
+                {changed || pending
+                  ? "Last successful analysis"
+                  : "Historical data"}
+              </span>
+            </div>
             <div className="table-wrap">
               <table>
-                <caption>Data coverage and fetch provenance</caption>
+                <caption>
+                  Latest 10 historical ledger observations · indexed starting
+                  wealth $10,000
+                </caption>
                 <thead>
                   <tr>
-                    <th>Security</th>
-                    <th>First fetched date</th>
-                    <th>Last date</th>
-                    <th>Rows in requested range</th>
+                    <th>Interval</th>
+                    <th>Daily return</th>
+                    <th>Indexed wealth</th>
+                    <th>After close</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {result.coverage.map((c) => (
-                    <tr key={c.ticker}>
-                      <td>{c.ticker}</td>
-                      <td>{c.firstAvailableDate}</td>
-                      <td>{c.lastAvailableDate}</td>
-                      <td>{c.observationCount}</td>
+                  {result.ledger.slice(-10).map((row) => (
+                    <tr key={row.date}>
+                      <td>
+                        {row.startDate} → {row.date}
+                      </td>
+                      <td>{percent(row.return)}</td>
+                      <td>{money(row.wealth)}</td>
+                      <td>
+                        {row.rebalanced ? "Reset to targets" : "Weights drift"}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-            {result.snapshot.prices.map((s) => (
-              <p className="hint" key={s.ticker}>
-                {s.ticker}: {s.provenance.provider}; fetched{" "}
-                {timestamp(s.provenance.fetchedAt)}; cache age{" "}
-                {Math.round(s.provenance.cacheAgeSeconds)}s;{" "}
-                {s.provenance.fallbackUsed ? "fallback used" : "primary source"}
-                .
+            <details className="methodology" id="methodology">
+              <summary>
+                Methodology &amp; data lineage <span aria-hidden>+</span>
+              </summary>
+              <p>
+                Arithmetic adjusted-close returns compound geometrically.
+                Holdings drift during each month; fixed targets reset at
+                month-end closing value before the next session’s return.
+                Distributions are already embedded in adjusted prices.{" "}
+                {result.config.cashPolicy === "zero_explicit"
+                  ? "Explicit outage fallback: CASH earns zero over this entire run; missing risk-free returns remain unavailable."
+                  : "CASH uses prior-known DGS3MO with actual calendar days / 365."}
               </p>
-            ))}
-          </details>
-        </section>
+              <p>
+                Performance ({result.performance.methodologyVersion}):
+                cumulative return, CAGR and drawdowns use the compounded wealth
+                path; CAGR annualizes over actual calendar days ÷ 365.25.
+                Volatility, Sharpe and Sortino use daily arithmetic returns
+                annualized by 252. Sharpe and Sortino use each interval&rsquo;s
+                prior-known DGS3MO accrual (actual days ÷ 365) as the risk-free
+                return and are unavailable unless every interval has one.
+                Sortino&rsquo;s downside deviation spans the full sample.
+                Drawdowns are daily closes; recovery is searched only through
+                the effective end. Undefined statistics show N/A with a reason,
+                never NaN or infinity.
+              </p>
+              <ul>
+                {result.metadata.warnings.map((w) => (
+                  <li key={w}>{w}</li>
+                ))}
+              </ul>
+              <p>
+                Methodology {result.metadata.version} ·{" "}
+                {result.metadata.calendarVersion}
+                {result.metadata.federalCalendarVersion &&
+                  ` · ${result.metadata.federalCalendarVersion}`}
+              </p>
+              <p className="hash">
+                Snapshot SHA-256: {result.metadata.snapshotHash}
+              </p>
+              <p>
+                Generated {timestamp(result.metadata.generatedAt)}. Historical
+                sources: {result.metadata.historicalProviders.join(", ")}.
+                Treasury: {result.metadata.treasuryProvider ?? "Unavailable"}.
+              </p>
+              <div className="table-wrap">
+                <table>
+                  <caption>Data coverage and fetch provenance</caption>
+                  <thead>
+                    <tr>
+                      <th>Security</th>
+                      <th>First fetched date</th>
+                      <th>Last date</th>
+                      <th>Rows in requested range</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {result.coverage.map((c) => (
+                      <tr key={c.ticker}>
+                        <td>{c.ticker}</td>
+                        <td>{c.firstAvailableDate}</td>
+                        <td>{c.lastAvailableDate}</td>
+                        <td>{c.observationCount}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {result.snapshot.prices.map((s) => (
+                <p className="hint" key={s.ticker}>
+                  {s.ticker}: {s.provenance.provider}; fetched{" "}
+                  {timestamp(s.provenance.fetchedAt)}; cache age{" "}
+                  {Math.round(s.provenance.cacheAgeSeconds)}s;{" "}
+                  {s.provenance.fallbackUsed
+                    ? "fallback used"
+                    : "primary source"}
+                  .
+                </p>
+              ))}
+            </details>
+          </section>
+        </>
       )}
       <section className="current-context" aria-labelledby="context-title">
         <div className="section-heading">
           <div>
-            <p className="eyebrow">03 / Separate current context</p>
+            <p className="eyebrow">06 / Separate current context</p>
             <h2 id="context-title">Latest observations.</h2>
           </div>
           <span className="muted">Excluded from the historical engine</span>

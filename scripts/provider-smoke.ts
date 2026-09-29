@@ -43,6 +43,14 @@ console.log(
           benchmark: result.value.benchmark.ok,
           coverage: result.value.coverage,
           responseBytes: Buffer.byteLength(JSON.stringify(result)),
+          performance: Object.fromEntries(
+            Object.entries({
+              ...result.value.performance.portfolio,
+              ...result.value.performance.risk,
+              currentDrawdown: result.value.performance.currentDrawdown,
+            }).map(([k, m]) => [k, m.available ? m.value : `N/A: ${m.reason}`]),
+          ),
+          maximumDrawdownEpisode: result.value.performance.maximumDrawdownEpisode,
         }
       : result,
     null,
