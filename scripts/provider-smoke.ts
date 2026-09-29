@@ -52,6 +52,43 @@ console.log(
           ),
           maximumDrawdownEpisode:
             result.value.performance.maximumDrawdownEpisode,
+          risk: (() => {
+            const r = result.value.riskAnalytics;
+            const val = (m: {
+              available: boolean;
+              value?: number;
+              reason?: string;
+            }) => (m.available ? m.value : `N/A: ${m.reason}`);
+            return {
+              sample: r.sample.available
+                ? {
+                    ...r.sample.sample,
+                    status: r.sample.status,
+                    tickers: r.sample.tickers,
+                  }
+                : r.sample,
+              volatility: val(r.portfolio.volatility),
+              weightedAverageVolatility: val(
+                r.portfolio.weightedAverageVolatility,
+              ),
+              diversificationRatio: val(r.portfolio.diversificationRatio),
+              concentration: r.concentration,
+              identityResiduals: r.portfolio.identityResiduals,
+              holdings: r.holdings.map((h) => ({
+                ticker: h.ticker,
+                weight: h.weight,
+                volatility: val(h.volatility),
+                beta: val(h.beta),
+                mrc: val(h.marginal),
+                crc: val(h.component),
+                pcr: val(h.percentage),
+              })),
+              highest: r.correlation.available ? r.correlation.highest : null,
+              lowest: r.correlation.available ? r.correlation.lowest : null,
+              returnContribution: r.returnContribution.rows,
+              sumOfDailyReturns: r.returnContribution.sumOfDailyReturns,
+            };
+          })(),
           benchmarkComparison: result.value.benchmarkAnalytics.comparison
             .available
             ? {

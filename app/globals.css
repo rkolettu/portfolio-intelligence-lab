@@ -1022,6 +1022,232 @@ h3 {
   color: var(--text);
 }
 
+/* Phase 4 · risk, diversification and contribution */
+.risk-sort {
+  margin-top: 18px;
+}
+.capital-risk {
+  margin: 0 0 18px;
+}
+.bar-key {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+.cr-rows {
+  display: grid;
+  gap: 2px;
+}
+.cr-row {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr) 150px;
+  align-items: center;
+  gap: 14px;
+  min-height: 34px;
+  border-bottom: 1px solid var(--border);
+}
+.cr-ticker {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.cr-tag {
+  margin-left: 6px;
+  padding: 1px 5px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.cr-track {
+  position: relative;
+  height: 28px;
+}
+.cr-grid {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: rgba(244, 241, 234, 0.07);
+}
+.cr-zero {
+  background: rgba(244, 241, 234, 0.32);
+}
+.cr-bar {
+  position: absolute;
+  height: 9px;
+  border-radius: 0 4px 4px 0;
+}
+.cr-capital {
+  top: 4px;
+}
+.cr-risk {
+  top: 15px;
+}
+.cr-negative {
+  border-radius: 4px 0 0 4px;
+}
+.cr-values {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  font-size: 12px;
+  text-align: right;
+  color: var(--muted);
+}
+.cr-values strong {
+  color: var(--text);
+  font-weight: 600;
+}
+.cr-axis {
+  border-bottom: 0;
+  min-height: 22px;
+}
+.cr-axis .cr-track {
+  height: 18px;
+}
+.cr-tick {
+  position: absolute;
+  top: 2px;
+  transform: translateX(-50%);
+  font-size: 10px;
+  color: var(--faint);
+  white-space: nowrap;
+}
+.cr-values-head {
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.cr-values-head strong {
+  color: var(--muted);
+  font-weight: 500;
+}
+.risk-table td:first-child {
+  white-space: nowrap;
+}
+.risk-table tfoot td,
+.contribution-table tfoot td {
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-weight: 500;
+}
+.heatmap-figure {
+  margin: 22px 0 18px;
+}
+.diverging-legend {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  font-size: 10px;
+  color: var(--faint);
+}
+.diverging-ramp {
+  display: inline-block;
+  width: 120px;
+  height: 8px;
+  border-radius: 2px;
+}
+.heatmap-wrap {
+  max-width: 100%;
+}
+.heatmap {
+  width: auto;
+  border-collapse: separate;
+  border-spacing: 2px;
+  font-size: 11px;
+}
+.heatmap th {
+  padding: 4px 6px;
+  border: 0;
+  font-size: 10px;
+  font-weight: 600;
+  text-align: center;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.heatmap tbody th {
+  text-align: right;
+}
+.heatmap td {
+  min-width: 46px;
+  height: 34px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 2px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.heatmap-dense td {
+  min-width: 38px;
+  height: 28px;
+  font-size: 10px;
+}
+.heat-diagonal {
+  opacity: 0.55;
+}
+.heat-undefined {
+  color: var(--faint);
+  outline: 1px dashed var(--border);
+  outline-offset: -1px;
+}
+.heatmap-readout {
+  min-height: 1.6em;
+}
+.contribution-table td:nth-child(4),
+.contribution-table th:nth-child(4) {
+  width: 32%;
+}
+.rc-bar-cell {
+  position: relative;
+  height: 28px;
+}
+.rc-axis {
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  left: 50%;
+  width: 1px;
+  background: rgba(244, 241, 234, 0.32);
+}
+.rc-bar {
+  position: absolute;
+  top: 10px;
+  height: 8px;
+  border-radius: 0 4px 4px 0;
+  background: #3987e5;
+}
+.rc-negative {
+  border-radius: 4px 0 0 4px;
+}
+@media (max-width: 800px) {
+  .cr-row {
+    grid-template-columns: 70px minmax(0, 1fr);
+    row-gap: 2px;
+    padding: 6px 0;
+  }
+  .cr-values {
+    grid-column: 2;
+    grid-template-columns: auto auto;
+    justify-content: space-between;
+  }
+  .cr-axis .cr-values {
+    display: none;
+  }
+  .contribution-table td:nth-child(4),
+  .contribution-table th:nth-child(4) {
+    width: 30%;
+    min-width: 80px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;

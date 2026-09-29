@@ -71,3 +71,6 @@ export const decimal = (value: number) =>
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(value);
+/** Percentage points with an explicit sign (arithmetic contributions). */
+export const percentagePoints = (value: number) =>
+  `${value > 0 ? "+" : value < 0 ? "−" : ""}${Math.abs(value * 100).toFixed(2)} pp`;

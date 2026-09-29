@@ -14,6 +14,7 @@ import { MetricStrip } from "@/components/metrics/MetricStrip";
 import { GrowthChart } from "@/components/charts/GrowthChart";
 import { DrawdownLab } from "@/components/drawdown/DrawdownLab";
 import { BenchmarkSection } from "@/components/benchmark/BenchmarkSection";
+import { RiskSection } from "@/components/risk/RiskSection";
 import { money, percent, timestamp } from "@/lib/utils/format";
 import type { BacktestResult } from "@/lib/types/analytics";
 import type {
@@ -615,10 +616,23 @@ export function PortfolioWorkspace({ today }: { today: string }) {
               </p>
             )}
           </section>
+          <section className="results" aria-labelledby="risk-title">
+            <div className="section-heading">
+              <div>
+                <p className="eyebrow">04 / Risk</p>
+                <h2 id="risk-title">What drives portfolio risk.</h2>
+              </div>
+              <span className="tag">Target weights · common sample</span>
+            </div>
+            <RiskSection
+              risk={result.riskAnalytics}
+              performance={result.performance}
+            />
+          </section>
           <section className="results" aria-labelledby="benchmark-title">
             <div className="section-heading">
               <div>
-                <p className="eyebrow">04 / Benchmark</p>
+                <p className="eyebrow">05 / Benchmark</p>
                 <h2 id="benchmark-title">
                   Relative to {result.benchmarkAnalytics.ticker}.
                 </h2>
@@ -630,7 +644,7 @@ export function PortfolioWorkspace({ today }: { today: string }) {
           <section className="results" aria-labelledby="drawdowns-title">
             <div className="section-heading">
               <div>
-                <p className="eyebrow">05 / Drawdowns</p>
+                <p className="eyebrow">06 / Drawdowns</p>
                 <h2 id="drawdowns-title">Peak-to-trough losses.</h2>
               </div>
               <span className="tag">From compounded wealth</span>
@@ -643,7 +657,7 @@ export function PortfolioWorkspace({ today }: { today: string }) {
           <section className="results" aria-labelledby="results-title">
             <div className="section-heading">
               <div>
-                <p className="eyebrow">06 / Historical ledger</p>
+                <p className="eyebrow">07 / Historical ledger</p>
                 <h2 id="results-title">A traceable return ledger.</h2>
               </div>
               <span className="tag">
@@ -720,6 +734,18 @@ export function PortfolioWorkspace({ today }: { today: string }) {
                 returns, annualized × 252. Geometric CAGR and cumulative
                 comparisons and benchmark drawdown require continuous coverage.
               </p>
+              <p>
+                Risk ({result.riskAnalytics.methodologyVersion}): one common
+                sample of daily adjusted-price returns across all risky holdings
+                feeds a sample covariance matrix (annualized × 252),
+                correlations, standalone volatilities and the Euler
+                decomposition of √(w′Σw) at target weights. CASH is outside the
+                matrix and treated as locally riskless. Fewer than 60 common
+                observations make covariance-based risk unavailable; 60–251 are
+                flagged as limited. Return contribution uses each
+                interval&rsquo;s actual beginning weight and is arithmetic, not
+                linked attribution.
+              </p>
               <ul>
                 {result.metadata.warnings.map((w) => (
                   <li key={w}>{w}</li>
@@ -780,7 +806,7 @@ export function PortfolioWorkspace({ today }: { today: string }) {
       <section className="current-context" aria-labelledby="context-title">
         <div className="section-heading">
           <div>
-            <p className="eyebrow">07 / Separate current context</p>
+            <p className="eyebrow">08 / Separate current context</p>
             <h2 id="context-title">Latest observations.</h2>
           </div>
           <span className="muted">Excluded from the historical engine</span>

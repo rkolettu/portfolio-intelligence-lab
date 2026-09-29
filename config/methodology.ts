@@ -41,3 +41,18 @@ export const BENCHMARK_METHODOLOGY = {
   minimumRegressionRows: 3,
   shortSampleReturns: 252,
 } as const;
+
+/** Phase 4 risk conventions (separate version; Phase 1–3 unchanged). */
+export const RISK_METHODOLOGY = {
+  version: "risk-v1",
+  label:
+    "Risk Contribution at Target Weights — CASH treated as locally riskless",
+  riskAnnualization: METHODOLOGY.riskAnnualization,
+  /** Common observations: < 60 insufficient, 60–251 limited, ≥ 252 normal. */
+  minimumObservations: 60,
+  normalObservations: 252,
+  /** Relative tolerance for zero variance / rank deficiency (× matrix scale). */
+  zeroTolerance: 1e-12,
+  /** Relative tolerance for eigenvalue-based PSD and singularity diagnostics. */
+  eigenTolerance: 1e-10,
+} as const;

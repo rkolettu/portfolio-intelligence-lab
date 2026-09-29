@@ -108,6 +108,43 @@ Beta, correlation, active return, tracking error and IR need at least 2 aligned 
 
 CAPM alpha against a chosen ETF is a single-factor excess-return intercept relative to that proxy, not evidence of skill. No significance tests are reported.
 
+## Portfolio risk, diversification and contribution (Phase 4, `risk-v1`)
+
+**Common-date asset alignment.** `alignHoldings` (`lib/backtest/alignment.ts`) builds one canonical sample of daily arithmetic returns for every positive-weight risky holding. The returns are the ledger's adjusted-price ratios on consecutive covered sessions. An interval is kept only when every risky holding has a valid return on it, so each covariance cell, correlation, standalone volatility and risk contribution uses the same observations. There are no pairwise samples, no forward-fill and no returns across missing sessions. Phase 1 coverage already rejects interior gaps, so for a valid backtest this sample equals the full ledger from the latest risky holding's effective start. The sample records start, end, count, tickers (portfolio order) and an interval-set hash.
+
+**Thresholds.** Fewer than 60 common observations makes covariance-based risk unavailable: covariance, correlation, standalone and target volatility, MRC/CRC/PCR, weighted volatility and diversification ratio. 60–251 is shown as limited history; 252+ is normal. Capital concentration and return contribution do not depend on this sample.
+
+**Covariance and annualization.** `Σ_daily` is the sample (n − 1) covariance matrix, computed once per upper-triangle cell and mirrored, so it is exactly symmetric. `Σ_annual = 252 × Σ_daily`. Diagonals equal each holding's sample variance. Eigenvalues (cyclic Jacobi) confirm positive semidefiniteness. Roundoff-sized negative eigenvalues (≥ −1e-10 × the largest) are tolerated; larger ones make the covariance family unavailable with the reason and are never repaired. A rank-deficient matrix (duplicate, perfectly correlated or constant holdings) is disclosed as singular; target-weight risk remains defined. Historical sample covariance describes the window; it is not a forecast.
+
+**Target-weight risk contribution ("Risk Contribution at Target Weights — CASH treated as locally riskless").** `w` is the configured target weight of each risky holding, not renormalized to the risky sleeve.
+
+- `σ_p = √(w′Σ_annual w)`
+- `MRC_i = (Σ_annual w)_i / σ_p`
+- `CRC_i = w_i · MRC_i`
+- `PCR_i = CRC_i / σ_p`
+- Identities: `Σ CRC = σ_p` and `Σ PCR = 1`. The residuals are recorded; a PCR residual above 1e-9 is an error.
+- MRC, CRC and PCR may be negative (hedges) or exceed 100%. They are never clamped.
+- CASH sits outside Σ with zero volatility and covariance, so its MRC, CRC and PCR are exactly 0. Moving capital into CASH scales `σ_p` but leaves risky PCR and the diversification ratio unchanged.
+- Roundoff: `w′Σw` within ±1e-12 × (Σ|w_i|σ_i)² is zero volatility, and a materially negative value is reported as invalid.
+- At zero target volatility (all CASH, a perfect hedge, or constant assets), MRC, PCR and the diversification ratio are unavailable.
+
+This is a model snapshot at target weights. It is not the average risk of the drifting historical portfolio, and it differs from Phase 2 realized volatility, which uses drifted weights and CASH's actual accrual.
+
+**Standalone volatility and correlation.** `vol_i = sampleStdDev(r_i) × √252`, equal to √diag(Σ_annual). Pearson correlation is derived from the same Σ with an exact diagonal of 1. A holding whose daily dispersion is ≤ 1e-12 × its largest absolute return (the Phase 2 rule) is constant: volatility 0, and its row and column undefined rather than forced to 1. Roundoff past ±1 is clamped; anything larger is an error. The highest and lowest pairs exclude self-pairs and undefined cells, with ties broken by portfolio order. Holding beta reuses Phase 3's beta on the Phase 3 benchmark-aligned sample, which is disclosed and may differ from the covariance sample.
+
+**Diversification and concentration.**
+
+- `WA Vol = Σ w_i · vol_i` (CASH vol 0).
+- `DR = WA Vol / σ_p`: the benefit from correlations below +1 among risky assets.
+- `HHI = Σ w_i²` over all capital weights including CASH; effective holdings = `1 / HHI`.
+- Largest position; top-3 concentration (ties by portfolio order).
+
+Effective holdings measures capital concentration, not correlation diversification, and is not a complete diversification score.
+
+**Return contribution.** `contribution_(i,t) = w_(i,t−1) · r_(i,t)` uses the ledger's actual beginning-of-interval weight: drifted within a month, and reset to targets after a month-end close. It never uses static targets. CASH contributes its weight × prior-known accrual. `Σ_i contribution_(i,t) = portfolioReturn_t` exactly; the maximum residual is recorded. The period figure is the arithmetic sum over intervals in percentage points, and holdings add up to the sum of daily portfolio returns, not the compounded cumulative return. It is labeled "Daily / Period Arithmetic Return Contribution" and is not Brinson, allocation/selection or linked geometric attribution.
+
+**Target weights vs historical drifted weights.** Risk decomposition uses configured targets (what the allocation is designed to hold). Return contribution uses the historical drifted/reset weights (what the backtest actually held each day). The two are never mixed.
+
 ## Reproducibility and limitations
 
 Results contain normalized source observations, UTC sessions, original configuration, finalized-data cutoff, fetch/source provenance, versioned methodology/calendar, interval-set hash and SHA-256 snapshot identity. Replaying `simulate({...result.snapshot, config: result.config, now: result.metadata.generatedAt})` reproduces the ledger. No durable server snapshot retention is claimed; future provider revisions can change newly fetched results. Hashes alone cannot recover old data. Production redistribution and retention permissions remain a release gate.

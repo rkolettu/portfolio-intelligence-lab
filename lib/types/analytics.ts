@@ -111,6 +111,102 @@ export type RiskContribution = {
   component: Metric;
   percentage: Metric;
 };
+/** Canonical risky-holding return sample (server-side; rows are not shipped). */
+export type HoldingAlignment = {
+  /** Positive-weight risky tickers in portfolio order (CASH excluded). */
+  tickers: string[];
+  /** Target weights of those tickers, NOT renormalized to the risky sleeve. */
+  weights: number[];
+  cashWeight: number;
+  /** One row per interval on which every risky holding has a valid return. */
+  rows: { startDate: string; date: string; returns: number[] }[];
+  sample: Sample | null;
+};
+export type RiskSampleStatus = "normal" | "limited" | "insufficient";
+export type CovarianceDiagnostics = {
+  symmetric: boolean;
+  /** Eigenvalues of the annualized matrix (ascending). */
+  minEigenvalue: number;
+  maxEigenvalue: number;
+  /** Rank-deficient within tolerance: duplicate, perfectly correlated or constant holdings. */
+  singular: boolean;
+};
+export type CorrelationPair = { a: string; b: string; correlation: number };
+export type HoldingRisk = RiskContribution & {
+  weight: number;
+  /** CASH is modeled as locally riskless and kept outside the covariance matrix. */
+  riskless: boolean;
+  volatility: Metric;
+  /** Holding beta on the Phase 3 benchmark-aligned sample (may be shorter). */
+  beta: Metric;
+};
+export type ReturnContributionRow = {
+  ticker: string;
+  /** sum_t w_(i,t-1) × r_(i,t), arithmetic, in return units. */
+  periodContribution: number;
+  /** Mean beginning-of-interval (drifted/reset) weight over the sample. */
+  averageWeight: number;
+};
+/** Phase 4 risk, diversification and contribution layer. */
+export type RiskAnalytics = {
+  methodologyVersion: string;
+  label: string;
+  sample:
+    | {
+        available: true;
+        sample: Sample;
+        status: RiskSampleStatus;
+        tickers: string[];
+        cashWeight: number;
+        notes: string[];
+      }
+    | { available: false; reason: string; observationCount: number };
+  covariance:
+    | {
+        available: true;
+        tickers: string[];
+        daily: number[][];
+        annual: number[][];
+        diagnostics: CovarianceDiagnostics;
+      }
+    | { available: false; reason: string };
+  correlation:
+    | {
+        available: true;
+        tickers: string[];
+        /** null where a holding's returns are constant (correlation undefined). */
+        matrix: (number | null)[][];
+        highest: CorrelationPair | null;
+        lowest: CorrelationPair | null;
+        undefinedTickers: string[];
+      }
+    | { available: false; reason: string };
+  portfolio: {
+    /** Target-weight model volatility sqrt(w'Σw), distinct from realized volatility. */
+    volatility: Metric;
+    variance: Metric;
+    weightedAverageVolatility: Metric;
+    diversificationRatio: Metric;
+    /** |sum(CRC) − σ| and |sum(PCR) − 1| as computed (identity checks). */
+    identityResiduals: { crc: number; pcr: number } | null;
+  };
+  /** Every positive-weight holding, CASH included, in portfolio order. */
+  holdings: HoldingRisk[];
+  concentration: {
+    hhi: number;
+    effectiveHoldings: number;
+    largest: { ticker: string; weight: number };
+    top3: { tickers: string[]; weight: number };
+  };
+  returnContribution: {
+    sample: Sample;
+    rows: ReturnContributionRow[];
+    /** sum_t portfolioReturn_t — what arithmetic contributions add up to. */
+    sumOfDailyReturns: number;
+    /** max_t |sum_i contribution_(i,t) − portfolioReturn_t|. */
+    maxIdentityResidual: number;
+  };
+};
 /** A peak-to-recovery episode on the compounded daily-close wealth series. */
 export type DrawdownEpisode = {
   /** Last date at the high-water mark before wealth fell below it. */
@@ -210,6 +306,7 @@ export type BacktestResult = {
   benchmark: Result<BenchmarkPath>;
   performance: PerformanceSummary;
   benchmarkAnalytics: BenchmarkAnalytics;
+  riskAnalytics: RiskAnalytics;
   metadata: MethodologyMetadata;
   snapshot: {
     prices: HistoricalSeries[];

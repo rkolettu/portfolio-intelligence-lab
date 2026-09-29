@@ -350,3 +350,49 @@ test("benchmark section and drawdown series toggle use one aligned comparison sa
   await expect(chart.locator(".chart-legend")).toContainText("Portfolio");
   await expect(chart.locator(".chart-legend")).toContainText("SPY");
 });
+
+test("risk section: overview, capital vs risk sorting, holding table and return contribution", async ({
+  page,
+}) => {
+  await showLongResult(page);
+  const section = page.locator("section:has(#risk-title)");
+  await expect(
+    section.getByRole("heading", { name: "What drives portfolio risk." }),
+  ).toBeVisible();
+  const ra = longResult.riskAnalytics;
+  if (!ra.sample.available) throw new Error("fixture must have a risk sample");
+  await expect(
+    section.getByText("Common observations", { exact: true }).locator(".."),
+  ).toContainText(String(ra.sample.sample.returnCount));
+  const overview = section.locator('dl[aria-label="Risk overview"]');
+  for (const label of [
+    "Portfolio volatility",
+    "Weighted standalone volatility",
+    "Diversification ratio",
+    "Effective holdings",
+    "Top-3 concentration",
+  ])
+    await expect(
+      overview.getByRole("term").filter({ hasText: new RegExp(`^${label}`) }),
+    ).toBeVisible();
+  await expect(overview).not.toContainText("N/A");
+  // Capital vs Risk rows follow the sort control.
+  const tickers = () =>
+    section
+      .locator(".cr-row:not(.cr-axis) .cr-ticker")
+      .evaluateAll((els) => els.map((e) => e.childNodes[0].textContent));
+  expect(await tickers()).toEqual(["QQQ", "CASH"]);
+  await section.getByRole("radio", { name: "Risk contribution" }).check();
+  expect((await tickers())[0]).toBe("QQQ");
+  await expect(section.locator(".cr-row", { hasText: "CASH" })).toContainText(
+    "riskless",
+  );
+  await expect(
+    section.getByRole("table", { name: /Holding risk at target weights/ }),
+  ).toContainText("= σ");
+  await expect(
+    section.getByText("sum of daily portfolio returns", { exact: true }),
+  ).toBeVisible();
+  for (const part of await section.locator("dl.kpi-strip, table, figure").all())
+    await expect(part).not.toContainText(/NaN|Infinity/);
+});

@@ -17,6 +17,7 @@ import { alignBenchmark, benchmarkPath } from "./alignment";
 import { CALENDAR_VERSION } from "./calendar";
 import { summarizePerformance } from "@/lib/analytics/summary";
 import { summarizeBenchmark } from "@/lib/analytics/benchmarkSummary";
+import { summarizeRisk } from "@/lib/analytics/riskSummary";
 import { FEDERAL_CALENDAR_VERSION } from "@/lib/treasury-data/normalize";
 import { snapshotHash, sampleMetadata } from "./metadata";
 export type SimulationInput = {
@@ -154,6 +155,12 @@ export function simulate(input: SimulationInput): BacktestResult {
       ticker: config.benchmark,
       alignment,
       path: benchmark,
+    }),
+    riskAnalytics: summarizeRisk({
+      holdings,
+      ledger,
+      sample,
+      benchmarkAlignment: alignment,
     }),
     performance: summarizePerformance({
       initialWealth: METHODOLOGY.initialWealth,

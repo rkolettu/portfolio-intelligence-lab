@@ -2,8 +2,10 @@ import type {
   AlignedInterval,
   BenchmarkAlignment,
   BenchmarkPath,
+  HoldingAlignment,
   LedgerRow,
 } from "@/lib/types/analytics";
+import type { PortfolioHolding } from "@/lib/types/portfolio";
 import type { HistoricalSeries, Result, Session } from "@/lib/types/data";
 import { arithmeticReturn, compoundWealth } from "@/lib/analytics/returns";
 import { normalizePrices } from "@/lib/market-data/normalize";
@@ -179,4 +181,53 @@ export function benchmarkPath(
   } catch (error) {
     return errorResult(error);
   }
+}
+
+/** Canonical risky-holding sample: the one common valid-interval set that drives
+ * covariance, correlation, standalone volatility and risk contribution. Holding
+ * returns come from the ledger (adjusted-price ratios on consecutive covered
+ * sessions); an interval is kept only when EVERY risky holding has a finite return
+ * on it, so no matrix cell ever uses a different or pairwise sample. CASH stays
+ * outside the risky matrix. `holdings` must be the ledger's positive-weight list. */
+export function alignHoldings(
+  holdings: readonly PortfolioHolding[],
+  ledger: readonly LedgerRow[],
+): HoldingAlignment {
+  const risky = holdings
+    .map((h, index) => ({ ...h, index }))
+    .filter((h) => h.ticker !== "CASH" && h.weight > 0);
+  const rows = ledger.flatMap((row) => {
+    const returns = risky.map((h) => row.holdingReturns[h.index]);
+    return risky.length && returns.every((r) => Number.isFinite(r))
+      ? [{ startDate: row.startDate, date: row.date, returns }]
+      : [];
+  });
+  const first = rows[0];
+  const last = rows.at(-1);
+  const inside = first
+    ? ledger.filter((r) => r.date > first.startDate && r.date <= last!.date)
+    : [];
+  const excluded = inside.length - rows.length;
+  return {
+    tickers: risky.map((h) => h.ticker),
+    weights: risky.map((h) => h.weight),
+    cashWeight: holdings
+      .filter((h) => h.ticker === "CASH")
+      .reduce((a, h) => a + h.weight, 0),
+    rows,
+    sample: first
+      ? {
+          startDate: first.startDate,
+          endDate: last!.date,
+          returnCount: rows.length,
+          intervalSetId: snapshotHash(rows.map((r) => [r.startDate, r.date])),
+          excludedIntervalCount: excluded,
+          excludedReasons: excluded
+            ? [
+                `${excluded} interval${excluded === 1 ? "" : "s"} lack a valid return for at least one risky holding and are excluded from every matrix cell.`,
+              ]
+            : [],
+        }
+      : null,
+  };
 }
