@@ -171,7 +171,7 @@ it("growth chart disables the benchmark with the Phase 1 reason when its path is
     (screen.getByRole("checkbox", { name: /VT benchmark/ }) as HTMLInputElement)
       .disabled,
   ).toBe(true);
-  expect(screen.getByText(/Benchmark path unavailable/)).toBeTruthy();
+  expect(screen.getByText(/Benchmark Data Unavailable/)).toBeTruthy();
 });
 
 it("display downsampling keeps endpoints, every bucket extreme and required dates", () => {

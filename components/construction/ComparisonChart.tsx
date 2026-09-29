@@ -13,8 +13,8 @@ import {
   type TooltipValueType,
 } from "recharts";
 import type { WealthPoint } from "@/lib/types/analytics";
-import { axisTicks, downsample, monthEndRows } from "@/lib/charts/series";
-import { axisDate, axisMoney, money, shortDate } from "@/lib/utils/format";
+import { axisTicks, sessionTicks, downsample, monthEndRows } from "@/lib/charts/series";
+import { axisDate, axisDay, axisMoney, money, shortDate } from "@/lib/utils/format";
 import { CHART, usePrefersReducedMotion } from "@/components/charts/theme";
 
 type Row = { date: string; current: number; proposed: number };
@@ -43,7 +43,7 @@ function RowTooltip({
   );
 }
 
-const endLabel = (last: number, name: string, color: string) =>
+const endLabel = (last: number, name: string, color: string, dy = 4) =>
   function EndLabel({ x, y, index, value }: LabelProps) {
     if (index !== last || x === undefined || y === undefined) return <g />;
     return (
@@ -56,7 +56,7 @@ const endLabel = (last: number, name: string, color: string) =>
           stroke={CHART.surface}
           strokeWidth={2}
         />
-        <text x={Number(x) + 9} y={Number(y) + 4} className="end-label">
+        <text x={Number(x) + 9} y={Number(y) + dy} className="end-label">
           {name} {axisMoney(Number(value))}
         </text>
       </g>
@@ -81,7 +81,10 @@ export function ComparisonChart({
     proposed: proposed[i].wealth,
   }));
   const data = downsample(full, 640, (r) => [r.current, r.proposed]);
-  const { ticks, unit } = axisTicks(data.map((d) => d.date));
+  const dates = data.map((d) => d.date);
+  const short = full.length < 70;
+  const { ticks: periodTicks, unit } = axisTicks(dates);
+  const ticks = short ? sessionTicks(dates) : periodTicks;
   const last = full.at(-1)!;
   return (
     <figure
@@ -122,7 +125,7 @@ export function ComparisonChart({
         <ResponsiveContainer width="100%" height="100%">
           <LineChart
             data={data}
-            margin={{ top: 12, right: 112, bottom: 4, left: 4 }}
+            margin={{ top: 24, right: 112, bottom: 4, left: 4 }}
           >
             <CartesianGrid vertical={false} stroke={CHART.grid} />
             <XAxis
@@ -130,7 +133,7 @@ export function ComparisonChart({
               ticks={ticks}
               interval="preserveStartEnd"
               minTickGap={12}
-              tickFormatter={(d: string) => axisDate(d, unit)}
+              tickFormatter={(d: string) => short ? axisDay(d) : axisDate(d, unit)}
               tickLine={false}
               axisLine={{ stroke: CHART.axis }}
               tick={{ fill: CHART.tick, fontSize: 11 }}
@@ -158,7 +161,7 @@ export function ComparisonChart({
               activeDot={{ r: 4, stroke: CHART.surface, strokeWidth: 2 }}
               isAnimationActive={!reduced}
               animationDuration={CHART.animationMs}
-              label={endLabel(data.length - 1, "Current", CHART.portfolio)}
+              label={endLabel(data.length - 1, "Current", CHART.portfolio, last.current >= last.proposed ? -7 : 17)}
             />
             <Line
               name="Proposed"
@@ -169,7 +172,7 @@ export function ComparisonChart({
               activeDot={{ r: 4, stroke: CHART.surface, strokeWidth: 2 }}
               isAnimationActive={!reduced}
               animationDuration={CHART.animationMs}
-              label={endLabel(data.length - 1, "Proposed", CHART.proposed)}
+              label={endLabel(data.length - 1, "Proposed", CHART.proposed, last.current >= last.proposed ? 17 : -7)}
             />
           </LineChart>
         </ResponsiveContainer>

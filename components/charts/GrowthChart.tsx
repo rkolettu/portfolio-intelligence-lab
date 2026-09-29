@@ -16,12 +16,13 @@ import {
 import type { BacktestResult } from "@/lib/types/analytics";
 import {
   axisTicks,
+  sessionTicks,
   downsample,
   growthData,
   monthEndRows,
   type GrowthDatum,
 } from "@/lib/charts/series";
-import { axisDate, axisMoney, money, shortDate } from "@/lib/utils/format";
+import { axisDate, axisDay, axisMoney, money, shortDate } from "@/lib/utils/format";
 import { CHART, usePrefersReducedMotion } from "./theme";
 
 const MAX_POINTS = 640;
@@ -50,7 +51,7 @@ function GrowthTooltip({
   );
 }
 
-const endLabel = (lastIndex: number, name: string, color: string) =>
+const endLabel = (lastIndex: number, name: string, color: string, dy = 4) =>
   function EndLabel({ x, y, index, value }: LabelProps) {
     if (index !== lastIndex || x === undefined || y === undefined) return <g />;
     return (
@@ -63,7 +64,7 @@ const endLabel = (lastIndex: number, name: string, color: string) =>
           stroke={CHART.surface}
           strokeWidth={2}
         />
-        <text x={Number(x) + 9} y={Number(y) + 4} className="end-label">
+        <text x={Number(x) + 9} y={Number(y) + dy} className="end-label">
           {name} {axisMoney(Number(value))}
         </text>
       </g>
@@ -79,7 +80,10 @@ export function GrowthChart({ result }: { result: BacktestResult }) {
   const data = downsample<GrowthDatum>(full, MAX_POINTS, (d) =>
     d.benchmark === undefined ? [d.portfolio] : [d.portfolio, d.benchmark],
   );
-  const { ticks, unit } = axisTicks(data.map((d) => d.date));
+  const dates = data.map((d) => d.date);
+  const short = full.length < 70;
+  const { ticks: periodTicks, unit } = axisTicks(dates);
+  const ticks = short ? sessionTicks(dates) : periodTicks;
   const first = full[0];
   const last = full.at(-1)!;
   const ticker = result.config.benchmark;
@@ -135,21 +139,22 @@ export function GrowthChart({ result }: { result: BacktestResult }) {
       )}
       {!benchmarkOk && (
         <p className="hint chart-note">
-          Benchmark path unavailable: {result.benchmark.error.message}
+          Benchmark Data Unavailable: {result.benchmark.error.message}
         </p>
       )}
       <div className="chart-frame" style={{ height: 340 }}>
         <ResponsiveContainer width="100%" height="100%">
           <LineChart
             data={data}
-            margin={{ top: 12, right: 112, bottom: 4, left: 4 }}
+            margin={{ top: 24, right: 112, bottom: 4, left: 4 }}
           >
             <CartesianGrid vertical={false} stroke={CHART.grid} />
             <XAxis
               dataKey="date"
               ticks={ticks}
-              interval={0}
-              tickFormatter={(d: string) => axisDate(d, unit)}
+              interval="preserveStartEnd"
+              minTickGap={12}
+              tickFormatter={(d: string) => short ? axisDay(d) : axisDate(d, unit)}
               tickLine={false}
               axisLine={{ stroke: CHART.axis }}
               tick={{ fill: CHART.tick, fontSize: 11 }}
@@ -177,7 +182,7 @@ export function GrowthChart({ result }: { result: BacktestResult }) {
               activeDot={{ r: 4, stroke: CHART.surface, strokeWidth: 2 }}
               isAnimationActive={!reduced}
               animationDuration={CHART.animationMs}
-              label={endLabel(data.length - 1, "Portfolio", CHART.portfolio)}
+              label={endLabel(data.length - 1, "Portfolio", CHART.portfolio, withBenchmark ? (last.portfolio >= last.benchmark! ? -7 : 17) : 4)}
             />
             {withBenchmark && (
               <Line
@@ -189,7 +194,7 @@ export function GrowthChart({ result }: { result: BacktestResult }) {
                 activeDot={{ r: 4, stroke: CHART.surface, strokeWidth: 2 }}
                 isAnimationActive={!reduced}
                 animationDuration={CHART.animationMs}
-                label={endLabel(data.length - 1, ticker, CHART.benchmark)}
+                label={endLabel(data.length - 1, ticker, CHART.benchmark, last.portfolio >= last.benchmark! ? 17 : -7)}
               />
             )}
           </LineChart>

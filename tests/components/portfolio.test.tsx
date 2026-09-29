@@ -71,7 +71,7 @@ it("keeps history when optional current requests fail and marks results stale af
   fireEvent.click(
     screen.getByRole("button", { name: /Analyze Sample Portfolio/ }),
   );
-  expect(await screen.findByText("A traceable return ledger.")).toBeTruthy();
+  expect(await screen.findByText("Methodology & data lineage.")).toBeTruthy();
   expect(await screen.findByText(/Current quotes unavailable/)).toBeTruthy();
   fireEvent.change(screen.getByLabelText("Ticker 1"), {
     target: { value: "VT" },
@@ -108,7 +108,7 @@ it("discards obsolete responses even when an upstream fetch ignores abort", asyn
   await act(async () => {
     completions[1](Response.json({ ok: true, value: result }));
   });
-  expect(await screen.findByText("A traceable return ledger.")).toBeTruthy();
+  expect(await screen.findByText("Methodology & data lineage.")).toBeTruthy();
   await act(async () => {
     completions[0](
       Response.json({

@@ -10,6 +10,8 @@
   --border: rgba(244, 241, 234, 0.14);
   --accent: #9eb9f6;
   --warning: #e6bc82;
+  --negative: #f0a08f;
+  --positive: #8fcfa9;
   --radius: 6px;
 }
 * {
@@ -123,7 +125,9 @@ h2 {
   text-transform: uppercase;
 }
 .brand {
+  flex: none;
   text-decoration: none;
+  white-space: nowrap;
 }
 .brand span {
   color: var(--faint);
@@ -138,8 +142,15 @@ h2 {
 }
 .site-header nav {
   display: flex;
-  gap: 22px;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
   font-size: 12px;
+}
+.site-header nav a {
+  white-space: nowrap;
 }
 .site-header nav a {
   text-decoration: none;
@@ -598,9 +609,6 @@ footer > div {
   .site-header nav a {
     white-space: nowrap;
   }
-  .header-status {
-    display: none;
-  }
   .intro {
     grid-template-columns: 1fr;
     gap: 24px;
@@ -725,8 +733,9 @@ h3 {
   display: inline-flex;
 }
 .info-trigger {
-  width: 15px;
-  height: 15px;
+  width: 24px;
+  height: 24px;
+  flex: none;
   padding: 0;
   border: 1px solid var(--border);
   border-radius: 50%;
@@ -742,7 +751,7 @@ h3 {
   color: var(--text);
 }
 .tip {
-  position: absolute;
+  position: fixed;
   z-index: 20;
   top: calc(100% + 8px);
   left: -8px;
@@ -761,8 +770,17 @@ h3 {
   /* Hidden tips take no layout space (no page overflow); aria-describedby still
      resolves display:none content for assistive technology. */
   display: none;
-  pointer-events: none;
+  pointer-events: auto;
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
 }
+/* Bridge the small hover gap above and below the trigger. */
+.info-tip::after {
+  content: "";
+  position: absolute;
+  inset: -8px;
+}
+.info-trigger { position: relative; z-index: 1; }
 .info-tip:hover .tip,
 .info-tip:focus-within .tip {
   display: block;
@@ -836,9 +854,10 @@ h3 {
     opacity: 0;
   }
 }
-.chart-frame .recharts-surface:focus,
-.chart-frame .recharts-wrapper:focus {
-  outline: none;
+.chart-frame .recharts-surface:focus-visible,
+.chart-frame .recharts-wrapper:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 .end-label {
   fill: var(--text);
@@ -1413,8 +1432,9 @@ h3 {
 }
 .constraint-table input[type="checkbox"],
 .cash-choice input[type="radio"] {
-  width: 15px;
-  height: 15px;
+  width: 24px;
+  height: 24px;
+  flex: none;
   min-height: 15px;
   padding: 0;
   flex: none;
@@ -1422,4 +1442,364 @@ h3 {
 }
 .cash-choice label {
   white-space: nowrap;
+}
+
+/* Phase 7 · one product: notices, badges, loading, drawer, navigation */
+.hero-actions {
+  margin-top: 16px;
+  flex-wrap: wrap;
+}
+.hero-actions > button {
+  white-space: nowrap;
+}
+.status-notice {
+  margin: 14px 0;
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--accent);
+  border-radius: 4px;
+  background: var(--surface);
+  font-size: 12px;
+}
+.status-notice.tone-warning {
+  border-left-color: var(--warning);
+}
+.status-notice.tone-error {
+  border-left-color: var(--negative);
+}
+.status-notice.tone-ok {
+  border-left-color: var(--positive);
+}
+.status-title {
+  margin: 0 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+.tone-warning > .status-title,
+.coverage-notice h4 {
+  color: var(--warning);
+}
+.tone-error > .status-title {
+  color: var(--negative);
+}
+.status-body p {
+  margin: 0 0 6px;
+}
+.status-body p:last-child {
+  margin-bottom: 0;
+}
+.status-actions {
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+.state-badge {
+  display: inline-block;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+.state-badge.tone-ok {
+  color: var(--positive);
+  border-color: rgba(143, 207, 169, 0.4);
+}
+.state-badge.tone-warning {
+  color: var(--warning);
+  border-color: rgba(230, 188, 130, 0.45);
+}
+.state-badge.tone-error {
+  color: var(--negative);
+  border-color: rgba(240, 160, 143, 0.45);
+}
+.state-badge.tone-info {
+  color: var(--accent);
+  border-color: rgba(158, 185, 246, 0.4);
+}
+.loading {
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.loading-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 6px;
+  font-size: 12px;
+}
+.loading-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+.skeleton {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+.skeleton span {
+  display: block;
+  height: 8px;
+  border-radius: 3px;
+  background: rgba(244, 241, 234, 0.07);
+  animation: pulse 1.6s ease-in-out infinite;
+}
+input[aria-invalid="true"] {
+  border-color: var(--negative);
+}
+.info-tip[data-dismissed] .tip {
+  display: none !important;
+}
+.nav-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font-size: inherit;
+  white-space: nowrap;
+}
+.nav-button:hover:not(:disabled) {
+  background: none;
+  color: var(--text);
+}
+.method-lead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+}
+.method-warnings {
+  padding-left: 18px;
+}
+/* Methodology drawer: native modal dialog anchored to the right edge. */
+.methodology-drawer {
+  position: fixed;
+  inset: 0 0 0 auto;
+  width: min(720px, 100vw);
+  max-width: 100vw;
+  height: 100dvh;
+  max-height: 100dvh;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-left: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  overflow: hidden;
+}
+.methodology-drawer[open] {
+  display: flex;
+  flex-direction: column;
+  animation: drawer-in 200ms ease-out both;
+}
+.methodology-drawer::backdrop {
+  background: rgba(0, 0, 0, 0.55);
+}
+@keyframes drawer-in {
+  from {
+    transform: translateX(24px);
+    opacity: 0;
+  }
+}
+.method-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 22px 28px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.method-head .eyebrow {
+  margin-bottom: 8px;
+}
+.method-head h2 {
+  font-size: 20px;
+}
+.method-close {
+  flex: none;
+}
+.method-toc {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  padding: 10px 28px;
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+}
+.method-toc a {
+  color: var(--muted);
+  text-decoration: none;
+}
+.method-toc a:hover {
+  color: var(--text);
+}
+.method-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px 28px 28px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.method-topic {
+  padding: 18px 0 8px;
+  border-bottom: 1px solid var(--border);
+  scroll-margin-top: 8px;
+}
+.method-topic h3 {
+  margin-bottom: 10px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+.method-topic strong {
+  color: var(--text);
+  font-weight: 600;
+}
+.method-topic ul {
+  padding-left: 18px;
+  margin: 0 0 12px;
+}
+.method-topic li + li {
+  margin-top: 6px;
+}
+.method-facts {
+  display: grid;
+  gap: 0;
+  margin: 8px 0 12px;
+  border-top: 1px solid var(--border);
+}
+.method-facts > div {
+  display: grid;
+  grid-template-columns: 170px minmax(0, 1fr);
+  gap: 12px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border);
+}
+.method-facts dt {
+  color: var(--faint);
+  font-size: 11px;
+}
+.method-facts dd {
+  margin: 0;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.method-disclaimer {
+  margin-top: 18px;
+}
+/* Current Treasury Reference: the maturity nearest the analysis horizon. */
+.curve-points {
+  margin: 16px 0 12px;
+}
+.curve-points > div {
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+}
+.curve-points dt {
+  font-size: 10px;
+  color: var(--faint);
+}
+.curve-points dd {
+  margin: 2px 0 0;
+  font-size: 20px;
+  font-weight: 500;
+}
+.curve-points .curve-selected {
+  border-color: var(--accent);
+  background: rgba(158, 185, 246, 0.06);
+}
+.curve-points .curve-selected dt {
+  color: var(--accent);
+}
+.construct-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin: 18px 0 4px;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+  font-size: 11px;
+  color: var(--faint);
+}
+.construct-steps li {
+  counter-increment: step;
+}
+.construct-steps li::before {
+  content: counter(step) " · ";
+  color: var(--muted);
+}
+.proposal > .eyebrow {
+  margin-bottom: 6px;
+}
+@media (max-width: 800px) {
+  .curve-points {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+  }
+  .curve-points dd {
+    font-size: 17px;
+  }
+  .method-head,
+  .method-toc,
+  .method-body {
+    padding-left: 18px;
+    padding-right: 18px;
+  }
+  .method-facts > div {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+  .hero-actions > button {
+    flex: 1 1 160px;
+  }
+}
+@media (max-width: 520px) {
+  /* Label/value rows keep date ranges on one line instead of splitting at hyphens. */
+  .summary-grid {
+    grid-template-columns: 1fr;
+    gap: 8px;
+    padding: 12px 0;
+  }
+  .summary-grid > div {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+  }
+  .summary-grid span {
+    flex: none;
+    margin-bottom: 0;
+  }
+  .summary-grid strong {
+    min-width: 0;
+    text-align: right;
+  }
+}
+@media (max-width: 800px) {
+  /* Compact comparison tables: headers wrap so result columns stay in view. */
+  .proposal-table th,
+  .construction-compare th,
+  .stress-table th,
+  .risk-table th,
+  .methods-table th {
+    white-space: normal;
+    vertical-align: bottom;
+    min-width: 64px;
+  }
+  td,
+  th {
+    padding: 10px 8px;
+  }
+}
+@media (max-width: 520px) {
+  /* The window dates remain in each event's detail below the table. */
+  .stress-overview th:nth-child(2),
+  .stress-overview td:nth-child(2) {
+    display: none;
+  }
 }

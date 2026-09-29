@@ -25,15 +25,11 @@ export function ReturnContribution({
       <div className="chart-head">
         <div>
           <h3 id="rc-title">
-            Daily / period arithmetic return contribution
+            Return contribution · daily / period arithmetic
             <InfoTip label="arithmetic return contribution">
-              contribution(i, t) = w(i, t−1) × r(i, t), where w(i, t−1) is the
-              holding&rsquo;s actual weight at the start of each interval —
-              drifted within the month and reset to targets after month-end
-              closes — not its static target. Period contribution sums the daily
-              values in percentage points. Holdings add up to the sum of daily
-              portfolio returns, not the compounded cumulative return. This is
-              not Brinson, allocation/selection or linked geometric attribution.
+              Each holding&rsquo;s share of daily portfolio returns, using the
+              weight it actually held that day, summed over the period. Not
+              Brinson or linked attribution.
             </InfoTip>
           </h3>
           <p id="rc-summary" className="hint">

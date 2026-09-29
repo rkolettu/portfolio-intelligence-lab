@@ -1,6 +1,19 @@
 import { PortfolioWorkspace } from "@/components/portfolio/PortfolioWorkspace";
+import { MethodologyButton } from "@/components/methodology/MethodologyDrawer";
 import { marketDate } from "@/lib/utils/dates";
 export const dynamic = "force-dynamic";
+const SECTIONS: [string, string][] = [
+  ["#overview-title", "Overview"],
+  ["#performance-title", "Performance"],
+  ["#benchmark-title", "Benchmark"],
+  ["#drawdowns-title", "Drawdowns"],
+  ["#risk-title", "Risk"],
+  ["#diversification-title", "Diversification"],
+  ["#rolling-title", "Rolling"],
+  ["#stress-title", "Stress"],
+  ["#constructor-title", "Constructor"],
+  ["#context-title", "Market"],
+];
 export default function Page() {
   return (
     <>
@@ -11,19 +24,14 @@ export default function Page() {
         <a className="brand" href="https://rishabkolettu.vercel.app/">
           Rishab Kolettu <span aria-hidden>↗</span>
         </a>
-        <span className="header-status">
-          Portfolio lab <span>/ Construction</span>
-        </span>
-        <nav aria-label="Primary">
-          <a href="#builder">Workspace</a>
-          <a href="#overview-title">Overview</a>
-          <a href="#risk-title">Risk</a>
-          <a href="#benchmark-title">Benchmark</a>
-          <a href="#drawdowns-title">Drawdowns</a>
-          <a href="#rolling-title">Rolling</a>
-          <a href="#stress-title">Stress</a>
-          <a href="#constructor-title">Constructor</a>
-          <a href="#context-title">Market context</a>
+        <nav aria-label="Sections">
+          <a href="#builder">Builder</a>
+          {SECTIONS.map(([href, label]) => (
+            <a key={href} href={href}>
+              {label}
+            </a>
+          ))}
+          <MethodologyButton className="nav-button" />
         </nav>
       </header>
       <main className="container">
@@ -36,7 +44,7 @@ export default function Page() {
           </p>
           <div>
             <span>Portfolio Intelligence &amp; Construction Lab</span>
-            <span>Phase 6 · Construction</span>
+            <span>Historical analytics · portfolio construction</span>
           </div>
         </footer>
       </main>

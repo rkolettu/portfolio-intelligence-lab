@@ -81,7 +81,7 @@ function DrawdownStats({ view, heading }: { view: View; heading: boolean }) {
     {
       label: "Maximum drawdown",
       value: pct(view.maximumDrawdown),
-      tip: "min over dates of wealth ÷ running peak − 1, on compounded daily-close wealth (the starting $10,000 counts as a peak). Intraday losses can be larger.",
+      tip: "Largest fall in daily-close wealth below its running peak; the starting $10,000 counts as a peak.",
     },
     {
       label: "Peak date",
@@ -106,7 +106,7 @@ function DrawdownStats({ view, heading }: { view: View; heading: boolean }) {
     {
       label: "Trading days to recovery",
       value: episode ? days(episode.tradingDaysToRecovery) : "—",
-      tip: "Peak → recovery in completed NYSE sessions.",
+      tip: "Peak → recovery in completed trading sessions.",
     },
     {
       label: "Current drawdown",
@@ -287,7 +287,7 @@ export function DrawdownLab({
         </fieldset>
         {!bench && benchmark && (
           <span className="hint" id="dd-bench-reason">
-            Benchmark drawdown unavailable:{" "}
+            Benchmark Data Unavailable:{" "}
             {bd && !bd.available ? bd.reason : "no benchmark path."}
           </span>
         )}

@@ -1,6 +1,8 @@
 "use client";
 import type { PerformanceSummary } from "@/lib/types/analytics";
 import {
+  count,
+  fixed,
   percent,
   ratio,
   unsignedPercent,
@@ -20,60 +22,58 @@ export function MetricStrip({
       label: "Ending value",
       metric: portfolio.endingValue,
       format: wholeMoney,
-      formula: `Indexed ${wholeMoney(performance.initialWealth)} compounded geometrically through every daily portfolio return.`,
-      footnote: (m) =>
-        `From ${wholeMoney(performance.initialWealth)} · ${m.sample.startDate}`,
+      formula: `What ${wholeMoney(performance.initialWealth)} invested at the start grew to, compounding every daily return.`,
+      footnote: () => `From ${wholeMoney(performance.initialWealth)}`,
     },
     {
       label: "Cumulative return",
       metric: portfolio.cumulativeReturn,
       format: percent,
-      formula: "Ending value ÷ starting value − 1.",
-      footnote: (m) => `${m.sample.startDate} → ${m.sample.endDate}`,
+      formula: "Total compounded return over the effective period.",
+      footnote: (m) => `Since ${m.sample.startDate}`,
     },
     {
       label: "CAGR",
       metric: portfolio.cagr,
       format: percent,
       formula:
-        "(Ending ÷ starting)^(1 ÷ years) − 1, where years = actual calendar days ÷ 365.25.",
+        "Compound annual growth rate: the steady yearly return that reaches the same ending value.",
       footnote: (m) =>
         m.notes?.length
           ? "Annualized from < 1 year"
-          : `${performance.elapsedYears.toFixed(2)} calendar years`,
+          : `${fixed(performance.elapsedYears, 2)} calendar years`,
     },
     {
       label: "Annualized volatility",
       metric: risk.volatility,
       format: unsignedPercent,
       formula:
-        "Sample standard deviation (n − 1) of daily arithmetic returns × √252.",
+        "How widely daily returns vary, scaled to one year (standard deviation × √252).",
       footnote: (m) =>
-        `${m.sample.returnCount.toLocaleString()} daily returns${m.notes?.length ? " · short sample" : ""}`,
+        `${count(m.sample.returnCount, "daily return")}${m.notes?.length ? " · Limited History" : ""}`,
     },
     {
       label: "Sharpe ratio",
       metric: risk.sharpe,
       format: ratio,
       formula:
-        "Mean daily excess return ÷ its sample standard deviation × √252. Excess return = portfolio return − that interval's prior-known DGS3MO accrual (actual days ÷ 365). The current Treasury curve is never used.",
-      footnote: (m) =>
-        `n = ${m.sample.returnCount.toLocaleString()} · historical DGS3MO`,
+        "Annualized return above the Historical Risk-Free rate per unit of volatility. Uses historical 3-month Treasury yields, never today's curve.",
+      footnote: () => "Historical Risk-Free · DGS3MO",
     },
     {
       label: "Sortino ratio",
       metric: risk.sortino,
       format: ratio,
       formula:
-        "(Mean daily excess × 252) ÷ (√mean(min(excess, 0)²) × √252). Downside deviation uses every day in the sample, with non-negative days counted as zero.",
-      footnote: () => "Full-sample downside",
+        "Like Sharpe, but divides by downside deviation only. Downside deviation uses every day in the sample, counting non-negative days as zero.",
+      footnote: () => "Full-sample downside deviation",
     },
     {
       label: "Maximum drawdown",
       metric: risk.maximumDrawdown,
       format: percent,
       formula:
-        "Deepest decline of compounded daily-close wealth below its running peak: min(wealth ÷ running peak − 1).",
+        "Largest peak-to-trough fall in daily-close wealth. Intraday losses can be larger.",
       footnote: () =>
         performance.maximumDrawdownEpisode
           ? `Peak ${performance.maximumDrawdownEpisode.peakDate}`

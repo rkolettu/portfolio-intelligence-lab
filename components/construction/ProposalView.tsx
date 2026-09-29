@@ -1,4 +1,5 @@
 "use client";
+import type { ReactNode } from "react";
 import type { Metric } from "@/lib/types/analytics";
 import type {
   ConstructionAnalytics,
@@ -14,18 +15,11 @@ import {
   unsignedPercent,
 } from "@/lib/utils/format";
 import { bindingSummary } from "@/lib/analytics/construction/observations";
+import { constructionStatus } from "@/lib/ui/quality";
+import { StateBadge } from "@/components/ui/StateBadge";
+import { StatusNotice } from "@/components/ui/StatusNotice";
 import { ComparisonChart } from "./ComparisonChart";
 
-const STATUS: Record<ConstructionProposal["status"], string> = {
-  success: "Solved · certified",
-  converged_but_parity_not_achieved: "Converged · parity not achieved",
-  infeasible: "Infeasible constraints",
-  invalid_inputs: "Invalid inputs",
-  insufficient_history: "Insufficient history",
-  invalid_covariance: "Invalid covariance",
-  numerical_failure: "Numerical failure",
-  non_converged: "Did not converge",
-};
 const cell = (m: Metric | undefined, f: (v: number) => string) =>
   m && m.available ? f(m.value) : "N/A";
 const risk = (
@@ -54,7 +48,7 @@ function HistoricalTable({
   ][] = [
     ["Cumulative return", (h) => h.cumulativeReturn, percent],
     ["CAGR", (h) => h.cagr, percent],
-    ["Realized volatility", (h) => h.volatility, unsignedPercent],
+    ["Annualized volatility", (h) => h.volatility, unsignedPercent],
     ["Sharpe ratio", (h) => h.sharpe, ratio],
     ["Sortino ratio", (h) => h.sortino, ratio],
     ["Maximum drawdown", (h) => h.maximumDrawdown, percent],
@@ -71,13 +65,14 @@ function HistoricalTable({
     <div className="table-wrap">
       <table className="comparison-table construction-compare">
         <caption>
-          Historical comparison · realized, backtested (Phase 1–3 definitions)
+          Historical comparison · realized backtest, same definitions as the
+          analysis
         </caption>
         <thead>
           <tr>
-            <th>Metric</th>
-            <th>Current</th>
-            <th>Proposed</th>
+            <th scope="col">Metric</th>
+            <th scope="col">Current Portfolio</th>
+            <th scope="col">Proposed Portfolio</th>
           </tr>
         </thead>
         <tbody>
@@ -102,12 +97,15 @@ export function ProposalView({
   stale,
   onApply,
   applyMessage,
+  diagnostics,
 }: {
   proposal: ConstructionProposal;
   analytics: ConstructionAnalytics;
   stale: boolean;
   onApply: () => void;
   applyMessage: { ok: boolean; text: string } | null;
+  /** Step 5: all-methods table and the collapsed solver diagnostics. */
+  diagnostics?: ReactNode;
 }) {
   const current = new Map(
     analytics.inputs.current.map((w) => [w.ticker, w.weight]),
@@ -130,17 +128,27 @@ export function ProposalView({
   const cur = analytics.current;
   return (
     <div className="proposal">
+      <p className="eyebrow">4 · Proposed Allocation</p>
       <div className="proposal-head">
         <h3>{p.label}</h3>
-        <span className={`tag status-${usable ? "ok" : "fail"}`}>
-          {STATUS[p.status]}
-        </span>
+        <StateBadge state={constructionStatus(p.status)} />
+        {(b.lower.length > 0 || b.upper.length > 0) && (
+          <StateBadge state={{ label: "Bounds binding", tone: "info" }} />
+        )}
+        {stale && <StateBadge state={{ label: "Stale", tone: "warning" }} />}
       </div>
-      {p.reason && (
-        <p className={usable ? "hint" : "warning"} role="status">
-          {p.reason}
-        </p>
-      )}
+      {p.reason &&
+        (usable ? (
+          <p className="hint">{p.reason}</p>
+        ) : (
+          <StatusNotice
+            tone="warning"
+            title={constructionStatus(p.status).label}
+          >
+            {p.reason} Your current portfolio is unchanged; adjust the
+            constraints and generate again.
+          </StatusNotice>
+        ))}
       {p.observations.length > 0 && (
         <ul className="observations" aria-label="What shaped this allocation">
           {p.observations.map((o) => (
@@ -148,21 +156,22 @@ export function ProposalView({
           ))}
         </ul>
       )}
+      {!usable && diagnostics}
       {usable && (
         <>
           <div className="table-wrap">
             <table className="proposal-table">
               <caption>
-                Proposed allocation · {p.label} · mathematical allocation under
+                Proposed Allocation · {p.label} · mathematical allocation under
                 selected constraints and methodology
               </caption>
               <thead>
                 <tr>
-                  <th>Asset</th>
-                  <th>Current</th>
-                  <th>Proposed</th>
-                  <th>Difference</th>
-                  <th>Constraint</th>
+                  <th scope="col">Asset</th>
+                  <th scope="col">Current Portfolio</th>
+                  <th scope="col">Proposed Portfolio</th>
+                  <th scope="col">Difference</th>
+                  <th scope="col">Constraint</th>
                 </tr>
               </thead>
               <tbody>
@@ -230,29 +239,11 @@ export function ProposalView({
             included: a distance between target allocations, not traded
             notional. No transaction costs are estimated.
           </p>
-          <div className="actions apply-row">
-            <button
-              type="button"
-              className="secondary"
-              disabled={stale}
-              onClick={onApply}
-            >
-              Apply proposed weights to the builder
-            </button>
-            <span className="hint">
-              {stale
-                ? "Disabled: regenerate first — this proposal no longer matches the inputs."
-                : "Revalidates the full-precision weights, then replaces the builder's holdings. Re-run the analysis to evaluate them."}
-            </span>
-          </div>
-          {applyMessage && (
-            <p className={applyMessage.ok ? "notice" : "warning"} role="status">
-              {applyMessage.text}
-            </p>
-          )}
+          <h3 className="group-title">5 · Diagnostics</h3>
+          {diagnostics}
           <h3 className="group-title">
-            Construction Model Risk · Σ_construction (Ledoit–Wolf) · same matrix
-            for both allocations
+            6 · Construction Model Risk · Current vs Proposed on the same
+            Ledoit–Wolf matrix
           </h3>
           {p.modelRisk.available && cur.modelRisk.available ? (
             <div className="table-wrap">
@@ -262,11 +253,11 @@ export function ProposalView({
                 </caption>
                 <thead>
                   <tr>
-                    <th>Asset</th>
-                    <th>Model volatility</th>
-                    <th>Current PCR</th>
-                    <th>Proposed PCR</th>
-                    <th>Proposed CRC</th>
+                    <th scope="col">Asset</th>
+                    <th scope="col">Model volatility</th>
+                    <th scope="col">Current PCR</th>
+                    <th scope="col">Proposed PCR</th>
+                    <th scope="col">Proposed CRC</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -335,14 +326,18 @@ export function ProposalView({
             volatility. Negative contributions are hedges and are never clamped.
           </p>
           <h3 className="group-title">
-            Historical comparison · same data, same start, both re-initialized
+            7 · Historical comparison · same data and start, both re-initialized
             at target weights
           </h3>
-          <p className="notice" role="note">
-            IN-SAMPLE RETROSPECTIVE ANALYSIS: these weights were estimated from
-            the same history they are compared on. This is not an out-of-sample
-            backtest and does not validate any prediction.
-          </p>
+          <StatusNotice
+            tone="info"
+            role="note"
+            title="In-Sample Retrospective Analysis"
+          >
+            These weights were estimated from the same history they are compared
+            on. This is not an out-of-sample backtest and does not validate any
+            prediction.
+          </StatusNotice>
           <HistoricalTable
             current={cur.historical}
             proposed={p.historical}
@@ -365,8 +360,7 @@ export function ProposalView({
             </p>
           )}
           <h3 className="group-title">
-            Stress comparison · Phase 5 windows · union of both portfolios&apos;
-            holdings
+            Stress comparison · fixed windows · both portfolios&apos; holdings
           </h3>
           <div className="table-wrap">
             <table className="stress-table">
@@ -376,12 +370,12 @@ export function ProposalView({
               </caption>
               <thead>
                 <tr>
-                  <th>Event</th>
-                  <th>Current</th>
-                  <th>Proposed</th>
-                  <th>{benchmark}</th>
-                  <th>Current max DD</th>
-                  <th>Proposed max DD</th>
+                  <th scope="col">Event</th>
+                  <th scope="col">Current</th>
+                  <th scope="col">Proposed</th>
+                  <th scope="col">{benchmark}</th>
+                  <th scope="col">Current max. drawdown</th>
+                  <th scope="col">Proposed max. drawdown</th>
                 </tr>
               </thead>
               <tbody>
@@ -418,6 +412,27 @@ export function ProposalView({
             them to earlier windows is a retrospective scenario, not a portfolio
             that could have been known at the time, and not a forecast.
           </p>
+          <h3 className="group-title">8 · Apply</h3>
+          <div className="actions apply-row">
+            <button
+              type="button"
+              className="secondary"
+              disabled={stale}
+              onClick={onApply}
+            >
+              Apply proposed weights to the builder
+            </button>
+            <span className="hint">
+              {stale
+                ? "Disabled: regenerate first — this proposal no longer matches the inputs."
+                : "Revalidates the full-precision weights, then replaces the builder's holdings. Re-run the analysis to evaluate them."}
+            </span>
+          </div>
+          {applyMessage && (
+            <p className={applyMessage.ok ? "notice" : "warning"} role="status">
+              {applyMessage.text}
+            </p>
+          )}
         </>
       )}
     </div>

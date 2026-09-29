@@ -1,49 +1,63 @@
 "use client";
-import { useId, useState, type ReactNode } from "react";
+import { useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
-const TIP_WIDTH = 260;
 const GUTTER = 16;
-const DEFAULT_OFFSET = -8;
 
-/** Methodology tooltip: shown on hover and keyboard focus (and tap, via focus);
- * the text is linked with aria-describedby so screen readers announce it. Width
- * and horizontal offset are computed from the trigger's position so the tip stays
- * inside the viewport in any grid layout. */
-export function InfoTip({
-  label,
-  children,
-}: {
-  label: string;
-  children: ReactNode;
-}) {
+/** A brief definition, accessible by hover, tap or focus. Fixed positioning lets
+ * table-caption tips escape local scroll containers; placement follows scrolling
+ * and flips above the trigger near the bottom of the viewport. */
+export function InfoTip({ label, children }: { label: string; children: ReactNode }) {
   const id = useId();
-  const [box, setBox] = useState<{ left: number; width: number } | null>(null);
-  const place = (target: HTMLElement) => {
-    const anchor = target.getBoundingClientRect().left;
-    const viewport = window.innerWidth;
-    const width = Math.min(TIP_WIDTH, viewport - 2 * GUTTER);
-    // Offset relative to the trigger, clamped to [GUTTER, viewport - GUTTER].
-    const left = Math.max(
-      GUTTER - anchor,
-      Math.min(DEFAULT_OFFSET, viewport - GUTTER - width - anchor),
-    );
-    setBox({ left, width });
-  };
+  const anchor = useRef<HTMLSpanElement>(null);
+  const tip = useRef<HTMLSpanElement>(null);
+  const [active, setActive] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
+  const [box, setBox] = useState<{ left: number; top: number; width: number }>();
+  useLayoutEffect(() => {
+    if (!active || dismissed) return;
+    const place = () => {
+      if (!anchor.current || !tip.current) return;
+      const rect = anchor.current.getBoundingClientRect();
+      const width = Math.min(260, window.innerWidth - 2 * GUTTER);
+      // Measure at the final width before choosing above/below placement.
+      tip.current.style.width = `${width}px`;
+      const height = tip.current.getBoundingClientRect().height;
+      const top = rect.bottom + 8 + height <= window.innerHeight - GUTTER
+        ? rect.bottom + 8
+        : Math.max(GUTTER, rect.top - height - 8);
+      setBox({
+        left: Math.max(GUTTER, Math.min(rect.left - 8, window.innerWidth - GUTTER - width)),
+        top,
+        width,
+      });
+    };
+    const dismiss = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setDismissed(true);
+    };
+    place();
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    document.addEventListener("keydown", dismiss);
+    return () => {
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+      document.removeEventListener("keydown", dismiss);
+    };
+  }, [active, dismissed, children]);
+  const show = () => { setDismissed(false); setActive(true); };
   return (
     <span
+      ref={anchor}
       className="info-tip"
-      onPointerEnter={(e) => place(e.currentTarget)}
-      onFocus={(e) => place(e.currentTarget)}
+      data-dismissed={dismissed || undefined}
+      onPointerEnter={show}
+      onPointerLeave={() => { if (!anchor.current?.contains(document.activeElement)) setActive(false); }}
+      onFocus={show}
+      onBlur={() => { if (!anchor.current?.matches(":hover")) setActive(false); }}
+      onKeyDown={(e) => { if (e.key === "Escape") setDismissed(true); }}
     >
-      <button
-        type="button"
-        className="info-trigger"
-        aria-label={`About ${label}`}
-        aria-describedby={id}
-      >
-        i
-      </button>
-      <span role="tooltip" id={id} className="tip" style={box ?? undefined}>
+      <button type="button" className="info-trigger" aria-label={`About ${label}`} aria-describedby={id}>i</button>
+      <span ref={tip} role="tooltip" id={id} className="tip" style={box}>
         {children}
       </span>
     </span>

@@ -8,6 +8,8 @@ import {
 } from "@testing-library/react";
 import { afterEach, expect, it } from "vitest";
 import { RiskSection } from "@/components/risk/RiskSection";
+import { DiversificationSection } from "@/components/risk/DiversificationSection";
+import { ReturnContribution } from "@/components/risk/ReturnContribution";
 import { simulate } from "@/lib/backtest/engine";
 import {
   contrast,
@@ -147,16 +149,25 @@ it("risk section renders the overview, a negative contribution to the left of ze
     overview.getAllByRole("term").map((t) => t.childNodes[0].textContent),
   ).toEqual([
     "Portfolio volatility",
-    "Weighted standalone volatility",
-    "Diversification ratio",
-    "Effective holdings",
-    "Top-3 concentration",
+    "Realized volatility",
+    "Largest risk contribution",
+    "Risky holdings",
   ]);
   const pv = ra.portfolio.volatility;
   expect(
     overview.getByText(unsignedPercent(pv.available ? pv.value : NaN)),
   ).toBeTruthy();
-  expect(overview.getByText(/Target weights · realized/)).toBeTruthy();
+  expect(overview.getByText("Target weights · sample Σ")).toBeTruthy();
+  // The largest contributor is the holding with the highest precomputed PCR.
+  const pcr = ra.holdings.filter((h) => h.percentage.available);
+  const top = pcr.reduce((a, b) =>
+    a.percentage.available &&
+    b.percentage.available &&
+    a.percentage.value >= b.percentage.value
+      ? a
+      : b,
+  );
+  expect(overview.getByText(new RegExp(`^${top.ticker} · `))).toBeTruthy();
   const hedgeRisk = ra.holdings[1].percentage;
   expect(hedgeRisk.available && hedgeRisk.value).toBeLessThan(0);
   const row = screen
@@ -194,13 +205,37 @@ it("sort control reorders both the chart rows and the table", () => {
   expect(firstCells).toEqual(["AAA", "CASH", "HEDGE"]);
 });
 
+it("diversification section: concentration, correlation benefit and extreme pairs", () => {
+  const r = build([
+    { ticker: "AAA", weight: 0.5 },
+    { ticker: "BBB", weight: 0.3 },
+    { ticker: "CASH", weight: 0.2 },
+  ]);
+  render(<DiversificationSection risk={r.riskAnalytics} />);
+  const strip = within(screen.getByLabelText("Diversification overview"));
+  expect(
+    strip.getAllByRole("term").map((t) => t.childNodes[0].textContent),
+  ).toEqual([
+    "Weighted standalone volatility",
+    "Diversification ratio",
+    "Effective holdings",
+    "Top-3 concentration",
+    "Highest correlation",
+    "Lowest correlation",
+  ]);
+  const c = r.riskAnalytics.concentration;
+  expect(strip.getByText(c.effectiveHoldings.toFixed(1))).toBeTruthy();
+  expect(strip.getAllByText("AAA / BBB")).toHaveLength(2);
+  expect(document.body.textContent).not.toMatch(/NaN|Infinity/);
+});
+
 it("heatmap prints every value, marks the diagonal, and names the extreme pairs", () => {
   const r = build([
     { ticker: "AAA", weight: 0.5 },
     { ticker: "BBB", weight: 0.3 },
     { ticker: "CASH", weight: 0.2 },
   ]);
-  render(<RiskSection risk={r.riskAnalytics} performance={r.performance} />);
+  render(<DiversificationSection risk={r.riskAnalytics} />);
   const heat = screen.getByRole("table", {
     name: /Correlation matrix of AAA, BBB/,
   });
@@ -227,14 +262,12 @@ it("insufficient history and all-CASH states render explicit reasons, never NaN"
     <RiskSection risk={short.riskAnalytics} performance={short.performance} />,
   );
   expect(screen.getByRole("status").textContent).toMatch(
-    /Only 39 common daily observations/,
+    /^Insufficient History.*Only 39 common daily observations/,
   );
   expect(screen.getAllByText("N/A").length).toBeGreaterThan(3);
   cleanup();
   const cash = build([{ ticker: "CASH", weight: 1 }], 80);
-  render(
-    <RiskSection risk={cash.riskAnalytics} performance={cash.performance} />,
-  );
+  render(<DiversificationSection risk={cash.riskAnalytics} />);
   expect(
     screen.getByText(
       /Correlation matrix unavailable: The portfolio is entirely CASH/,
@@ -245,10 +278,15 @@ it("insufficient history and all-CASH states render explicit reasons, never NaN"
 
 it("return contribution shows arithmetic period totals equal to the sum of daily returns", () => {
   const r = hedge();
-  render(<RiskSection risk={r.riskAnalytics} performance={r.performance} />);
+  render(
+    <ReturnContribution
+      contribution={r.riskAnalytics.returnContribution}
+      cumulativeReturn={null}
+    />,
+  );
   expect(
     screen.getByRole("heading", {
-      name: /Daily \/ period arithmetic return contribution/,
+      name: /Return contribution · daily \/ period arithmetic/,
     }),
   ).toBeTruthy();
   expect(screen.getByText("sum of daily portfolio returns")).toBeTruthy();

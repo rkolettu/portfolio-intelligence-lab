@@ -67,7 +67,8 @@ it("benchmark section shows period, count, every relative metric and the geometr
     screen.getByText("Aligned observations").nextElementSibling!.textContent,
   ).toBe("6");
   expect(
-    screen.getByText("Risk-free coverage").nextElementSibling!.textContent,
+    screen.getByText("Historical Risk-Free coverage").nextElementSibling!
+      .textContent,
   ).toBe("Complete");
   const strip = (label: string) => screen.getByLabelText(label);
   const terms = (label: string) =>
@@ -81,7 +82,7 @@ it("benchmark section shows period, count, every relative metric and the geometr
     "R²",
   ]);
   expect(terms("Arithmetic active returns")).toEqual([
-    "Annualized active return",
+    "Active return",
     "Tracking error",
     "Information ratio",
   ]);
@@ -117,30 +118,38 @@ it("benchmark section shows period, count, every relative metric and the geometr
   expect(document.body.textContent).not.toMatch(/NaN|Infinity/);
 });
 
-it("methodology tooltips explain beta, alpha, tracking error, information ratio and active return", () => {
+it("tooltips say what beta, alpha, tracking error, information ratio and active return are", () => {
   render(<BenchmarkSection analytics={run().benchmarkAnalytics} />);
   const tip = (name: string) => {
     const button = screen.getByRole("button", { name: `About ${name}` });
     return document.getElementById(button.getAttribute("aria-describedby")!)!
       .textContent;
   };
-  expect(tip("Beta")).toMatch(/Cov\(Rp, Rb\) ÷ Var\(Rb\)/);
-  expect(tip("CAPM alpha")).toMatch(/α × 252, never compounded/);
-  expect(tip("Tracking error")).toMatch(
-    /standard deviation of daily active returns × √252/,
-  );
-  expect(tip("Information ratio")).toMatch(
-    /mean\(active\) ÷ sampleStdDev\(active\) × √252/,
-  );
-  expect(tip("Annualized active return")).toMatch(
+  // One or two short "what is this?" sentences; formulas live in the drawer.
+  expect(tip("Beta")).toMatch(/Sensitivity of daily portfolio returns/);
+  expect(tip("CAPM alpha")).toMatch(/not explained by benchmark exposure/);
+  expect(tip("Tracking error")).toMatch(/deviates from the benchmark/);
+  expect(tip("Information ratio")).toMatch(/per unit of tracking error/);
+  expect(tip("Active return")).toMatch(
     /not the difference between the two CAGRs/,
   );
+  for (const name of [
+    "Beta",
+    "CAPM alpha",
+    "Correlation",
+    "R²",
+    "Active return",
+    "Tracking error",
+    "Information ratio",
+  ])
+    expect(tip(name)).not.toMatch(/√252|sampleStdDev|OLS/);
 });
 
 it("alpha shows N/A with the risk-free reason while other metrics stay available", () => {
   render(<BenchmarkSection analytics={run(false).benchmarkAnalytics} />);
   expect(
-    screen.getByText("Risk-free coverage").nextElementSibling!.textContent,
+    screen.getByText("Historical Risk-Free coverage").nextElementSibling!
+      .textContent,
   ).toBe("0 / 6");
   const button = screen.getByRole("button", { name: "About CAPM alpha" });
   expect(
@@ -156,7 +165,7 @@ it("renders an explicit unavailable state when there is no comparison sample", (
   const r = run(true, [100, 101], ["2024-05-28", "2024-05-30"]);
   render(<BenchmarkSection analytics={r.benchmarkAnalytics} />);
   expect(screen.getByRole("status").textContent).toMatch(
-    /Benchmark-relative analytics unavailable: The benchmark has no return interval overlapping/,
+    /^Benchmark Data UnavailableThe benchmark has no return interval overlapping/,
   );
 });
 
@@ -210,6 +219,6 @@ it("disables the benchmark drawdown options with the reason when the path is una
     (screen.getByRole("radio", { name: "Both" }) as HTMLInputElement).disabled,
   ).toBe(true);
   expect(
-    screen.getByText(/Benchmark drawdown unavailable: .*interior gaps/),
+    screen.getByText(/Benchmark Data Unavailable: .*interior gaps/),
   ).toBeTruthy();
 });

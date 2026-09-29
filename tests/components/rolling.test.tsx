@@ -152,7 +152,7 @@ describe("RollingSection", () => {
     expect(beta).toHaveProperty("disabled", true);
     expect(
       screen.getByText(
-        /Rolling beta and correlation unavailable: Benchmark history is unavailable/,
+        /Benchmark Data Unavailable for rolling beta and correlation: Benchmark history is unavailable/,
       ),
     ).toBeTruthy();
   });

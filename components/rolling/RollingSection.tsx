@@ -29,6 +29,7 @@ import {
   axisDate,
   axisPercent,
   decimal,
+  fixed,
   shortDate,
   unsignedPercent,
 } from "@/lib/utils/format";
@@ -110,7 +111,7 @@ export function RollingSection({
     { value: "correlation", label: `Correlation vs ${ticker}` },
   ];
   const format =
-    active === "volatility" ? axisPercent : (v: number) => v.toFixed(1);
+    active === "volatility" ? axisPercent : (v: number) => fixed(v, 1);
   return (
     <>
       <div className="series-control">
@@ -150,7 +151,8 @@ export function RollingSection({
         </fieldset>
         {!rolling.beta.available && (
           <span className="hint">
-            Rolling beta and correlation unavailable: {rolling.beta.reason}
+            Benchmark Data Unavailable for rolling beta and correlation:{" "}
+            {rolling.beta.reason}
           </span>
         )}
       </div>

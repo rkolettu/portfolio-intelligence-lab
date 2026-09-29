@@ -6,12 +6,13 @@ import type {
   RiskAnalytics,
 } from "@/lib/types/analytics";
 import { sortHoldings, type RiskSortKey } from "@/lib/charts/riskDisplay";
-import { decimal, unsignedPercent } from "@/lib/utils/format";
+import { count, decimal, unsignedPercent } from "@/lib/utils/format";
+import { sampleState } from "@/lib/ui/quality";
 import { InfoTip } from "@/components/metrics/InfoTip";
 import { KpiStrip } from "@/components/metrics/KpiStrip";
+import { StateBadge } from "@/components/ui/StateBadge";
+import { StatusNotice } from "@/components/ui/StatusNotice";
 import { CapitalVsRisk } from "./CapitalVsRisk";
-import { CorrelationHeatmap } from "./CorrelationHeatmap";
-import { ReturnContribution } from "./ReturnContribution";
 
 const cell = (m: Metric, format: (v: number) => string) =>
   m.available ? format(m.value) : "N/A";
@@ -23,27 +24,14 @@ const SORTS: { value: RiskSortKey; label: string }[] = [
   { value: "beta", label: "Beta" },
 ];
 
-/** Phase 4 risk section. Every number is precomputed server-side from one
- * canonical holding sample; this component formats and orders only. */
-export function RiskSection({
-  risk,
-  performance,
-}: {
-  risk: RiskAnalytics;
-  performance: PerformanceSummary;
-}) {
-  const [sort, setSort] = useState<RiskSortKey>("weight");
+/** Shared sample header for the Risk and Diversification sections. */
+export function RiskSampleSummary({ risk }: { risk: RiskAnalytics }) {
   const s = risk.sample;
-  const p = risk.portfolio;
-  const c = risk.concentration;
-  const realized = performance.risk.volatility;
-  const holdings = sortHoldings(risk.holdings, sort);
-  const cumulative = performance.portfolio.cumulativeReturn;
   return (
     <>
       <div className="summary-grid">
         <div>
-          <span>Decomposition</span>
+          <span>Model</span>
           <strong>Target weights · CASH riskless</strong>
         </div>
         <div>
@@ -61,23 +49,21 @@ export function RiskSection({
               ? s.sample.returnCount
               : s.observationCount
             ).toLocaleString()}
-            {s.available && s.status === "limited" && " · limited"}
-            {!s.available && s.observationCount > 0 && " · insufficient"}
           </strong>
         </div>
         <div>
-          <span>Risky holdings</span>
+          <span>Data quality</span>
           <strong>
-            {s.available
-              ? s.tickers.length
-              : risk.holdings.filter((h) => !h.riskless).length}
+            <StateBadge
+              state={sampleState(s.available ? s.status : "insufficient")}
+            />
           </strong>
         </div>
       </div>
       {!s.available && (
-        <p className="warning" role="status">
+        <StatusNotice tone="warning" title="Insufficient History">
           {s.reason}
-        </p>
+        </StatusNotice>
       )}
       {s.available &&
         s.notes.map((n) => (
@@ -85,7 +71,42 @@ export function RiskSection({
             {n}
           </p>
         ))}
-      <h3 className="group-title">Risk overview · {risk.label}</h3>
+    </>
+  );
+}
+
+/** Historical Risk Analysis: what drives portfolio volatility at target weights.
+ * Every number is precomputed server-side; this component formats and orders. */
+export function RiskSection({
+  risk,
+  performance,
+}: {
+  risk: RiskAnalytics;
+  performance: PerformanceSummary;
+}) {
+  const [sort, setSort] = useState<RiskSortKey>("weight");
+  const s = risk.sample;
+  const p = risk.portfolio;
+  const realized = performance.risk.volatility;
+  const holdings = sortHoldings(risk.holdings, sort);
+  // Display selection only: the holding with the largest precomputed PCR.
+  const top = risk.holdings
+    .filter((h) => h.percentage.available)
+    .reduce<(typeof risk.holdings)[number] | null>(
+      (best, h) =>
+        best &&
+        best.percentage.available &&
+        h.percentage.available &&
+        best.percentage.value >= h.percentage.value
+          ? best
+          : h,
+      null,
+    );
+  const riskySample = s.available ? s.sample : risk.returnContribution.sample;
+  return (
+    <>
+      <RiskSampleSummary risk={risk} />
+      <h3 className="group-title">Historical Risk Analysis · {risk.label}</h3>
       <KpiStrip
         label="Risk overview"
         items={[
@@ -94,52 +115,42 @@ export function RiskSection({
             metric: p.volatility,
             format: unsignedPercent,
             formula:
-              "√(w′Σw): annualized sample covariance (252 × daily) of the common risky-holding sample at TARGET weights, CASH riskless. A model snapshot — not the realized volatility of the drifting historical portfolio, and not a forecast.",
-            footnote: () =>
-              realized.available
-                ? `Target weights · realized ${unsignedPercent(realized.value)}`
-                : "Target weights",
+              "Annualized volatility the covariance model implies for the target weights. A snapshot of the allocation, not the realized path and not a forecast.",
+            footnote: () => "Target weights · sample Σ",
           },
           {
-            label: "Weighted standalone volatility",
-            metric: p.weightedAverageVolatility,
+            label: "Realized volatility",
+            metric: realized,
             format: unsignedPercent,
             formula:
-              "Σ wᵢ × volᵢ, with volᵢ = sample std of daily returns × √252 and CASH at zero.",
-            footnote: () => "Before diversification",
+              "Annualized volatility the drifting historical portfolio actually had, CASH accrual included. Same figure as the Overview.",
+            footnote: (m) => count(m.sample.returnCount, "daily return"),
           },
           {
-            label: "Diversification ratio",
-            metric: p.diversificationRatio,
-            format: (v) => `${decimal(v)}×`,
-            formula:
-              "Weighted standalone volatility ÷ portfolio volatility. Above 1 means correlations below +1 reduce risk. It measures risky-asset diversification and is unchanged by moving capital into riskless CASH.",
-            footnote: () => "Correlation benefit",
-          },
-          {
-            label: "Effective holdings",
-            metric: {
-              available: true,
-              value: c.effectiveHoldings,
-              sample: s.available ? s.sample : risk.returnContribution.sample,
-            },
-            format: (v) => v.toFixed(1),
-            formula:
-              "1 ÷ HHI, where HHI = Σ wᵢ² over all capital weights including CASH. Measures capital concentration only — not correlation diversification, and not a complete diversification score.",
-            footnote: () => `HHI ${c.hhi.toFixed(3)}`,
-          },
-          {
-            label: "Top-3 concentration",
-            metric: {
-              available: true,
-              value: c.top3.weight,
-              sample: s.available ? s.sample : risk.returnContribution.sample,
+            label: "Largest risk contribution",
+            metric: top?.percentage ?? {
+              available: false,
+              reason: "No risk contribution is defined for this portfolio.",
             },
             format: unsignedPercent,
             formula:
-              "Combined capital weight of the three largest positions (ties in portfolio order).",
+              "The single holding with the largest share of portfolio volatility at target weights.",
             footnote: () =>
-              `Largest ${c.largest.ticker} ${unsignedPercent(c.largest.weight)}`,
+              top
+                ? `${top.ticker} · ${unsignedPercent(top.weight)} of capital`
+                : "",
+          },
+          {
+            label: "Risky holdings",
+            metric: {
+              available: true,
+              value: risk.holdings.filter((h) => !h.riskless).length,
+              sample: riskySample,
+            },
+            format: (v) => String(v),
+            formula:
+              "Holdings inside the covariance matrix. CASH sits outside it with zero risk.",
+            footnote: () => "In the covariance matrix",
           },
         ]}
       />
@@ -162,9 +173,7 @@ export function RiskSection({
             </label>
           ))}
         </fieldset>
-        <span className="hint">
-          Sorts the chart and table · descending · N/A last
-        </span>
+        <span className="hint">Sorts the chart and table · N/A last</span>
       </div>
       <CapitalVsRisk holdings={holdings} />
       <div className="table-wrap">
@@ -172,22 +181,19 @@ export function RiskSection({
           <caption>
             Holding risk at target weights{" "}
             <InfoTip label="risk contribution">
-              MRC = (Σw)ᵢ ÷ σ, the change in portfolio volatility per unit of
-              weight. CRC = wᵢ × MRC, volatility points contributed; they sum to
-              σ. PCR = CRC ÷ σ; they sum to 100%. Hedging holdings can have
-              negative values and others can exceed 100% — they are never
-              clamped. Beta uses the benchmark-aligned sample.
+              How much each holding adds to portfolio volatility. Shares sum to
+              100%; a hedge can be negative and is never clamped.
             </InfoTip>
           </caption>
           <thead>
             <tr>
-              <th>Holding</th>
-              <th>Weight</th>
-              <th>Volatility</th>
-              <th>Beta</th>
-              <th>Marginal (MRC)</th>
-              <th>Component (CRC)</th>
-              <th>Share (PCR)</th>
+              <th scope="col">Holding</th>
+              <th scope="col">Weight</th>
+              <th scope="col">Volatility</th>
+              <th scope="col">Beta</th>
+              <th scope="col">Marginal (MRC)</th>
+              <th scope="col">Risk contribution (CRC)</th>
+              <th scope="col">Share (PCR)</th>
             </tr>
           </thead>
           <tbody>
@@ -227,33 +233,10 @@ export function RiskSection({
           </tfoot>
         </table>
       </div>
-      {risk.correlation.available ? (
-        risk.correlation.tickers.length > 1 ? (
-          <CorrelationHeatmap
-            tickers={risk.correlation.tickers}
-            matrix={risk.correlation.matrix}
-            highest={risk.correlation.highest}
-            lowest={risk.correlation.lowest}
-            undefinedTickers={risk.correlation.undefinedTickers}
-          />
-        ) : (
-          <p className="hint">
-            A correlation matrix needs at least two risky holdings.
-          </p>
-        )
-      ) : (
-        <p className="hint">
-          Correlation matrix unavailable: {risk.correlation.reason}
-        </p>
-      )}
-      <ReturnContribution
-        contribution={risk.returnContribution}
-        cumulativeReturn={cumulative.available ? cumulative.value : null}
-      />
       <p className="hint">
-        Historical sample covariance describes the chosen window; it is not a
-        forecast of future covariance. Target weights are the configured
-        allocation, not the average of drifted historical weights.
+        Beta uses the benchmark-aligned sample. Historical covariance describes
+        the chosen window, not future covariance; target weights are the
+        configured allocation, not the average drifted weights.
       </p>
     </>
   );

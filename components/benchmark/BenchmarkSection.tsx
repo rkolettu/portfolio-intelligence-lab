@@ -3,6 +3,7 @@ import type { BenchmarkAnalytics, Metric } from "@/lib/types/analytics";
 import { decimal, percent, ratio, unsignedPercent } from "@/lib/utils/format";
 import { InfoTip } from "@/components/metrics/InfoTip";
 import { KpiStrip } from "@/components/metrics/KpiStrip";
+import { StatusNotice } from "@/components/ui/StatusNotice";
 
 const cell = (m: Metric, format: (v: number) => string) =>
   m.available ? format(m.value) : "N/A";
@@ -17,10 +18,9 @@ export function BenchmarkSection({
   const { comparison, relative, geometric, riskFree, ticker } = analytics;
   if (!comparison.available)
     return (
-      <p className="warning" role="status">
-        Benchmark-relative analytics unavailable: {comparison.reason} Absolute
-        portfolio results above are unaffected.
-      </p>
+      <StatusNotice tone="warning" title="Benchmark Data Unavailable">
+        {comparison.reason} Absolute portfolio results are unaffected.
+      </StatusNotice>
     );
   const s = comparison.sample;
   const n = s.returnCount.toLocaleString();
@@ -47,7 +47,7 @@ export function BenchmarkSection({
           </strong>
         </div>
         <div>
-          <span>Risk-free coverage</span>
+          <span>Historical Risk-Free coverage</span>
           <strong>
             {riskFree.complete
               ? "Complete"
@@ -71,7 +71,7 @@ export function BenchmarkSection({
             metric: relative.beta,
             format: decimal,
             formula:
-              "Cov(Rp, Rb) ÷ Var(Rb): sample covariance of aligned daily portfolio and benchmark returns over the sample variance of the benchmark. Raw returns, no risk-free adjustment.",
+              "Sensitivity of daily portfolio returns to the benchmark: 1.00 moves one-for-one, 0.50 half as much.",
             footnote: () => sampleFoot,
           },
           {
@@ -79,7 +79,7 @@ export function BenchmarkSection({
             metric: relative.alpha,
             format: percent,
             formula:
-              "Intercept of the OLS regression (Rp − Rf) = α + β(Rb − Rf) + ε on the same aligned sample, using each interval's prior-known DGS3MO accrual. Annualized linearly: α × 252, never compounded. A single-factor intercept against this ETF, not proof of skill.",
+              "Annualized return not explained by benchmark exposure in a one-factor regression. A description of the past, not proof of skill.",
             footnote: () =>
               relative.regressionBeta.available
                 ? `Regression β ${decimal(relative.regressionBeta.value)} · annualized`
@@ -90,7 +90,7 @@ export function BenchmarkSection({
             metric: relative.correlation,
             format: decimal,
             formula:
-              "Pearson correlation of aligned daily portfolio and benchmark arithmetic returns.",
+              "How closely daily portfolio and benchmark returns move together, from −1 to +1.",
             footnote: () => sampleFoot,
           },
           {
@@ -98,31 +98,31 @@ export function BenchmarkSection({
             metric: relative.rSquared,
             format: decimal,
             formula:
-              "Share of daily excess-return variance explained by the CAPM regression (squared correlation of Rp − Rf with Rb − Rf).",
+              "Share of daily excess-return variation the benchmark explains in the CAPM regression.",
             footnote: () => "CAPM regression fit",
           },
         ]}
       />
       <h3 className="group-title">
-        Arithmetic active returns · active = portfolio − benchmark, daily
+        Active return · portfolio − benchmark, daily arithmetic
       </h3>
       <KpiStrip
         label="Arithmetic active returns"
         items={[
           {
-            label: "Annualized active return",
+            label: "Active return",
             metric: relative.annualizedActiveReturn,
             format: percent,
             formula:
-              "mean(active) × 252, where active = portfolio return − benchmark return on each aligned day. Arithmetic, and deliberately not the difference between the two CAGRs below.",
-            footnote: () => "mean daily active × 252",
+              "Average daily portfolio-minus-benchmark return, annualized. Arithmetic, so it is not the difference between the two CAGRs below.",
+            footnote: () => "Annualized · arithmetic",
           },
           {
             label: "Tracking error",
             metric: relative.trackingError,
             format: unsignedPercent,
             formula:
-              "Sample standard deviation of daily active returns × √252.",
+              "How much the portfolio's return deviates from the benchmark's, annualized.",
             footnote: () => sampleFoot,
           },
           {
@@ -130,7 +130,7 @@ export function BenchmarkSection({
             metric: relative.informationRatio,
             format: ratio,
             formula:
-              "mean(active) ÷ sampleStdDev(active) × √252 = annualized active return ÷ tracking error. Undefined when tracking error is zero.",
+              "Active return per unit of tracking error. Undefined when tracking error is zero.",
             footnote: () => "Active return ÷ tracking error",
           },
         ]}
@@ -138,11 +138,8 @@ export function BenchmarkSection({
       <h3 className="group-title">
         Geometric comparison · compounded over the comparison period
         <InfoTip label="geometric comparison">
-          Both wealth paths are rebased to $10,000 at the comparison start (the
-          portfolio keeps its drifted weights). Cumulative return = ending ÷
-          starting − 1; CAGR annualizes over actual calendar days ÷ 365.25.
-          These long-horizon figures are geometric and are not inputs to
-          tracking error or the information ratio.
+          Compounded returns of both series over the same comparison period,
+          each rebased to $10,000 at its start.
         </InfoTip>
       </h3>
       <div className="table-wrap">

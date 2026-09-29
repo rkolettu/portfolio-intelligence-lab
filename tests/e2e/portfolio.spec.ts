@@ -78,13 +78,19 @@ test("sample workflow, independent quote failure, methodology, and edited-draft 
   await page.goto("/");
   await page.getByRole("button", { name: "Analyze Sample Portfolio" }).click();
   await expect(
-    page.getByRole("heading", { name: "A traceable return ledger." }),
+    page.getByRole("heading", { name: "Methodology & data lineage." }),
   ).toBeVisible();
   await expect(
     page.getByText("Optional quotes offline; history remains available."),
   ).toBeVisible();
-  await page.getByText("Methodology & data lineage").click();
-  await expect(page.getByText(/Snapshot SHA-256/)).toBeVisible();
+  await page.getByRole("button", { name: "Open methodology" }).click();
+  const drawer = page.getByRole("dialog", {
+    name: "How every number is produced.",
+  });
+  await expect(drawer).toBeVisible();
+  await expect(drawer.getByText(/Snapshot SHA-256/)).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(drawer).toBeHidden();
   await page.getByLabel("Ticker 1", { exact: true }).fill("VT");
   await expect(
     page.getByText(/Your edited draft has not been analyzed/),
@@ -131,7 +137,7 @@ test("failed ticker offers retry, edit, and remove", async ({ page }) => {
   ).toContainText("No history for SPY.");
   await page.getByRole("button", { name: "Retry analysis" }).click();
   await expect(
-    page.getByRole("heading", { name: "A traceable return ledger." }),
+    page.getByRole("heading", { name: "Methodology & data lineage." }),
   ).toBeVisible();
 });
 test("mobile keyboard navigation and reduced-motion layout remain usable", async ({
@@ -337,7 +343,7 @@ test("benchmark section and drawdown series toggle use one aligned comparison sa
     "CAPM alpha",
     "Correlation",
     "R²",
-    "Annualized active return",
+    "Active return",
     "Tracking error",
     "Information ratio",
   ])
@@ -355,7 +361,7 @@ test("benchmark section and drawdown series toggle use one aligned comparison sa
     .focus();
   await expect(
     page.getByRole("tooltip").filter({ visible: true }),
-  ).toContainText("mean(active)");
+  ).toContainText("per unit of tracking error");
   // Drawdown series toggle: keyboard-operable radio group.
   const drawdowns = page.locator("section:has(#drawdowns-title)");
   await drawdowns.getByRole("radio", { name: "Portfolio" }).focus();
@@ -389,10 +395,9 @@ test("risk section: overview, capital vs risk sorting, holding table and return 
   const overview = section.locator('dl[aria-label="Risk overview"]');
   for (const label of [
     "Portfolio volatility",
-    "Weighted standalone volatility",
-    "Diversification ratio",
-    "Effective holdings",
-    "Top-3 concentration",
+    "Realized volatility",
+    "Largest risk contribution",
+    "Risky holdings",
   ])
     await expect(
       overview.getByRole("term").filter({ hasText: new RegExp(`^${label}`) }),
@@ -413,9 +418,19 @@ test("risk section: overview, capital vs risk sorting, holding table and return 
     section.getByRole("table", { name: /Holding risk at target weights/ }),
   ).toContainText("= σ");
   await expect(
-    section.getByText("sum of daily portfolio returns", { exact: true }),
+    page
+      .locator("section:has(#performance-title)")
+      .getByText("sum of daily portfolio returns", { exact: true }),
   ).toBeVisible();
-  for (const part of await section.locator("dl.kpi-strip, table, figure").all())
+  const diversification = page.locator("section:has(#diversification-title)");
+  await expect(
+    diversification.locator('dl[aria-label="Diversification overview"]'),
+  ).toBeVisible();
+  for (const part of await page
+    .locator(
+      "section:has(#risk-title) :is(dl, table, figure), section:has(#diversification-title) :is(dl, table, figure)",
+    )
+    .all())
     await expect(part).not.toContainText(/NaN|Infinity/);
 });
 
@@ -583,7 +598,7 @@ test("portfolio constructor: generate, compare, stale guard and full-precision a
   ).toBeVisible();
   await expect(section.getByText("Estimated One-Way Turnover")).toBeVisible();
   await expect(section.getByRole("note")).toContainText(
-    "IN-SAMPLE RETROSPECTIVE ANALYSIS",
+    "In-Sample Retrospective Analysis",
   );
   await expect(
     section.getByRole("table", { name: /Stress comparison/ }),
@@ -643,3 +658,264 @@ test("portfolio constructor stays within a mobile viewport", async ({
     ),
   ).toBe(true);
 });
+
+// Phase 7: one product. Section order, the drawer, recovery and layouts.
+test("sections follow one numbered order and the header opens the methodology drawer by keyboard", async ({
+  page,
+}) => {
+  await showLongResult(page);
+  const eyebrows = await page
+    .locator("main .section-heading .eyebrow")
+    .allTextContents();
+  expect(eyebrows).toEqual([
+    "01 / Overview",
+    "02 / Performance",
+    "03 / Benchmark",
+    "04 / Drawdowns",
+    "05 / Risk",
+    "06 / Diversification",
+    "07 / Rolling analytics",
+    "08 / Stress Lab",
+    "09 / Portfolio Constructor",
+    "10 / Current Market",
+    "11 / Methodology",
+  ]);
+  // Every nav link targets an existing section heading.
+  for (const href of await page
+    .locator('nav[aria-label="Sections"] a')
+    .evaluateAll((as) => as.map((a) => a.getAttribute("href")!)))
+    await expect(page.locator(href)).toHaveCount(1);
+  const trigger = page
+    .locator('nav[aria-label="Sections"]')
+    .getByRole("button", { name: "Methodology" });
+  await trigger.focus();
+  await page.keyboard.press("Enter");
+  const drawer = page.getByRole("dialog", {
+    name: "How every number is produced.",
+  });
+  await expect(drawer).toBeVisible();
+  for (const topic of ["Data", "Coverage", "Construction", "Numerics"])
+    await expect(drawer.getByRole("heading", { name: topic })).toBeVisible();
+  // Focus stays inside the modal; Escape closes it and returns focus.
+  await page.keyboard.press("Tab");
+  expect(await drawer.evaluate((d) => d.contains(document.activeElement))).toBe(
+    true,
+  );
+  await page.keyboard.press("Escape");
+  await expect(drawer).toBeHidden();
+  await expect(trigger).toBeFocused();
+  // Required disclaimers.
+  await expect(page.locator("footer")).toContainText(
+    "For educational and analytical purposes only. Historical results do not guarantee future performance and should not be considered investment advice.",
+  );
+  await expect(page.locator("body")).not.toContainText(
+    /Recommended Portfolio|Best Portfolio|Optimal for You/i,
+  );
+});
+
+test("remove the failed holding from the error, then the analysis succeeds", async ({
+  page,
+}) => {
+  let requests = 0;
+  await page.route("**/api/analysis", (route) => {
+    const tickers = route
+      .request()
+      .postDataJSON()
+      .holdings.map((h: { ticker: string }) => h.ticker);
+    requests++;
+    return route.fulfill({
+      json: tickers.includes("IWM")
+        ? {
+            ok: false,
+            error: {
+              code: "TICKER_NOT_FOUND",
+              ticker: "IWM",
+              message: "No history for IWM.",
+              retryable: true,
+            },
+          }
+        : { ok: true, value: longResult },
+    });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Analyze Sample Portfolio" }).click();
+  const alert = page.getByRole("alert").filter({ hasText: "IWM" });
+  await expect(alert).toContainText("Ticker Not Found");
+  await alert.getByRole("button", { name: "Edit IWM" }).click();
+  await expect(page.getByLabel("Ticker 3", { exact: true })).toBeFocused();
+  await alert.getByRole("button", { name: "Remove IWM" }).click();
+  // Removing a 10% holding leaves 90%; restore the total before re-running.
+  await page.getByLabel("Weight 1", { exact: true }).fill("50");
+  await page.getByRole("button", { name: "Analyze portfolio" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Performance overview." }),
+  ).toBeVisible();
+  expect(requests).toBe(2);
+});
+
+for (const [name, width, height] of [
+  ["phone", 390, 844],
+  ["tablet", 768, 1024],
+  ["laptop", 1320, 900],
+  ["wide desktop", 1920, 1080],
+] as const)
+  test(`no page-wide horizontal scroll on ${name} (${width}px), drawer included`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height });
+    await showLongResult(page);
+    const fits = () =>
+      page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      );
+    expect(await fits()).toBe(true);
+    // Benchmark tooltips stay inside the viewport at every width.
+    const tip = page
+      .locator("section:has(#benchmark-title)")
+      .getByRole("button", { name: "About Information ratio" });
+    await tip.focus();
+    const box = (await page
+      .getByRole("tooltip")
+      .filter({ visible: true })
+      .boundingBox())!;
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(width);
+    await page.getByRole("button", { name: "Open methodology" }).click();
+    const drawer = page.getByRole("dialog");
+    await expect(drawer).toBeVisible();
+    // Measure the settled position, not the 200 ms slide-in.
+    await drawer.evaluate((el) =>
+      Promise.all(el.getAnimations().map((a) => a.finished)),
+    );
+    const d = (await drawer.boundingBox())!;
+    expect(d.x).toBeGreaterThanOrEqual(0);
+    expect(d.x + d.width).toBeLessThanOrEqual(width + 0.5);
+    expect(await fits()).toBe(true);
+  });
+
+test("reduced motion disables drawer and skeleton animation", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await showLongResult(page);
+  await page.getByRole("button", { name: "Open methodology" }).click();
+  expect(
+    await page
+      .getByRole("dialog")
+      .evaluate((el) => getComputedStyle(el).animationName),
+  ).toBe("none");
+});
+
+test("tooltips remain hoverable, dismiss with Escape, and fit vertically near the viewport edge", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await showLongResult(page);
+  const trigger = page.getByRole("button", { name: "About Sortino ratio" });
+  await trigger.evaluate((el) => window.scrollTo(0, window.scrollY + el.getBoundingClientRect().bottom - window.innerHeight + 24));
+  await trigger.hover();
+  const tip = page.getByRole("tooltip").filter({ visible: true });
+  const box = (await tip.boundingBox())!;
+  expect(box.y).toBeGreaterThanOrEqual(0);
+  expect(box.y + box.height).toBeLessThanOrEqual(844);
+  await tip.hover({ timeout: 2000 });
+  await expect(tip).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("tooltip").filter({ visible: true })).toHaveCount(0);
+});
+
+test("chart keyboard interaction has a visible focus indicator", async ({ page }) => {
+  await showLongResult(page);
+  const chart = page.locator('section:has(#performance-title) .recharts-surface').first();
+  await chart.focus();
+  await page.keyboard.press("ArrowRight");
+  const style = await chart.evaluate((el) => ({ width: getComputedStyle(el).outlineWidth, style: getComputedStyle(el).outlineStyle }));
+  expect(style.style).not.toBe("none");
+  expect(parseFloat(style.width)).toBeGreaterThanOrEqual(2);
+});
+
+test("identical growth paths retain separate readable endpoint labels and mobile axes", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.route("**/api/analysis", route => route.fulfill({ json: { ok: true, value: simulation } }));
+  await page.goto("/");
+  await page.getByRole("button", { name: "Analyze Sample Portfolio" }).click();
+  const chart = page.locator('section:has(#performance-title) .chart-frame');
+  await chart.scrollIntoViewIfNeeded();
+  await expect(chart.locator(".end-label")).toHaveCount(2);
+  const boxes = await chart.locator(".end-label").evaluateAll(els => els.map(el => { const b = el.getBoundingClientRect(); return { y: b.y, bottom: b.bottom }; }));
+  expect(boxes[0].bottom <= boxes[1].y || boxes[1].bottom <= boxes[0].y).toBe(true);
+  // A three-session window still needs dates on its horizontal axis.
+  expect(await chart.locator('.recharts-xAxis .recharts-cartesian-axis-tick').count()).toBeGreaterThan(1);
+});
+
+test("method switches and builder edits do not duplicate analysis, stress or construction requests", async ({ page }) => {
+  const counts = { analysis: 0, stress: 0, construction: 0 };
+  page.on("request", request => {
+    const key = new URL(request.url()).pathname.split("/").at(-1)!;
+    if (key in counts) counts[key as keyof typeof counts]++;
+  });
+  const section = await showConstructionResult(page);
+  await section.getByRole("button", { name: "Generate allocation" }).click();
+  await expect(section.getByRole("heading", { name: "Minimum-Variance Allocation" })).toBeVisible();
+  for (const method of ["Equal Weight", "Inverse Volatility", "Equal Risk Contribution", "Minimum Variance"])
+    await section.getByRole("radio", { name: method, exact: true }).check();
+  await page.getByLabel("Weight 1", { exact: true }).fill("49");
+  await expect(section.getByRole("button", { name: /Apply proposed weights/ })).toBeDisabled();
+  expect(counts).toEqual({ analysis: 1, stress: 1, construction: 1 });
+});
+
+test("keyboard-only sample, chart and methodology workflow keeps focus inside the dialog", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.route("**/api/analysis", route => route.fulfill({ json: { ok: true, value: longResult } }));
+  await page.goto("/");
+  await page.keyboard.press("Tab");
+  await expect(page.getByRole("link", { name: "Skip to portfolio builder" })).toBeFocused();
+  await page.keyboard.press("Enter");
+  // Reach the submit button solely through the browser's focus order.
+  let submitted = false;
+  for (let i = 0; i < 60; i++) {
+    await page.keyboard.press("Tab");
+    if (await page.getByRole("button", { name: "Analyze portfolio" }).evaluate(el => el === document.activeElement)) {
+      await page.keyboard.press("Enter"); submitted = true; break;
+    }
+  }
+  expect(submitted).toBe(true);
+  await expect(page.getByRole("heading", { name: "Performance overview." })).toBeVisible();
+  // Tab backward through the document to the header trigger.
+  let opened = false;
+  for (let i = 0; i < 75; i++) {
+    await page.keyboard.press("Shift+Tab");
+    if (await page.getByRole("button", { name: "Methodology", exact: true }).evaluate(el => el === document.activeElement)) {
+      await page.keyboard.press("Enter"); opened = true; break;
+    }
+  }
+  expect(opened).toBe(true);
+  const drawer = page.getByRole("dialog");
+  for (let i = 0; i < 15; i++) {
+    await page.keyboard.press("Tab");
+    expect(await drawer.evaluate(el => el.contains(document.activeElement))).toBe(true);
+  }
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("button", { name: "Methodology", exact: true })).toBeFocused();
+});
+
+for (const width of [390, 768, 1320, 1920])
+  test(`release visual review at ${width}px`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height: width === 390 ? 844 : 1024 });
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    const errors: string[] = [];
+    page.on("pageerror", error => errors.push(error.message));
+    const section = await showConstructionResult(page);
+    await section.getByRole("button", { name: "Generate allocation" }).click();
+    await expect(section.getByRole("heading", { name: "Minimum-Variance Allocation" })).toBeVisible();
+    await expect(page.locator(".stress-select")).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath(`full-${width}.png`), fullPage: true });
+    for (const id of ["performance-title", "risk-title", "diversification-title", "rolling-title", "stress-title", "constructor-title"]) {
+      const element = page.locator(`section:has(#${id})`);
+      await element.screenshot({ path: testInfo.outputPath(`${id}-${width}.png`) });
+    }
+    await page.getByRole("button", { name: "Open methodology" }).click();
+    await page.getByRole("dialog").screenshot({ path: testInfo.outputPath(`drawer-${width}.png`) });
+    expect(errors).toEqual([]);
+  });

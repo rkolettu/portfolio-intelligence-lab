@@ -18,7 +18,7 @@ export function StressEventDetail({
   benchmark: string;
   showName?: boolean;
 }) {
-  const window =
+  const span =
     e.startDate && e.endDate
       ? `${e.startDate} close → ${e.endDate} close`
       : `${e.requestedStartDate} → ${e.requestedEndDate}`;
@@ -26,7 +26,7 @@ export function StressEventDetail({
     <div className="stress-detail">
       {showName && <h3 className="stress-name">{e.name}</h3>}
       <p className="hint">
-        {e.description} {window}
+        {e.description} {span}
         {e.status === "complete" &&
           ` · ${e.sample.returnCount.toLocaleString()} daily returns; the first ends ${e.firstReturnDate}.`}
       </p>
@@ -36,12 +36,15 @@ export function StressEventDetail({
         </p>
       ))}
       {e.status === "unavailable" && (
-        <p className="warning" role="status">
+        <p className="status-notice tone-warning" role="status">
           Stress result unavailable: {e.reason}
         </p>
       )}
       {e.status === "incomplete_coverage" && (
-        <div className="coverage-notice">
+        <div
+          className="coverage-notice status-notice tone-warning"
+          role="status"
+        >
           <h4>Incomplete Historical Coverage</h4>
           <p>{INCOMPLETE}</p>
           <ul>
@@ -71,7 +74,7 @@ export function StressEventDetail({
                 metric: e.portfolioReturn,
                 format: percent,
                 formula:
-                  "Ending ÷ starting wealth − 1 for the target portfolio initialized at the start close, compounded daily with monthly closing resets. Gross of costs.",
+                  "Compounded return of the target portfolio started fresh at the window's first close. Gross of costs.",
                 footnote: (m) => `${m.sample.returnCount} daily returns`,
               },
               {
@@ -79,7 +82,7 @@ export function StressEventDetail({
                 metric: e.benchmarkReturn,
                 format: percent,
                 formula:
-                  "The benchmark ETF's cumulative adjusted-price return over the same sessions. Requires a price at every window session.",
+                  "The benchmark ETF's compounded return over the same sessions.",
                 footnote: () => "ETF, same window",
               },
               {
@@ -87,15 +90,15 @@ export function StressEventDetail({
                 metric: e.activeReturn,
                 format: percentagePoints,
                 formula:
-                  "Portfolio event return − benchmark event return. A simple difference over the window, not the annualized arithmetic active return of the benchmark section.",
+                  "Portfolio return minus benchmark return over the window. A simple difference, not annualized.",
                 footnote: () => "Portfolio − benchmark",
               },
               {
-                label: "Max drawdown",
+                label: "Maximum drawdown",
                 metric: e.maximumDrawdown,
                 format: percent,
                 formula:
-                  "Deepest close-to-close decline within the window; the start close is the first peak. Intraday losses can be larger.",
+                  "Largest fall below a running peak within the window; the start close is the first peak.",
                 footnote: () =>
                   e.maximumDrawdownEpisode
                     ? `Trough ${e.maximumDrawdownEpisode.troughDate}`
@@ -106,7 +109,7 @@ export function StressEventDetail({
                 metric: e.portfolioVolatility,
                 format: unsignedPercent,
                 formula:
-                  "Sample standard deviation of the event's daily returns × √252. Short windows give unstable annualized figures.",
+                  "Annualized volatility of the event's daily returns. Unstable for short windows.",
                 footnote: () => "Annualized",
               },
               {
@@ -114,7 +117,7 @@ export function StressEventDetail({
                 metric: e.benchmarkVolatility,
                 format: unsignedPercent,
                 formula:
-                  "Sample standard deviation of the benchmark's daily returns in the window × √252.",
+                  "Annualized volatility of the benchmark's daily returns in the window.",
                 footnote: () => "Annualized",
               },
             ]}

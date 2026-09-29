@@ -58,7 +58,7 @@ function view(onApply = vi.fn()) {
 }
 const generate = async () => {
   fireEvent.click(screen.getByRole("button", { name: "Generate allocation" }));
-  await screen.findByRole("table", { name: /Proposed allocation/ });
+  await screen.findByRole("table", { name: /Proposed Allocation/ });
 };
 
 describe("ConstructionSection", () => {
@@ -110,7 +110,7 @@ describe("ConstructionSection", () => {
     ).toBeTruthy();
     expect(calls).toHaveLength(1);
     expect(screen.getByRole("note").textContent).toMatch(
-      /^IN-SAMPLE RETROSPECTIVE ANALYSIS/,
+      /^In-Sample Retrospective Analysis/,
     );
     expect(
       screen.getByRole("table", { name: /Stress comparison/ }),
@@ -210,7 +210,7 @@ describe("ConstructionSection", () => {
     );
     rerender(<ConstructionSection {...props} builder={edited} />);
     release({ json: async () => ({ ok: true, value: result }) });
-    await screen.findByRole("table", { name: /Proposed allocation/ });
+    await screen.findByRole("table", { name: /Proposed Allocation/ });
     expect(
       screen.getByText(/Inputs changed since this proposal was generated/),
     ).toBeTruthy();
@@ -293,7 +293,7 @@ describe("ConstructionSection", () => {
     await generate();
     const text = document.body.textContent ?? "";
     expect(text).toContain(
-      "For educational and analytical purposes only. Allocation outputs are mathematical results based on selected inputs, assumptions and constraints, not personalized recommendations.",
+      "Portfolio allocations shown are mathematical outputs based on the selected inputs, assumptions, and constraints, not personalized recommendations.",
     );
     for (const banned of [
       /Recommended Portfolio/i,
@@ -301,6 +301,8 @@ describe("ConstructionSection", () => {
       /Best Allocation/i,
       /You Should Buy/i,
       /You Should Sell/i,
+      /Best Portfolio/i,
+      /Optimal for You/i,
     ])
       expect(text).not.toMatch(banned);
     expect(container).toBeTruthy();

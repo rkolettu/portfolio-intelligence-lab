@@ -2,10 +2,10 @@
 import { useState } from "react";
 import type { CorrelationPair } from "@/lib/types/analytics";
 import { DIVERGING, divergingColor, inkFor } from "@/lib/charts/diverging";
-import { decimal } from "@/lib/utils/format";
+import { decimal, fixed } from "@/lib/utils/format";
 
 /** Two decimals; values that round to zero print as 0.00, never "-0.00". */
-const cellText = (v: number) => decimal(Math.abs(v) < 0.005 ? 0 : v);
+const cellText = (v: number) => decimal(v);
 
 type Props = {
   tickers: string[];
@@ -66,7 +66,7 @@ export function CorrelationHeatmap({
           </caption>
           <thead>
             <tr>
-              <td />
+              <td aria-hidden />
               {tickers.map((t) => (
                 <th key={t} scope="col">
                   {t}
@@ -109,8 +109,8 @@ export function CorrelationHeatmap({
       </div>
       <p className="hint heatmap-readout" aria-live="polite">
         {hover
-          ? `${tickers[hover.i]} / ${tickers[hover.j]}: ${cell === null ? "undefined (constant returns)" : cell.toFixed(4)}`
-          : "Hover a cell for the exact value."}
+          ? `${tickers[hover.i]} / ${tickers[hover.j]}: ${cell === null ? "undefined (constant returns)" : fixed(cell, 4)}`
+          : "Hover a cell for the four-decimal value."}
       </p>
       {undefinedTickers.length > 0 && (
         <p className="hint">

@@ -115,7 +115,7 @@ describe("StressLab", () => {
     const calls = stubFetch({ ok: true, value: presets });
     render(<StressLab config={config} today={today} />);
     expect(screen.getByRole("status").textContent).toMatch(
-      /event-window history/,
+      /Loading stress history/,
     );
     const table = await screen.findByRole("table", {
       name: /Historical stress events/,
@@ -172,9 +172,7 @@ describe("StressLab", () => {
     const calls = stubFetch(new Error("network"), { ok: true, value: presets });
     render(<StressLab config={config} today={today} />);
     const alert = await screen.findByRole("alert");
-    expect(alert.textContent).toMatch(
-      /historical analysis above is unaffected/,
-    );
+    expect(alert.textContent).toMatch(/rest of the analysis is unaffected/);
     fireEvent.click(
       within(alert).getByRole("button", { name: "Retry stress tests" }),
     );

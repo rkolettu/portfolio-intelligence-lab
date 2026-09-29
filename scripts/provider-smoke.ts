@@ -1,3 +1,4 @@
+import { deepStrictEqual } from "node:assert/strict";
 // Opt-in live qualification smoke; never part of routine tests. Local only.
 import {
   analyze,
@@ -285,3 +286,35 @@ console.log(
 );
 if (built && !built.ok) process.exitCode = 1;
 if (!result.ok) process.exitCode = 1;
+
+// Release regression: replay the exact normalized inputs just fetched. No extra
+// provider requests, and no persistent provider-data retention is introduced.
+if (result.ok && events.ok && built?.ok) {
+  const { simulate } = await import("../lib/backtest/engine");
+  const { runStress } = await import("../lib/backtest/stress");
+  const { runConstruction } = await import("../lib/backtest/construction");
+  const analysisReplay = simulate({
+    ...result.value.snapshot,
+    config: result.value.config,
+    now: result.value.metadata.generatedAt,
+  });
+  for (const key of ["ledger", "performance", "benchmark", "benchmarkAnalytics", "riskAnalytics", "rollingAnalytics"] as const)
+    deepStrictEqual(analysisReplay[key], result.value[key], `Analysis replay: ${key}`);
+  deepStrictEqual(analysisReplay.metadata.snapshotHash, result.value.metadata.snapshotHash);
+  const stressReplay = runStress({ ...events.value.snapshot, config: events.value.config, now: events.value.metadata.generatedAt });
+  deepStrictEqual(stressReplay.events, events.value.events, "Stress replay");
+  deepStrictEqual(stressReplay.metadata.snapshotHash, events.value.metadata.snapshotHash);
+  const constructionInput = {
+    ...built.value.snapshot,
+    config: built.value.config,
+    constraints: built.value.inputs.constraints,
+    cash: built.value.inputs.cash,
+    now: built.value.metadata.generatedAt,
+  };
+  const constructionReplay = runConstruction(constructionInput);
+  deepStrictEqual(constructionReplay.proposals, built.value.proposals, "Construction replay");
+  deepStrictEqual(constructionReplay.current, built.value.current, "Construction current comparison replay");
+  deepStrictEqual(constructionReplay.metadata.snapshotHash, built.value.metadata.snapshotHash);
+  deepStrictEqual(runConstruction(constructionInput), constructionReplay, "Deterministic construction repeat");
+  console.log("REPLAY", JSON.stringify({ analysis: "exact", stress: "exact", construction: "exact", constructionRepeat: "exact" }));
+}

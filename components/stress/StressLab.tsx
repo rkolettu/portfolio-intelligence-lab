@@ -6,6 +6,9 @@ import type { PortfolioConfig } from "@/lib/types/portfolio";
 import { customStressWindow } from "@/lib/validation/stress";
 import { LabError } from "@/lib/utils/errors";
 import { percent, percentagePoints, timestamp } from "@/lib/utils/format";
+import { errorState } from "@/lib/ui/quality";
+import { LoadingState } from "@/components/ui/LoadingState";
+import { StatusNotice } from "@/components/ui/StatusNotice";
 import { StressEventDetail } from "./StressEventDetail";
 
 type Load =
@@ -107,9 +110,9 @@ export function StressLab({
   }, []);
 
   function runCustom() {
-    let window;
+    let bounds;
     try {
-      window = customStressWindow(draft.startDate, draft.endDate, today);
+      bounds = customStressWindow(draft.startDate, draft.endDate, today);
     } catch (error) {
       setInvalid(
         error instanceof LabError ? error.detail.message : "Invalid window.",
@@ -124,7 +127,7 @@ export function StressLab({
     post(
       {
         config,
-        window: { startDate: window.startDate, endDate: window.endDate },
+        window: { startDate: bounds.startDate, endDate: bounds.endDate },
       },
       controller.signal,
     )
@@ -169,19 +172,18 @@ export function StressLab({
         </div>
       </div>
       {presets.state === "loading" && (
-        <div className="loading" role="status">
-          <span className="loading-line" />
-          <p>Loading event-window history and running each event…</p>
-        </div>
+        <LoadingState
+          label="Loading stress history and running each event…"
+          detail="Stress runs on its own request; the sections above are already complete."
+          rows={2}
+        />
       )}
       {presets.state === "error" && (
-        <div className="error" role="alert">
-          <strong>{presets.error.code.replaceAll("_", " ")}</strong>
-          <p>
-            {presets.error.message} The historical analysis above is unaffected.
-          </p>
-          {presets.error.code !== "UNQUALIFIED_PROVIDER" && (
-            <div className="actions">
+        <StatusNotice
+          tone={errorState(presets.error.code).tone}
+          title={`Stress Lab unavailable · ${errorState(presets.error.code).title}`}
+          actions={
+            presets.error.code !== "UNQUALIFIED_PROVIDER" && (
               <button
                 type="button"
                 className="secondary"
@@ -192,28 +194,30 @@ export function StressLab({
               >
                 Retry stress tests
               </button>
-            </div>
-          )}
-        </div>
+            )
+          }
+        >
+          <p>{presets.error.message} The rest of the analysis is unaffected.</p>
+        </StatusNotice>
       )}
       {presets.state === "done" && (
         <>
           <div className="table-wrap">
-            <table className="stress-table">
+            <table className="stress-table stress-overview">
               <caption>
                 Historical stress events · target weights re-initialized at each
                 event start
               </caption>
               <thead>
                 <tr>
-                  <th>Event</th>
-                  <th>Window (closes)</th>
-                  <th>Portfolio</th>
-                  <th>{config.benchmark}</th>
-                  <th>Active</th>
-                  <th>Max drawdown</th>
-                  <th>Best</th>
-                  <th>Worst</th>
+                  <th scope="col">Event</th>
+                  <th scope="col">Window (closes)</th>
+                  <th scope="col">Portfolio</th>
+                  <th scope="col">{config.benchmark}</th>
+                  <th scope="col">Active return</th>
+                  <th scope="col">Maximum drawdown</th>
+                  <th scope="col">Best holding</th>
+                  <th scope="col">Worst holding</th>
                 </tr>
               </thead>
               <tbody>
@@ -300,14 +304,18 @@ export function StressLab({
                 </p>
               )}
               {custom?.state === "loading" && (
-                <p className="muted" role="status">
-                  Loading history for the custom window…
-                </p>
+                <LoadingState
+                  label="Loading history for the custom window…"
+                  rows={1}
+                />
               )}
               {custom?.state === "error" && (
-                <p className="warning" role="status">
+                <StatusNotice
+                  tone={errorState(custom.error.code).tone}
+                  title={errorState(custom.error.code).title}
+                >
                   {custom.error.message}
-                </p>
+                </StatusNotice>
               )}
               {customEvent && (
                 <StressEventDetail

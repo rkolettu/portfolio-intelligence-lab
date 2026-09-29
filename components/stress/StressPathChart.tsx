@@ -47,7 +47,7 @@ function PathTooltip({
   );
 }
 
-const endLabel = (lastIndex: number, name: string, color: string) =>
+const endLabel = (lastIndex: number, name: string, color: string, dy = 4) =>
   function EndLabel({ x, y, index, value }: LabelProps) {
     if (index !== lastIndex || x === undefined || y === undefined) return <g />;
     return (
@@ -60,7 +60,7 @@ const endLabel = (lastIndex: number, name: string, color: string) =>
           stroke={CHART.surface}
           strokeWidth={2}
         />
-        <text x={Number(x) + 9} y={Number(y) + 4} className="end-label">
+        <text x={Number(x) + 9} y={Number(y) + dy} className="end-label">
           {name} {axisMoney(Number(value))}
         </text>
       </g>
@@ -126,7 +126,7 @@ export function StressPathChart({
         <ResponsiveContainer width="100%" height="100%">
           <LineChart
             data={path}
-            margin={{ top: 12, right: 112, bottom: 4, left: 4 }}
+            margin={{ top: 24, right: 112, bottom: 4, left: 4 }}
           >
             <CartesianGrid vertical={false} stroke={CHART.grid} />
             <XAxis
@@ -164,7 +164,7 @@ export function StressPathChart({
               activeDot={{ r: 4, stroke: CHART.surface, strokeWidth: 2 }}
               isAnimationActive={!reduced}
               animationDuration={CHART.animationMs}
-              label={endLabel(path.length - 1, "Portfolio", CHART.portfolio)}
+              label={endLabel(path.length - 1, "Portfolio", CHART.portfolio, withBenchmark ? (last.portfolio >= last.benchmark! ? -7 : 17) : 4)}
             />
             {withBenchmark && (
               <Line
@@ -176,7 +176,7 @@ export function StressPathChart({
                 activeDot={{ r: 4, stroke: CHART.surface, strokeWidth: 2 }}
                 isAnimationActive={!reduced}
                 animationDuration={CHART.animationMs}
-                label={endLabel(path.length - 1, benchmark, CHART.benchmark)}
+                label={endLabel(path.length - 1, benchmark, CHART.benchmark, last.portfolio >= last.benchmark! ? 17 : -7)}
               />
             )}
           </LineChart>
