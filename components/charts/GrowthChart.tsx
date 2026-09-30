@@ -1,15 +1,15 @@
 "use client";
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
 import {
   CartesianGrid,
   Line,
   LineChart,
+  ReferenceDot,
   ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
-  type LabelProps,
   type TooltipContentProps,
   type TooltipValueType,
 } from "recharts";
@@ -22,8 +22,22 @@ import {
   monthEndRows,
   type GrowthDatum,
 } from "@/lib/charts/series";
-import { axisDate, axisDay, axisMoney, money, shortDate } from "@/lib/utils/format";
-import { CHART, usePrefersReducedMotion } from "./theme";
+import {
+  axisDate,
+  axisDay,
+  axisMoney,
+  money,
+  shortDate,
+  signedMoney,
+} from "@/lib/utils/format";
+import { ChartTooltip } from "./ChartTooltip";
+import { activeDot, endLabel, ExtremumMark } from "./markers";
+import {
+  CHART,
+  chartMargin,
+  useNarrowChart,
+  usePrefersReducedMotion,
+} from "./theme";
 
 const MAX_POINTS = 640;
 
@@ -33,46 +47,32 @@ function GrowthTooltip({
   label,
 }: TooltipContentProps<TooltipValueType, string | number>) {
   if (!active || !payload?.length) return null;
+  const [first, second] = payload;
   return (
-    <div className="chart-tooltip">
-      <p>{shortDate(String(label))}</p>
-      {payload.map((p) => (
-        <div className="tooltip-row" key={String(p.dataKey)}>
-          <span
-            className="line-key"
-            style={{ background: p.color }}
-            aria-hidden
-          />
-          <strong>{money(Number(p.value))}</strong>
-          <span>{p.name}</span>
-        </div>
-      ))}
-    </div>
+    <ChartTooltip
+      date={shortDate(String(label))}
+      rows={payload.map((p) => ({
+        color: String(p.color),
+        label: String(p.name),
+        value: money(Number(p.value)),
+      }))}
+      foot={
+        second && (
+          <div className="tt-foot">
+            <span>
+              {String(first.name)} − {String(second.name)}
+            </span>
+            <strong>{signedMoney(Number(first.value) - Number(second.value))}</strong>
+          </div>
+        )
+      }
+    />
   );
 }
 
-const endLabel = (lastIndex: number, name: string, color: string, dy = 4) =>
-  function EndLabel({ x, y, index, value }: LabelProps) {
-    if (index !== lastIndex || x === undefined || y === undefined) return <g />;
-    return (
-      <g>
-        <circle
-          cx={Number(x)}
-          cy={Number(y)}
-          r={4}
-          fill={color}
-          stroke={CHART.surface}
-          strokeWidth={2}
-        />
-        <text x={Number(x) + 9} y={Number(y) + dy} className="end-label">
-          {name} {axisMoney(Number(value))}
-        </text>
-      </g>
-    );
-  };
-
 export function GrowthChart({ result }: { result: BacktestResult }) {
   const reduced = usePrefersReducedMotion();
+  const narrow = useNarrowChart();
   const benchmarkOk = result.benchmark.ok;
   const [compare, setCompare] = useState(benchmarkOk);
   const withBenchmark = compare && benchmarkOk;
@@ -88,6 +88,20 @@ export function GrowthChart({ result }: { result: BacktestResult }) {
   const last = full.at(-1)!;
   const ticker = result.config.benchmark;
   const shortened = withBenchmark && first.date !== result.initialDate;
+  // Display-only extremes of the plotted portfolio path; drawn only when they sit
+  // clear of the line's ends, where the start point and end label already speak.
+  let high = full[0];
+  let low = full[0];
+  for (const d of full) {
+    if (d.portfolio > high.portfolio) high = d;
+    if (d.portfolio < low.portfolio) low = d;
+  }
+  const clear = (d: GrowthDatum) => {
+    const at = full.indexOf(d) / (full.length - 1);
+    return at > 0.05 && at < 0.93;
+  };
+  const showHigh = full.length > 20 && clear(high) && high.portfolio > 10_000;
+  const showLow = full.length > 20 && clear(low) && low.portfolio < 10_000;
   const summary = `Growth of $10,000 from ${shortDate(first.date)} to ${shortDate(last.date)}: portfolio ${money(last.portfolio)}${
     last.benchmark !== undefined ? `, ${ticker} ${money(last.benchmark)}` : ""
   }.`;
@@ -114,6 +128,7 @@ export function GrowthChart({ result }: { result: BacktestResult }) {
           </span>
           <label
             className={`legend-item legend-toggle${benchmarkOk ? "" : " disabled"}`}
+            style={{ "--key": CHART.benchmark } as CSSProperties}
           >
             <input
               type="checkbox"
@@ -142,11 +157,11 @@ export function GrowthChart({ result }: { result: BacktestResult }) {
           Benchmark Data Unavailable: {result.benchmark.error.message}
         </p>
       )}
-      <div className="chart-frame" style={{ height: 340 }}>
+      <div className="chart-frame" style={{ height: 330 }}>
         <ResponsiveContainer width="100%" height="100%">
           <LineChart
             data={data}
-            margin={{ top: 24, right: 112, bottom: 4, left: 4 }}
+            margin={chartMargin(narrow)}
           >
             <CartesianGrid vertical={false} stroke={CHART.grid} />
             <XAxis
@@ -167,34 +182,86 @@ export function GrowthChart({ result }: { result: BacktestResult }) {
               axisLine={false}
               tick={{ fill: CHART.tick, fontSize: 11 }}
             />
-            <ReferenceLine y={10_000} stroke={CHART.reference} />
+            <ReferenceLine
+              y={10_000}
+              stroke={CHART.reference}
+              strokeDasharray="3 4"
+            />
+            {showHigh && (
+              <ReferenceDot
+                x={high.date}
+                y={high.portfolio}
+                shape={<ExtremumMark color={CHART.portfolio} />}
+                label={{
+                  value: `High ${axisMoney(high.portfolio)}`,
+                  position: "top",
+                  fill: CHART.tick,
+                  fontSize: 10,
+                }}
+              />
+            )}
+            {showLow && (
+              <ReferenceDot
+                x={low.date}
+                y={low.portfolio}
+                shape={<ExtremumMark color={CHART.portfolio} />}
+                label={{
+                  value: `Low ${axisMoney(low.portfolio)}`,
+                  position: "bottom",
+                  fill: CHART.tick,
+                  fontSize: 10,
+                }}
+              />
+            )}
             <Tooltip
               content={GrowthTooltip}
-              cursor={{ stroke: CHART.reference, strokeWidth: 1 }}
+              cursor={{
+                stroke: CHART.reference,
+                strokeWidth: 1,
+                strokeDasharray: "2 3",
+              }}
               isAnimationActive={false}
             />
             <Line
               name="Portfolio"
               dataKey="portfolio"
               stroke={CHART.portfolio}
-              strokeWidth={2}
+              strokeWidth={CHART.line}
               dot={false}
-              activeDot={{ r: 4, stroke: CHART.surface, strokeWidth: 2 }}
+              activeDot={activeDot(CHART.portfolio)}
               isAnimationActive={!reduced}
               animationDuration={CHART.animationMs}
-              label={endLabel(data.length - 1, "Portfolio", CHART.portfolio, withBenchmark ? (last.portfolio >= last.benchmark! ? -7 : 17) : 4)}
+              label={
+                endLabel(
+                      data.length - 1,
+                      "Portfolio",
+                      CHART.portfolio,
+                      withBenchmark
+                        ? last.portfolio >= last.benchmark!
+                          ? -7
+                          : 17
+                        : 4,
+                    )
+              }
             />
             {withBenchmark && (
               <Line
                 name={ticker}
                 dataKey="benchmark"
                 stroke={CHART.benchmark}
-                strokeWidth={2}
+                strokeWidth={CHART.lineSecondary}
                 dot={false}
-                activeDot={{ r: 4, stroke: CHART.surface, strokeWidth: 2 }}
+                activeDot={activeDot(CHART.benchmark)}
                 isAnimationActive={!reduced}
                 animationDuration={CHART.animationMs}
-                label={endLabel(data.length - 1, ticker, CHART.benchmark, last.portfolio >= last.benchmark! ? 17 : -7)}
+                label={
+                  endLabel(
+                        data.length - 1,
+                        ticker,
+                        CHART.benchmark,
+                        last.portfolio >= last.benchmark! ? 17 : -7,
+                      )
+                }
               />
             )}
           </LineChart>

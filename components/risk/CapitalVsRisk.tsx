@@ -1,14 +1,35 @@
 "use client";
+import { useState, type CSSProperties } from "react";
 import type { HoldingRisk } from "@/lib/types/analytics";
 import { capitalRiskScale } from "@/lib/charts/riskDisplay";
-import { unsignedPercent } from "@/lib/utils/format";
+import { percentagePoints, unsignedPercent } from "@/lib/utils/format";
+import {
+  focusHandlers,
+  focusState,
+  useHoldingFocus,
+} from "@/components/ui/HoldingFocus";
+import { Segmented } from "@/components/ui/Segmented";
+import { useFlip } from "@/components/ui/useFlip";
 
 const CAPITAL = "#8d8880";
 const RISK = "#3987e5";
 
+type View = "both" | "capital" | "risk";
+const VIEWS: { value: View; label: string }[] = [
+  { value: "both", label: "Overlay" },
+  { value: "capital", label: "Capital" },
+  { value: "risk", label: "Risk" },
+];
+
 /** Hero: capital weight vs percentage risk contribution on one zero-anchored axis.
- * Negative contributions extend left of zero. Every value is precomputed. */
+ * Negative contributions extend left of zero. Every value is precomputed; the only
+ * arithmetic here is the difference between two displayed values (risk − capital).
+ * Switching the view morphs one bar between the two values while a dashed outline
+ * keeps the other in place, so the gap reads as a movement, not two charts. */
 export function CapitalVsRisk({ holdings }: { holdings: HoldingRisk[] }) {
+  const [view, setView] = useState<View>("both");
+  const { focus, setFocus } = useHoldingFocus();
+  const rows = useFlip<HTMLDivElement>(holdings.map((h) => h.ticker).join());
   const pcr = holdings.map((h) =>
     h.percentage.available ? h.percentage.value : 0,
   );
@@ -20,9 +41,22 @@ export function CapitalVsRisk({ holdings }: { holdings: HoldingRisk[] }) {
       ? { left: `${zero}%`, width: `${at - zero}%` }
       : { left: `${at}%`, width: `${zero - at}%` };
   };
+  // The headline: where risk most exceeds capital (display selection only).
+  const lead = holdings
+    .filter((h) => h.percentage.available && !h.riskless)
+    .map((h) => ({
+      h,
+      risk: h.percentage.available ? h.percentage.value : 0,
+    }))
+    .reduce<{ h: HoldingRisk; risk: number } | null>(
+      (best, c) =>
+        !best || c.risk - c.h.weight > best.risk - best.h.weight ? c : best,
+      null,
+    );
+  const leadGap = lead ? lead.risk - lead.h.weight : 0;
   return (
     <figure
-      className="capital-risk"
+      className="capital-risk chart-figure"
       aria-labelledby="capital-risk-title capital-risk-summary"
     >
       <div className="chart-head">
@@ -60,14 +94,62 @@ export function CapitalVsRisk({ holdings }: { holdings: HoldingRisk[] }) {
           </span>
         </div>
       </div>
-      <div className="cr-rows" role="list">
-        {holdings.map((h) => {
+      <div className="cr-toolbar">
+        {lead && leadGap > 0.005 ? (
+          <p className="cr-insight" aria-hidden>
+            <span className="cr-insight-ticker">{lead.h.ticker}</span>
+            <span>
+              <b>{unsignedPercent(lead.h.weight)}</b> of capital
+            </span>
+            <i className="cr-insight-arrow" />
+            <span>
+              <b>{unsignedPercent(lead.risk)}</b> of risk
+            </span>
+            <em>{percentagePoints(leadGap)}</em>
+          </p>
+        ) : (
+          <p className="cr-insight cr-insight-flat" aria-hidden>
+            Risk contribution tracks capital weight closely.
+          </p>
+        )}
+        <Segmented
+          legend="Chart view"
+          name="capital-risk-view"
+          options={VIEWS}
+          value={view}
+          onChange={setView}
+        />
+      </div>
+      <div
+        className="cr-rows"
+        role="list"
+        data-view={view}
+        ref={rows}
+        onPointerLeave={() => setFocus(null)}
+      >
+        {holdings.map((h, i) => {
           const p = h.percentage;
+          const risk = p.available ? p.value : null;
+          const delta = risk === null ? null : risk - h.weight;
+          const main = view === "risk" && risk !== null ? risk : h.weight;
+          const ghost =
+            view === "risk" ? h.weight : risk !== null ? risk : null;
           return (
-            <div className="cr-row" role="listitem" key={h.ticker}>
+            <div
+              className="cr-row"
+              role="listitem"
+              key={h.ticker}
+              data-flip={h.ticker}
+              data-focus={focusState(focus, h.ticker)}
+              style={{ ["--i" as string]: i } as CSSProperties}
+              {...focusHandlers(setFocus, [h.ticker])}
+            >
               <span className="cr-ticker">
                 {h.ticker}
                 {h.riskless && <span className="cr-tag">riskless</span>}
+                {risk !== null && risk < 0 && (
+                  <span className="cr-tag cr-tag-hedge">hedge</span>
+                )}
               </span>
               <div className="cr-track" aria-hidden>
                 {scale.ticks.map((t) => (
@@ -77,6 +159,17 @@ export function CapitalVsRisk({ holdings }: { holdings: HoldingRisk[] }) {
                     style={{ left: `${scale.position(t) * 100}%` }}
                   />
                 ))}
+                {delta !== null && (
+                  <span
+                    className="cr-gap"
+                    data-label={percentagePoints(delta)}
+                    data-dir={delta >= 0 ? "up" : "down"}
+                    style={{
+                      left: `${Math.min(scale.position(h.weight), scale.position(risk!)) * 100}%`,
+                      width: `${Math.abs(scale.position(risk!) - scale.position(h.weight)) * 100}%`,
+                    }}
+                  />
+                )}
                 <span
                   className="cr-bar cr-capital"
                   style={{ ...bar(h.weight), background: CAPITAL }}
@@ -87,12 +180,49 @@ export function CapitalVsRisk({ holdings }: { holdings: HoldingRisk[] }) {
                     style={{ ...bar(p.value), background: RISK }}
                   />
                 )}
+                <span
+                  className={`cr-bar cr-main${main < 0 ? " cr-negative" : ""}`}
+                  style={{
+                    ...bar(main),
+                    backgroundColor: view === "risk" ? RISK : CAPITAL,
+                  }}
+                />
+                {ghost !== null && (
+                  <span
+                    className={`cr-ghost${ghost < 0 ? " cr-negative" : ""}`}
+                    style={
+                      {
+                        ...bar(ghost),
+                        borderColor:
+                          view === "risk"
+                            ? "rgba(244,241,234,0.55)"
+                            : "rgba(96,160,255,0.75)",
+                        ["--ghost" as string]:
+                          view === "risk" ? "#f4f1ea" : "#7db2ff",
+                      } as CSSProperties
+                    }
+                  />
+                )}
               </div>
               <span className="cr-values">
-                <span>{unsignedPercent(h.weight)}</span>
-                <strong>
+                <span className="cr-v-capital">{unsignedPercent(h.weight)}</span>
+                <strong className="cr-v-risk">
                   {p.available ? unsignedPercent(p.value) : "N/A"}
                 </strong>
+                <span
+                  className="cr-v-delta"
+                  data-dir={
+                    delta === null
+                      ? undefined
+                      : Math.abs(delta) < 0.005
+                        ? "flat"
+                        : delta > 0
+                          ? "up"
+                          : "down"
+                  }
+                >
+                  {delta === null ? "—" : percentagePoints(delta)}
+                </span>
               </span>
             </div>
           );
@@ -103,7 +233,7 @@ export function CapitalVsRisk({ holdings }: { holdings: HoldingRisk[] }) {
             {scale.ticks.map((t) => (
               <span
                 key={t}
-                className="cr-tick"
+                className={t === 0 ? "cr-tick cr-tick-zero" : "cr-tick"}
                 style={{ left: `${scale.position(t) * 100}%` }}
               >
                 {unsignedPercent(t).replace(".00", "")}
@@ -113,6 +243,7 @@ export function CapitalVsRisk({ holdings }: { holdings: HoldingRisk[] }) {
           <span className="cr-values cr-values-head">
             <span>Weight</span>
             <strong>Risk</strong>
+            <span>Δ</span>
           </span>
         </div>
       </div>

@@ -8,14 +8,32 @@ import {
   Tooltip,
   XAxis,
   YAxis,
-  type LabelProps,
   type TooltipContentProps,
   type TooltipValueType,
 } from "recharts";
 import type { WealthPoint } from "@/lib/types/analytics";
-import { axisTicks, sessionTicks, downsample, monthEndRows } from "@/lib/charts/series";
-import { axisDate, axisDay, axisMoney, money, shortDate } from "@/lib/utils/format";
-import { CHART, usePrefersReducedMotion } from "@/components/charts/theme";
+import {
+  axisTicks,
+  sessionTicks,
+  downsample,
+  monthEndRows,
+} from "@/lib/charts/series";
+import {
+  axisDate,
+  axisDay,
+  axisMoney,
+  money,
+  shortDate,
+  signedMoney,
+} from "@/lib/utils/format";
+import { ChartTooltip } from "@/components/charts/ChartTooltip";
+import { activeDot, endLabel } from "@/components/charts/markers";
+import {
+  CHART,
+  chartMargin,
+  useNarrowChart,
+  usePrefersReducedMotion,
+} from "@/components/charts/theme";
 
 type Row = { date: string; current: number; proposed: number };
 
@@ -25,43 +43,30 @@ function RowTooltip({
   label,
 }: TooltipContentProps<TooltipValueType, string | number>) {
   if (!active || !payload?.length) return null;
+  const current = payload.find((p) => p.dataKey === "current");
+  const proposed = payload.find((p) => p.dataKey === "proposed");
   return (
-    <div className="chart-tooltip">
-      <p>{shortDate(String(label))}</p>
-      {payload.map((p) => (
-        <div className="tooltip-row" key={String(p.dataKey)}>
-          <span
-            className="line-key"
-            style={{ background: p.color }}
-            aria-hidden
-          />
-          <strong>{money(Number(p.value))}</strong>
-          <span>{p.name}</span>
-        </div>
-      ))}
-    </div>
+    <ChartTooltip
+      date={shortDate(String(label))}
+      rows={payload.map((p) => ({
+        color: String(p.color),
+        label: String(p.name),
+        value: money(Number(p.value)),
+      }))}
+      foot={
+        current &&
+        proposed && (
+          <div className="tt-foot">
+            <span>Proposed − Current</span>
+            <strong>
+              {signedMoney(Number(proposed.value) - Number(current.value))}
+            </strong>
+          </div>
+        )
+      }
+    />
   );
 }
-
-const endLabel = (last: number, name: string, color: string, dy = 4) =>
-  function EndLabel({ x, y, index, value }: LabelProps) {
-    if (index !== last || x === undefined || y === undefined) return <g />;
-    return (
-      <g>
-        <circle
-          cx={Number(x)}
-          cy={Number(y)}
-          r={4}
-          fill={color}
-          stroke={CHART.surface}
-          strokeWidth={2}
-        />
-        <text x={Number(x) + 9} y={Number(y) + dy} className="end-label">
-          {name} {axisMoney(Number(value))}
-        </text>
-      </g>
-    );
-  };
 
 /** Growth of $10,000 for Current and Proposed targets, both re-initialized on the
  * same start. Values are precomputed by the unchanged simulation engine. */
@@ -75,6 +80,7 @@ export function ComparisonChart({
   label: string;
 }) {
   const reduced = usePrefersReducedMotion();
+  const narrow = useNarrowChart();
   const full: Row[] = current.map((c, i) => ({
     date: c.date,
     current: c.wealth,
@@ -123,17 +129,16 @@ export function ComparisonChart({
       </div>
       <div className="chart-frame" style={{ height: 280 }}>
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart
-            data={data}
-            margin={{ top: 24, right: 112, bottom: 4, left: 4 }}
-          >
+          <LineChart data={data} margin={chartMargin(narrow)}>
             <CartesianGrid vertical={false} stroke={CHART.grid} />
             <XAxis
               dataKey="date"
               ticks={ticks}
               interval="preserveStartEnd"
               minTickGap={12}
-              tickFormatter={(d: string) => short ? axisDay(d) : axisDate(d, unit)}
+              tickFormatter={(d: string) =>
+                short ? axisDay(d) : axisDate(d, unit)
+              }
               tickLine={false}
               axisLine={{ stroke: CHART.axis }}
               tick={{ fill: CHART.tick, fontSize: 11 }}
@@ -146,33 +151,55 @@ export function ComparisonChart({
               axisLine={false}
               tick={{ fill: CHART.tick, fontSize: 11 }}
             />
-            <ReferenceLine y={10_000} stroke={CHART.reference} />
+            <ReferenceLine
+              y={10_000}
+              stroke={CHART.reference}
+              strokeDasharray="3 4"
+            />
             <Tooltip
               content={RowTooltip}
-              cursor={{ stroke: CHART.reference, strokeWidth: 1 }}
+              cursor={{
+                stroke: CHART.reference,
+                strokeWidth: 1,
+                strokeDasharray: "2 3",
+              }}
               isAnimationActive={false}
             />
             <Line
               name="Current"
               dataKey="current"
               stroke={CHART.portfolio}
-              strokeWidth={2}
+              strokeWidth={CHART.lineSecondary}
               dot={false}
-              activeDot={{ r: 4, stroke: CHART.surface, strokeWidth: 2 }}
+              activeDot={activeDot(CHART.portfolio)}
               isAnimationActive={!reduced}
               animationDuration={CHART.animationMs}
-              label={endLabel(data.length - 1, "Current", CHART.portfolio, last.current >= last.proposed ? -7 : 17)}
+              label={
+                endLabel(
+                      data.length - 1,
+                      "Current",
+                      CHART.portfolio,
+                      last.current >= last.proposed ? -7 : 17,
+                    )
+              }
             />
             <Line
               name="Proposed"
               dataKey="proposed"
               stroke={CHART.proposed}
-              strokeWidth={2}
+              strokeWidth={CHART.line}
               dot={false}
-              activeDot={{ r: 4, stroke: CHART.surface, strokeWidth: 2 }}
+              activeDot={activeDot(CHART.proposed)}
               isAnimationActive={!reduced}
               animationDuration={CHART.animationMs}
-              label={endLabel(data.length - 1, "Proposed", CHART.proposed, last.current >= last.proposed ? 17 : -7)}
+              label={
+                endLabel(
+                      data.length - 1,
+                      "Proposed",
+                      CHART.proposed,
+                      last.current >= last.proposed ? 17 : -7,
+                    )
+              }
             />
           </LineChart>
         </ResponsiveContainer>

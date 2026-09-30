@@ -29,8 +29,16 @@ import {
   monthEndRows,
 } from "@/lib/charts/series";
 import { axisDate, axisPercent, percent, shortDate } from "@/lib/utils/format";
-import { CHART, usePrefersReducedMotion } from "@/components/charts/theme";
+import { ChartTooltip } from "@/components/charts/ChartTooltip";
+import { activeDot, ExtremumMark } from "@/components/charts/markers";
+import {
+  CHART,
+  chartMargin,
+  useNarrowChart,
+  usePrefersReducedMotion,
+} from "@/components/charts/theme";
 import { InfoTip } from "@/components/metrics/InfoTip";
+import { Segmented } from "@/components/ui/Segmented";
 
 const MAX_POINTS = 640;
 type Mode = "portfolio" | "benchmark" | "both";
@@ -54,20 +62,15 @@ function DrawdownTooltip({
 }: TooltipContentProps<TooltipValueType, string | number>) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="chart-tooltip">
-      <p>{shortDate(String(label))}</p>
-      {payload.map((p) => (
-        <div className="tooltip-row" key={String(p.dataKey)}>
-          <span
-            className="line-key"
-            style={{ background: p.color }}
-            aria-hidden
-          />
-          <strong>{percent(Number(p.value))}</strong>
-          <span>{p.name} below its running peak</span>
-        </div>
-      ))}
-    </div>
+    <ChartTooltip
+      date={shortDate(String(label))}
+      rows={payload.map((p) => ({
+        color: String(p.color),
+        label: String(p.name),
+        sub: "below running peak",
+        value: percent(Number(p.value)),
+      }))}
+    />
   );
 }
 
@@ -175,6 +178,7 @@ export function DrawdownLab({
   benchmark?: BenchmarkAnalytics;
 }) {
   const reduced = usePrefersReducedMotion();
+  const narrow = useNarrowChart();
   const [mode, setMode] = useState<Mode>("portfolio");
   const portfolio: View = {
     key: "portfolio",
@@ -263,28 +267,17 @@ export function DrawdownLab({
   return (
     <>
       <div className="series-control">
-        <fieldset
-          className="segmented"
-          aria-describedby={bench ? undefined : "dd-bench-reason"}
-        >
-          <legend className="sr-only">Drawdown series</legend>
-          {options.map((o) => (
-            <label
-              key={o.value}
-              className={active === o.value ? "selected" : undefined}
-            >
-              <input
-                type="radio"
-                name="drawdown-series"
-                value={o.value}
-                checked={active === o.value}
-                disabled={o.value !== "portfolio" && !bench}
-                onChange={() => setMode(o.value)}
-              />
-              {o.label}
-            </label>
-          ))}
-        </fieldset>
+        <Segmented
+          legend="Drawdown series"
+          name="drawdown-series"
+          options={options.map((o) => ({
+            ...o,
+            disabled: o.value !== "portfolio" && !bench,
+          }))}
+          value={active}
+          onChange={setMode}
+          describedBy={bench ? undefined : "dd-bench-reason"}
+        />
         {!bench && benchmark && (
           <span className="hint" id="dd-bench-reason">
             Benchmark Data Unavailable:{" "}
@@ -334,7 +327,7 @@ export function DrawdownLab({
           <ResponsiveContainer width="100%" height="100%">
             <ComposedChart
               data={data}
-              margin={{ top: 12, right: 24, bottom: 4, left: 4 }}
+              margin={{ ...chartMargin(narrow, 14), right: narrow ? 12 : 28 }}
             >
               <CartesianGrid vertical={false} stroke={CHART.grid} />
               <XAxis
@@ -359,15 +352,19 @@ export function DrawdownLab({
                 <ReferenceArea
                   x1={episode.peakDate}
                   x2={episode.recoveryDate ?? lastDate}
-                  fill={CHART.reference}
-                  fillOpacity={0.12}
+                  fill="#9eb9f6"
+                  fillOpacity={0.055}
                   stroke="none"
                 />
               )}
-              <ReferenceLine y={0} stroke={CHART.axis} />
+              <ReferenceLine y={0} stroke={CHART.reference} />
               <Tooltip
                 content={DrawdownTooltip}
-                cursor={{ stroke: CHART.reference, strokeWidth: 1 }}
+                cursor={{
+                  stroke: CHART.reference,
+                  strokeWidth: 1,
+                  strokeDasharray: "2 3",
+                }}
                 isAnimationActive={false}
               />
               {views.map((v) =>
@@ -378,11 +375,11 @@ export function DrawdownLab({
                     name={v.name}
                     type="linear"
                     stroke={v.color}
-                    strokeWidth={2}
+                    strokeWidth={CHART.line}
                     fill={v.color}
-                    fillOpacity={0.1}
+                    fillOpacity={0.12}
                     baseValue={0}
-                    activeDot={{ r: 4, stroke: CHART.surface, strokeWidth: 2 }}
+                    activeDot={activeDot(v.color)}
                     isAnimationActive={!reduced}
                     animationDuration={CHART.animationMs}
                   />
@@ -393,13 +390,47 @@ export function DrawdownLab({
                     name={v.name}
                     type="linear"
                     stroke={v.color}
-                    strokeWidth={2}
+                    strokeWidth={CHART.lineSecondary}
                     dot={false}
-                    activeDot={{ r: 4, stroke: CHART.surface, strokeWidth: 2 }}
+                    activeDot={activeDot(v.color)}
                     isAnimationActive={!reduced}
                     animationDuration={CHART.animationMs}
                   />
                 ),
+              )}
+              {episode && (
+                <ReferenceDot
+                  x={episode.peakDate}
+                  y={0}
+                  shape={<ExtremumMark color={CHART.tick} />}
+                  label={
+                    views.length === 1 && !narrow
+                      ? {
+                          value: "Peak",
+                          position: "top",
+                          fill: CHART.tick,
+                          fontSize: 10,
+                        }
+                      : undefined
+                  }
+                />
+              )}
+              {episode && episode.recoveryDate && (
+                <ReferenceDot
+                  x={episode.recoveryDate}
+                  y={0}
+                  shape={<ExtremumMark color={CHART.positive} />}
+                  label={
+                    views.length === 1 && !narrow
+                      ? {
+                          value: "Recovered",
+                          position: "top",
+                          fill: CHART.positive,
+                          fontSize: 10,
+                        }
+                      : undefined
+                  }
+                />
               )}
               {episode && (
                 <ReferenceDot

@@ -2,6 +2,11 @@
 import type { RiskAnalytics } from "@/lib/types/analytics";
 import { percent, percentagePoints, unsignedPercent } from "@/lib/utils/format";
 import { InfoTip } from "@/components/metrics/InfoTip";
+import {
+  focusHandlers,
+  focusState,
+  useHoldingFocus,
+} from "@/components/ui/HoldingFocus";
 
 /** Arithmetic period return contribution from the historical ledger. Separate from
  * risk contribution; uses actual beginning-of-interval (drifted/reset) weights. */
@@ -12,6 +17,7 @@ export function ReturnContribution({
   contribution: RiskAnalytics["returnContribution"];
   cumulativeReturn: number | null;
 }) {
+  const { focus, setFocus } = useHoldingFocus();
   const rows = [...contribution.rows].sort(
     (a, b) => b.periodContribution - a.periodContribution,
   );
@@ -21,7 +27,7 @@ export function ReturnContribution({
   );
   const { startDate, endDate, returnCount } = contribution.sample;
   return (
-    <figure className="chart-figure" aria-labelledby="rc-title rc-summary">
+    <figure className="chart-figure rc-figure" aria-labelledby="rc-title rc-summary">
       <div className="chart-head">
         <div>
           <h3 id="rc-title">
@@ -52,7 +58,11 @@ export function ReturnContribution({
             {rows.map((r) => {
               const width = (Math.abs(r.periodContribution) / extent) * 50;
               return (
-                <tr key={r.ticker}>
+                <tr
+                  key={r.ticker}
+                  data-focus={focusState(focus, r.ticker)}
+                  {...focusHandlers(setFocus, [r.ticker])}
+                >
                   <td>{r.ticker}</td>
                   <td>{unsignedPercent(r.averageWeight)}</td>
                   <td>{percentagePoints(r.periodContribution)}</td>

@@ -9,6 +9,7 @@ import { percent, percentagePoints, timestamp } from "@/lib/utils/format";
 import { errorState } from "@/lib/ui/quality";
 import { LoadingState } from "@/components/ui/LoadingState";
 import { StatusNotice } from "@/components/ui/StatusNotice";
+import { Segmented } from "@/components/ui/Segmented";
 import { StressEventDetail } from "./StressEventDetail";
 
 type Load =
@@ -40,6 +41,54 @@ async function post(
 const loaded = (r: Result<StressAnalytics>): Load =>
   r.ok ? { state: "done", value: r.value } : { state: "error", error: r.error };
 
+const tone = (m: { available: boolean; value?: number }) =>
+  m.available && m.value! !== 0 ? (m.value! > 0 ? "is-pos" : "is-neg") : undefined;
+
+/** Event windows on one shared time axis: the selected event is the bright one. */
+function StressTimeline({
+  events,
+  selected,
+  today,
+}: {
+  events: { id: string; start: string; end: string }[];
+  selected: string;
+  today: string;
+}) {
+  if (!events.length) return null;
+  const t = (d: string) => Date.parse(`${d}T00:00:00Z`);
+  const lo = Math.min(...events.map((e) => t(e.start)));
+  const hi = Math.max(...events.map((e) => t(e.end)), t(today));
+  const at = (d: string) => ((t(d) - lo) / (hi - lo || 1)) * 100;
+  const firstYear = new Date(lo).getUTCFullYear();
+  const lastYear = new Date(hi).getUTCFullYear();
+  const step = lastYear - firstYear > 12 ? 5 : 2;
+  return (
+    <div className="stress-timeline" aria-hidden>
+      {Array.from(
+        { length: Math.floor((lastYear - firstYear) / step) + 1 },
+        (_, i) => firstYear + i * step,
+      ).map((y) => (
+        <span
+          key={y}
+          className="tl-tick"
+          style={{ left: `${at(`${y}-01-01`)}%` }}
+        />
+      ))}
+      {events.map((e) => (
+        <span
+          key={e.id}
+          className="tl-event"
+          data-on={e.id === selected ? "" : undefined}
+          style={{
+            left: `${at(e.start)}%`,
+            width: `max(4px, ${at(e.end) - at(e.start)}%)`,
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
 function Row({ e }: { e: StressTestResult }) {
   const cell = (
     m: { available: boolean; value?: number },
@@ -54,9 +103,15 @@ function Row({ e }: { e: StressTestResult }) {
       </td>
       {e.status === "complete" ? (
         <>
-          <td>{cell(e.portfolioReturn, percent)}</td>
-          <td>{cell(e.benchmarkReturn, percent)}</td>
-          <td>{cell(e.activeReturn, percentagePoints)}</td>
+          <td className={tone(e.portfolioReturn)}>
+            {cell(e.portfolioReturn, percent)}
+          </td>
+          <td className={tone(e.benchmarkReturn)}>
+            {cell(e.benchmarkReturn, percent)}
+          </td>
+          <td className={tone(e.activeReturn)}>
+            {cell(e.activeReturn, percentagePoints)}
+          </td>
           <td>{cell(e.maximumDrawdown, percent)}</td>
           <td>{e.best.join(", ")}</td>
           <td>{e.worst.join(", ")}</td>
@@ -144,8 +199,44 @@ export function StressLab({
   const customEvent = custom?.state === "done" ? custom.value.events[0] : null;
   const event = events.find((e) => e.id === selected);
   const options = [
-    ...events.map((e) => ({ value: e.id, label: SHORT[e.id] ?? e.name })),
+    ...events.map((e) => ({
+      value: e.id,
+      label: (
+        <>
+          <span className="ev-name">{SHORT[e.id] ?? e.name}</span>
+          <span className="ev-dates">
+            {e.startDate ?? e.requestedStartDate} →{" "}
+            {e.endDate ?? e.requestedEndDate}
+          </span>
+          {e.status === "complete" && e.portfolioReturn.available ? (
+            <span className={`ev-ret ${tone(e.portfolioReturn) ?? ""}`}>
+              {percent(e.portfolioReturn.value)}
+            </span>
+          ) : (
+            <span className="ev-ret ev-flag">
+              {e.status === "incomplete_coverage" ? "Incomplete" : "N/A"}
+            </span>
+          )}
+        </>
+      ),
+    })),
     { value: "custom", label: "Custom window" },
+  ];
+  const timeline = [
+    ...events.map((e) => ({
+      id: e.id,
+      start: e.startDate ?? e.requestedStartDate,
+      end: e.endDate ?? e.requestedEndDate,
+    })),
+    ...(customEvent
+      ? [
+          {
+            id: "custom",
+            start: customEvent.startDate ?? customEvent.requestedStartDate,
+            end: customEvent.endDate ?? customEvent.requestedEndDate,
+          },
+        ]
+      : []),
   ];
   return (
     <>
@@ -228,24 +319,19 @@ export function StressLab({
             </table>
           </div>
           <div className="series-control stress-select">
-            <fieldset className="segmented">
-              <legend className="sr-only">Stress event</legend>
-              {options.map((o) => (
-                <label
-                  key={o.value}
-                  className={selected === o.value ? "selected" : undefined}
-                >
-                  <input
-                    type="radio"
-                    name="stress-event"
-                    value={o.value}
-                    checked={selected === o.value}
-                    onChange={() => setSelected(o.value)}
-                  />
-                  {o.label}
-                </label>
-              ))}
-            </fieldset>
+            <Segmented
+              className="event-tabs"
+              legend="Stress event"
+              name="stress-event"
+              options={options}
+              value={selected}
+              onChange={setSelected}
+            />
+            <StressTimeline
+              events={timeline}
+              selected={selected}
+              today={today}
+            />
           </div>
           {selected !== "custom" && event && (
             <StressEventDetail event={event} benchmark={config.benchmark} />

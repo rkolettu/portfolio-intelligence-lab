@@ -22,6 +22,8 @@ export const LineageSection = memo(function LineageSection({
         eyebrow="Methodology"
         id="methodology-section-title"
         title="Methodology & data lineage."
+        subtitle="Every figure replays from a frozen, hashed snapshot."
+        glyph="methodology"
         aside={result ? stateTag : undefined}
       />
       <p className="muted method-lead">

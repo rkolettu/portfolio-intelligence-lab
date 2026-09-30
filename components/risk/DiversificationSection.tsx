@@ -2,6 +2,8 @@
 import type { Metric, RiskAnalytics } from "@/lib/types/analytics";
 import { decimal, fixed, unsignedPercent } from "@/lib/utils/format";
 import { KpiStrip } from "@/components/metrics/KpiStrip";
+import { DotRow, PairBars, PairDots, WeightBlocks } from "@/components/ui/motifs";
+import { Unavailable } from "@/components/ui/StatusNotice";
 import { CorrelationHeatmap } from "./CorrelationHeatmap";
 
 /** Diversification & correlation: concentration of capital, the correlation
@@ -53,6 +55,13 @@ export function DiversificationSection({ risk }: { risk: RiskAnalytics }) {
             formula:
               "Weighted standalone volatility ÷ portfolio volatility. Above 1 means correlations below +1 reduce risk.",
             footnote: () => "Correlation benefit",
+            viz:
+              p.weightedAverageVolatility.available && p.volatility.available ? (
+                <PairBars
+                  a={p.weightedAverageVolatility.value}
+                  b={p.volatility.value}
+                />
+              ) : undefined,
           },
           {
             label: "Effective holdings",
@@ -65,6 +74,12 @@ export function DiversificationSection({ risk }: { risk: RiskAnalytics }) {
             formula:
               "1 ÷ HHI of capital weights, CASH included. Measures capital concentration only, not correlation diversification.",
             footnote: () => `HHI ${fixed(c.hhi, 3)}`,
+            viz: (
+              <DotRow
+                effective={c.effectiveHoldings}
+                count={risk.holdings.length}
+              />
+            ),
           },
           {
             label: "Top-3 concentration",
@@ -73,6 +88,13 @@ export function DiversificationSection({ risk }: { risk: RiskAnalytics }) {
             formula: "Combined capital weight of the three largest positions.",
             footnote: () =>
               `Largest ${c.largest.ticker} ${unsignedPercent(c.largest.weight)}`,
+            viz: (
+              <WeightBlocks
+                weights={c.top3.tickers.map(
+                  (t) => risk.holdings.find((h) => h.ticker === t)?.weight ?? 0,
+                )}
+              />
+            ),
           },
           {
             label: "Highest correlation",
@@ -81,6 +103,9 @@ export function DiversificationSection({ risk }: { risk: RiskAnalytics }) {
             formula:
               "The most correlated pair of holdings on the common sample.",
             footnote: () => high.foot,
+            viz: high.metric.available ? (
+              <PairDots rho={high.metric.value} />
+            ) : undefined,
           },
           {
             label: "Lowest correlation",
@@ -89,6 +114,9 @@ export function DiversificationSection({ risk }: { risk: RiskAnalytics }) {
             formula:
               "The least correlated pair of holdings on the common sample.",
             footnote: () => low.foot,
+            viz: low.metric.available ? (
+              <PairDots rho={low.metric.value} />
+            ) : undefined,
           },
         ]}
       />
@@ -102,12 +130,14 @@ export function DiversificationSection({ risk }: { risk: RiskAnalytics }) {
             undefinedTickers={corr.undefinedTickers}
           />
         ) : (
-          <p className="hint">
+          <Unavailable kind="matrix" title="Nothing to correlate">
             A correlation matrix needs at least two risky holdings.
-          </p>
+          </Unavailable>
         )
       ) : (
-        <p className="hint">Correlation matrix unavailable: {corr.reason}</p>
+        <Unavailable kind="matrix" title="Correlation not defined">
+          Correlation matrix unavailable: {corr.reason}
+        </Unavailable>
       )}
       <p className="hint">
         Effective holdings and top-3 concentration describe how capital is

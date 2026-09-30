@@ -4,6 +4,7 @@ import { decimal, percent, ratio, unsignedPercent } from "@/lib/utils/format";
 import { InfoTip } from "@/components/metrics/InfoTip";
 import { KpiStrip } from "@/components/metrics/KpiStrip";
 import { StatusNotice } from "@/components/ui/StatusNotice";
+import { BetaMarker, PairTraces } from "@/components/ui/motifs";
 
 const cell = (m: Metric, format: (v: number) => string) =>
   m.available ? format(m.value) : "N/A";
@@ -12,8 +13,11 @@ const cell = (m: Metric, format: (v: number) => string) =>
  * one canonical aligned sample; this component only formats. */
 export function BenchmarkSection({
   analytics,
+  traces,
 }: {
   analytics: BenchmarkAnalytics;
+  /** Both wealth paths on the comparison window, for the co-movement trace. */
+  traces?: { portfolio: readonly number[]; benchmark: readonly number[] };
 }) {
   const { comparison, relative, geometric, riskFree, ticker } = analytics;
   if (!comparison.available)
@@ -73,11 +77,15 @@ export function BenchmarkSection({
             formula:
               "Sensitivity of daily portfolio returns to the benchmark: 1.00 moves one-for-one, 0.50 half as much.",
             footnote: () => sampleFoot,
+            viz: relative.beta.available ? (
+              <BetaMarker beta={relative.beta.value} />
+            ) : undefined,
           },
           {
             label: "CAPM alpha",
             metric: relative.alpha,
             format: percent,
+            signed: true,
             formula:
               "Annualized return not explained by benchmark exposure in a one-factor regression. A description of the past, not proof of skill.",
             footnote: () =>
@@ -92,6 +100,9 @@ export function BenchmarkSection({
             formula:
               "How closely daily portfolio and benchmark returns move together, from −1 to +1.",
             footnote: () => sampleFoot,
+            viz: traces ? (
+              <PairTraces a={traces.portfolio} b={traces.benchmark} />
+            ) : undefined,
           },
           {
             label: "R²",
@@ -113,6 +124,7 @@ export function BenchmarkSection({
             label: "Active return",
             metric: relative.annualizedActiveReturn,
             format: percent,
+            signed: true,
             formula:
               "Average daily portfolio-minus-benchmark return, annualized. Arithmetic, so it is not the difference between the two CAGRs below.",
             footnote: () => "Annualized · arithmetic",
@@ -129,6 +141,7 @@ export function BenchmarkSection({
             label: "Information ratio",
             metric: relative.informationRatio,
             format: ratio,
+            signed: true,
             formula:
               "Active return per unit of tracking error. Undefined when tracking error is zero.",
             footnote: () => "Active return ÷ tracking error",

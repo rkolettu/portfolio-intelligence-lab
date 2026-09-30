@@ -1,5 +1,11 @@
 "use client";
-import { useEffect, useReducer, useRef, useState } from "react";
+import {
+  useEffect,
+  useReducer,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import { samplePortfolio } from "@/config/samplePortfolio";
 import {
   draftConfig,
@@ -15,6 +21,12 @@ import { errorState } from "@/lib/ui/quality";
 import { ConstructionSection } from "@/components/construction/ConstructionSection";
 import { MethodologyDrawer } from "@/components/methodology/MethodologyDrawer";
 import { SectionHeading } from "@/components/ui/SectionHeading";
+import { Hero } from "@/components/hero/Hero";
+import { HoldingFocusProvider } from "@/components/ui/HoldingFocus";
+import {
+  AllocationStrip,
+  allocationColor,
+} from "@/components/ui/AllocationStrip";
 import { StatusNotice } from "@/components/ui/StatusNotice";
 import { LoadingState } from "@/components/ui/LoadingState";
 import { AnalysisSections, type ResultStatus } from "./AnalysisSections";
@@ -201,38 +213,22 @@ export function PortfolioWorkspace({ today }: { today: string }) {
     : -1;
   const failedBenchmark = !!error?.ticker && draft.benchmark === error.ticker;
   const status: ResultStatus = pending ? "pending" : changed ? "changed" : "current";
+  const stripHoldings = draft.holdings.map((h) => ({
+    ticker: h.ticker.trim().toUpperCase(),
+    weight: Number.isFinite(Number(h.weight)) ? Number(h.weight) : 0,
+  }));
+  const gap = total - 100;
+  const balanced = Math.abs(gap) <= 0.0001;
   return (
-    <>
-      <div className="intro">
-        <div>
-          <p className="eyebrow">Portfolio analytics · construction</p>
-          <h1>
-            Portfolio Intelligence
-            <br className="desktop-break" /> &amp; Construction Lab
-            <span className="title-dot">.</span>
-          </h1>
-        </div>
-        <div className="intro-copy">
-          <p>See what actually drives your portfolio.</p>
-          <p className="muted">
-            Analyze performance, risk concentration, diversification, benchmark
-            behavior, historical stress periods and alternative allocations on
-            reproducible daily data.
-          </p>
-          <div className="actions hero-actions">
-            <button type="button" className="primary" onClick={analyzeSample}>
-              Analyze Sample Portfolio <span aria-hidden>↗</span>
-            </button>
-            <button
-              type="button"
-              className="secondary"
-              onClick={() => focusField("ticker-0")}
-            >
-              Build Portfolio
-            </button>
-          </div>
-        </div>
-      </div>
+    <HoldingFocusProvider>
+      <Hero
+        holdings={draft.holdings.map((h) => ({
+          ticker: h.ticker.trim().toUpperCase(),
+          weight: Number.isFinite(Number(h.weight)) ? Number(h.weight) : 0,
+        }))}
+        onAnalyze={analyzeSample}
+        onBuild={() => focusField("ticker-0")}
+      />
       {notice && (
         <StatusNotice tone="info" role="status">
           {notice}
@@ -255,6 +251,11 @@ export function PortfolioWorkspace({ today }: { today: string }) {
                 risky + CASH
               </span>
             </div>
+            <AllocationStrip
+              holdings={stripHoldings}
+              label="Target allocation as proportional segments"
+              format={(w) => `${fixed(w, 2)}%`}
+            />
             <div className="holding-labels" aria-hidden>
               <span>Security</span>
               <span>Weight %</span>
@@ -301,6 +302,19 @@ export function PortfolioWorkspace({ today }: { today: string }) {
                     }
                   />
                   <span aria-hidden>%</span>
+                  <span
+                    className="weight-bar"
+                    aria-hidden
+                    style={
+                      {
+                        "--w": Math.max(
+                          0,
+                          Math.min(100, Number(h.weight) || 0),
+                        ),
+                        "--seg": allocationColor(i, draft.holdings.length),
+                      } as CSSProperties
+                    }
+                  />
                 </div>
                 <button
                   type="button"
@@ -322,13 +336,34 @@ export function PortfolioWorkspace({ today }: { today: string }) {
                 + Add holding
               </button>
               <span
-                className={
-                  Math.abs(total - 100) > 0.0001
-                    ? "warning"
-                    : "allocation-total"
-                }
+                className={`allocation-total${balanced ? "" : " warning"}`}
               >
-                Total <strong>{fixed(total, 2)}%</strong>
+                Total{" "}
+                <strong key={fixed(total, 2)}>{fixed(total, 2)}%</strong>
+                <span
+                  className="alloc-state"
+                  data-state={balanced ? "ok" : "warn"}
+                >
+                  {balanced ? (
+                    <>
+                      <svg viewBox="0 0 12 12" aria-hidden focusable="false">
+                        <path
+                          d="m2.2 6.4 2.5 2.5 5-5.6"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.6"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                      Fully allocated
+                    </>
+                  ) : gap > 0 ? (
+                    `${fixed(gap, 2)}% over`
+                  ) : (
+                    `${fixed(-gap, 2)}% unallocated`
+                  )}
+                </span>
               </span>
             </div>
             <p className="hint">
@@ -588,6 +623,8 @@ export function PortfolioWorkspace({ today }: { today: string }) {
               eyebrow="Portfolio Constructor"
               id="constructor-title"
               title="Mathematical alternative allocations."
+              subtitle="Four methods, explicit constraints, judged against your current portfolio."
+              glyph="constructor"
               aside={<span className="tag">Not a recommendation</span>}
             />
             <ConstructionSection
@@ -610,6 +647,6 @@ export function PortfolioWorkspace({ today }: { today: string }) {
       />
       <LineageSection result={result} status={status} />
       <MethodologyDrawer result={result} />
-    </>
+    </HoldingFocusProvider>
   );
 }

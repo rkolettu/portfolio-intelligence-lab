@@ -115,3 +115,6 @@ export const axisDay = (date: string) =>
 /** Count with grouping and a noun: "1,253 returns", "1 return". */
 export const count = (n: number, singular: string, plural = `${singular}s`) =>
   `${n.toLocaleString("en-US")} ${n === 1 ? singular : plural}`;
+/** Signed dollar difference: "+$1,234.00", "-$56.00", "$0.00". */
+export const signedMoney = (value: number) =>
+  `${value > 0 ? "+" : ""}${money(value)}`;

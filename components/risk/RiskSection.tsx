@@ -11,6 +11,13 @@ import { sampleState } from "@/lib/ui/quality";
 import { InfoTip } from "@/components/metrics/InfoTip";
 import { KpiStrip } from "@/components/metrics/KpiStrip";
 import { StateBadge } from "@/components/ui/StateBadge";
+import {
+  focusHandlers,
+  focusState,
+  useHoldingFocus,
+} from "@/components/ui/HoldingFocus";
+import { DotRow, PairBars } from "@/components/ui/motifs";
+import { Segmented } from "@/components/ui/Segmented";
 import { StatusNotice } from "@/components/ui/StatusNotice";
 import { CapitalVsRisk } from "./CapitalVsRisk";
 
@@ -85,6 +92,7 @@ export function RiskSection({
   performance: PerformanceSummary;
 }) {
   const [sort, setSort] = useState<RiskSortKey>("weight");
+  const { focus, setFocus } = useHoldingFocus();
   const s = risk.sample;
   const p = risk.portfolio;
   const realized = performance.risk.volatility;
@@ -139,6 +147,10 @@ export function RiskSection({
               top
                 ? `${top.ticker} · ${unsignedPercent(top.weight)} of capital`
                 : "",
+            viz:
+              top && top.percentage.available ? (
+                <PairBars a={top.weight} b={top.percentage.value} />
+              ) : undefined,
           },
           {
             label: "Risky holdings",
@@ -151,28 +163,23 @@ export function RiskSection({
             formula:
               "Holdings inside the covariance matrix. CASH sits outside it with zero risk.",
             footnote: () => "In the covariance matrix",
+            viz: (
+              <DotRow
+                effective={risk.holdings.filter((h) => !h.riskless).length}
+                count={risk.holdings.length}
+              />
+            ),
           },
         ]}
       />
       <div className="series-control risk-sort">
-        <fieldset className="segmented">
-          <legend className="sr-only">Sort holdings by</legend>
-          {SORTS.map((o) => (
-            <label
-              key={o.value}
-              className={sort === o.value ? "selected" : undefined}
-            >
-              <input
-                type="radio"
-                name="risk-sort"
-                value={o.value}
-                checked={sort === o.value}
-                onChange={() => setSort(o.value)}
-              />
-              {o.label}
-            </label>
-          ))}
-        </fieldset>
+        <Segmented
+          legend="Sort holdings by"
+          name="risk-sort"
+          options={SORTS}
+          value={sort}
+          onChange={setSort}
+        />
         <span className="hint">Sorts the chart and table · N/A last</span>
       </div>
       <CapitalVsRisk holdings={holdings} />
@@ -198,7 +205,11 @@ export function RiskSection({
           </thead>
           <tbody>
             {holdings.map((h) => (
-              <tr key={h.ticker}>
+              <tr
+                key={h.ticker}
+                data-focus={focusState(focus, h.ticker)}
+                {...focusHandlers(setFocus, [h.ticker])}
+              >
                 <td>
                   {h.ticker}
                   {h.riskless && <span className="cr-tag">riskless</span>}

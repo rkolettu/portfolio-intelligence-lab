@@ -3,7 +3,8 @@ import { memo, useEffect, useState } from "react";
 import { quoteAfterElapsed } from "@/lib/market-data/quotes";
 import { quoteBadge } from "@/lib/ui/quality";
 import { SectionHeading } from "@/components/ui/SectionHeading";
-import { StatusNotice } from "@/components/ui/StatusNotice";
+import { StatusNotice, Unavailable } from "@/components/ui/StatusNotice";
+import { CurveTrace } from "@/components/ui/motifs";
 import { StateBadge } from "@/components/ui/StateBadge";
 import { money, timestamp, yieldPercent } from "@/lib/utils/format";
 import type {
@@ -52,14 +53,19 @@ export const CurrentMarket = memo(function CurrentMarket({
         eyebrow="Current Market"
         id="context-title"
         title="Current market & Treasury reference."
+        subtitle="Context only. Never enters a historical result."
+        glyph="market"
         aside={<span className="tag">Never enters historical results</span>}
       />
       {!quotes && !curve && (
-        <p className="muted">
+        <Unavailable
+          kind={pending ? "stale" : "data"}
+          title={pending ? "Requesting current data" : "Nothing requested yet"}
+        >
           {pending
             ? "Requesting current quotes and the latest official Treasury curve…"
             : "Run an analysis to request current quotes and the latest official Treasury curve. They load independently of the historical analysis."}
-        </p>
+        </Unavailable>
       )}
       {quotes && quoteRows.length === 0 && quoteErrors.length > 0 && (
         <StatusNotice tone="warning" title="Current Quotes Unavailable">
@@ -122,6 +128,12 @@ export const CurrentMarket = memo(function CurrentMarket({
               Current Treasury Reference · latest official ·{" "}
               {curve.value.provenance.observationDate}
             </h3>
+            <div className="curve-trace" aria-hidden>
+              <CurveTrace
+                values={curve.value.points.map((p) => p.annualYield)}
+                mark={curve.value.points.findIndex((p) => p.maturity === horizon)}
+              />
+            </div>
             <dl className="curve-points">
               {curve.value.points.map((p) => (
                 <div

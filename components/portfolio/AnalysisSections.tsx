@@ -36,6 +36,19 @@ export const AnalysisSections = memo(function AnalysisSections({
   status: ResultStatus;
 }) {
   const stateTag = <ResultTag status={status} />;
+  // Display-only inputs for the small traces beside the headline numbers.
+  const rolling = result.rollingAnalytics;
+  const rollingVolatility = rolling.volatility.available
+    ? rolling.volatility.series[
+        Math.max(0, rolling.windows.indexOf(rolling.defaultWindow))
+      ].values.filter((v): v is number => v !== null)
+    : undefined;
+  const traces = result.benchmark.ok
+    ? {
+        portfolio: result.benchmark.value.points.map((p) => p.portfolioWealth),
+        benchmark: result.benchmark.value.points.map((p) => p.benchmarkWealth),
+      }
+    : undefined;
   return (
     <>
       <section className="results" aria-labelledby="overview-title">
@@ -43,6 +56,8 @@ export const AnalysisSections = memo(function AnalysisSections({
           number={1}
           eyebrow="Overview"
           id="overview-title"
+          subtitle="Headline return and risk over the effective period."
+          glyph="overview"
           title="Performance overview."
           aside={stateTag}
         />
@@ -98,7 +113,10 @@ export const AnalysisSections = memo(function AnalysisSections({
             history.
           </StatusNotice>
         )}
-        <MetricStrip performance={result.performance} />
+        <MetricStrip
+          performance={result.performance}
+          rollingVolatility={rollingVolatility}
+        />
         <p className="hint">
           Analyzed allocation:{" "}
           {result.config.holdings
@@ -112,6 +130,8 @@ export const AnalysisSections = memo(function AnalysisSections({
           number={2}
           eyebrow="Performance"
           id="performance-title"
+          subtitle="The wealth path, and which holdings earned it."
+          glyph="performance"
           title="Growth of wealth."
           aside={<span className="tag">Daily closes · compounded</span>}
         />
@@ -139,16 +159,23 @@ export const AnalysisSections = memo(function AnalysisSections({
           number={3}
           eyebrow="Benchmark"
           id="benchmark-title"
+          subtitle="Regression, active return and compounded comparison on one aligned sample."
+          glyph="benchmark"
           title={`Relative to ${result.benchmarkAnalytics.ticker}.`}
           aside={<span className="tag">One aligned sample</span>}
         />
-        <BenchmarkSection analytics={result.benchmarkAnalytics} />
+        <BenchmarkSection
+          analytics={result.benchmarkAnalytics}
+          traces={traces}
+        />
       </section>
       <section className="results" aria-labelledby="drawdowns-title">
         <SectionHeading
           number={4}
           eyebrow="Drawdowns"
           id="drawdowns-title"
+          subtitle="How deep, how long, and whether it recovered."
+          glyph="drawdowns"
           title="Peak-to-trough losses."
           aside={<span className="tag">Daily-close wealth</span>}
         />
@@ -162,6 +189,8 @@ export const AnalysisSections = memo(function AnalysisSections({
           number={5}
           eyebrow="Risk"
           id="risk-title"
+          subtitle="Where volatility actually sits, against where capital sits."
+          glyph="risk"
           title="What drives portfolio risk."
           aside={<span className="tag">Target weights · sample Σ</span>}
         />
@@ -175,6 +204,8 @@ export const AnalysisSections = memo(function AnalysisSections({
           number={6}
           eyebrow="Diversification"
           id="diversification-title"
+          subtitle="How capital is spread and how holdings move together."
+          glyph="diversification"
           title="Concentration and correlation."
           aside={<span className="tag">Same common sample</span>}
         />
@@ -188,6 +219,8 @@ export const AnalysisSections = memo(function AnalysisSections({
           number={7}
           eyebrow="Rolling analytics"
           id="rolling-title"
+          subtitle="Volatility, beta and correlation through time."
+          glyph="rolling"
           title="Risk through time."
           aside={<span className="tag">Full windows only</span>}
         />
@@ -203,6 +236,8 @@ export const AnalysisSections = memo(function AnalysisSections({
           number={8}
           eyebrow="Stress Lab"
           id="stress-title"
+          subtitle="Fixed historical windows, restarted at target weights."
+          glyph="stress"
           title="Historical stress periods."
           aside={<span className="tag">Fixed windows · re-initialized</span>}
         />

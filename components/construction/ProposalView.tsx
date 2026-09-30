@@ -17,8 +17,14 @@ import {
 import { bindingSummary } from "@/lib/analytics/construction/observations";
 import { constructionStatus } from "@/lib/ui/quality";
 import { StateBadge } from "@/components/ui/StateBadge";
-import { StatusNotice } from "@/components/ui/StatusNotice";
+import { StatusNotice, Unavailable } from "@/components/ui/StatusNotice";
+import {
+  focusHandlers,
+  focusState,
+  useHoldingFocus,
+} from "@/components/ui/HoldingFocus";
 import { ComparisonChart } from "./ComparisonChart";
+import { AllocationCompare, WeightMove } from "./WeightMove";
 
 const cell = (m: Metric | undefined, f: (v: number) => string) =>
   m && m.available ? f(m.value) : "N/A";
@@ -71,8 +77,12 @@ function HistoricalTable({
         <thead>
           <tr>
             <th scope="col">Metric</th>
-            <th scope="col">Current Portfolio</th>
-            <th scope="col">Proposed Portfolio</th>
+            <th scope="col" className="th-current">
+              Current Portfolio
+            </th>
+            <th scope="col" className="th-proposed">
+              Proposed Portfolio
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -123,9 +133,26 @@ export function ProposalView({
         : b.upper.includes(t)
           ? "at maximum"
           : null;
+  const { focus, setFocus } = useHoldingFocus();
   const usable = !!p.weights;
   const benchmark = analytics.config.benchmark;
   const cur = analytics.current;
+  const weightRows =
+    p.weights?.map((w) => ({
+      ticker: w.ticker,
+      current: current.get(w.ticker) ?? 0,
+      proposed: w.weight,
+    })) ?? [];
+  const scaleMax = Math.max(
+    0.05,
+    ...weightRows.flatMap((r) => [r.current, r.proposed]),
+  );
+  const changed = weightRows.filter(
+    (r) => Math.abs(r.proposed - r.current) >= 0.0005,
+  ).length;
+  // Display-only deltas between two values the engine already produced.
+  const volNow = cur.modelRisk.available ? cur.modelRisk.volatility : null;
+  const volNext = p.modelRisk.available ? p.modelRisk.volatility : null;
   return (
     <div className="proposal">
       <p className="eyebrow">4 · Proposed Allocation</p>
@@ -159,6 +186,16 @@ export function ProposalView({
       {!usable && diagnostics}
       {usable && (
         <>
+          <AllocationCompare
+            key={p.method}
+            rows={weightRows}
+            format={unsignedPercent}
+          />
+          <p className="hint proposal-moves">
+            {changed === 0
+              ? "No holding moves: the proposed allocation matches the current one."
+              : `${changed} of ${weightRows.length} holdings move; the rest stay put.`}
+          </p>
           <div className="table-wrap">
             <table className="proposal-table">
               <caption>
@@ -168,8 +205,12 @@ export function ProposalView({
               <thead>
                 <tr>
                   <th scope="col">Asset</th>
-                  <th scope="col">Current Portfolio</th>
-                  <th scope="col">Proposed Portfolio</th>
+                  <th scope="col" className="th-current">
+                    Current Portfolio
+                  </th>
+                  <th scope="col" className="th-proposed">
+                    Proposed Portfolio
+                  </th>
                   <th scope="col">Difference</th>
                   <th scope="col">Constraint</th>
                 </tr>
@@ -177,8 +218,15 @@ export function ProposalView({
               <tbody>
                 {p.weights!.map((w) => {
                   const c = current.get(w.ticker) ?? 0;
+                  const diff = w.weight - c;
+                  const moved = Math.abs(diff) >= 0.0005;
                   return (
-                    <tr key={w.ticker}>
+                    <tr
+                      key={w.ticker}
+                      data-moved={moved ? (diff > 0 ? "up" : "down") : "none"}
+                      data-focus={focusState(focus, w.ticker)}
+                      {...focusHandlers(setFocus, [w.ticker])}
+                    >
                       <td>
                         {w.ticker}
                         {w.ticker === "CASH" && (
@@ -186,10 +234,16 @@ export function ProposalView({
                         )}
                       </td>
                       <td>{unsignedPercent(c)}</td>
-                      <td>
+                      <td className="cell-stack">
                         <strong>{unsignedPercent(w.weight)}</strong>
+                        <WeightMove
+                          key={p.method}
+                          current={c}
+                          proposed={w.weight}
+                          max={scaleMax}
+                        />
                       </td>
-                      <td>{percentagePoints(w.weight - c)}</td>
+                      <td className="delta-cell">{percentagePoints(diff)}</td>
                       <td>
                         {w.ticker === "CASH" ? "—" : (tag(w.ticker) ?? "—")}
                       </td>
@@ -212,6 +266,14 @@ export function ProposalView({
                 {risk(cur.modelRisk, (r) => r.volatility, unsignedPercent)} →{" "}
                 {risk(p.modelRisk, (r) => r.volatility, unsignedPercent)}
               </strong>
+              {volNow !== null && volNext !== null && (
+                <em
+                  className="kpi-delta"
+                  data-dir={volNext < volNow ? "down" : volNext > volNow ? "up" : "flat"}
+                >
+                  {percentagePoints(volNext - volNow)}
+                </em>
+              )}
             </div>
             <div>
               <span>Diversification ratio · current → proposed</span>
@@ -273,17 +335,33 @@ export function ProposalView({
                             ? "N/A"
                             : unsignedPercent(h.standaloneVolatility)}
                         </td>
-                        <td>
-                          {c.percentage === null
-                            ? "N/A"
-                            : unsignedPercent(c.percentage)}
+                        <td className="cell-stack">
+                          <span>
+                            {c.percentage === null
+                              ? "N/A"
+                              : unsignedPercent(c.percentage)}
+                          </span>
+                          <i
+                            className="cellbar cellbar-current"
+                            aria-hidden
+                            style={{
+                              width: `${Math.min(100, Math.abs(c.percentage ?? 0) * 100)}%`,
+                            }}
+                          />
                         </td>
-                        <td>
+                        <td className="cell-stack">
                           <strong>
                             {h.percentage === null
                               ? "N/A"
                               : unsignedPercent(h.percentage)}
                           </strong>
+                          <i
+                            className="cellbar cellbar-proposed"
+                            aria-hidden
+                            style={{
+                              width: `${Math.min(100, Math.abs(h.percentage ?? 0) * 100)}%`,
+                            }}
+                          />
                         </td>
                         <td>
                           {h.component === null
@@ -310,14 +388,14 @@ export function ProposalView({
               </table>
             </div>
           ) : (
-            <p className="hint">
+            <Unavailable kind="solver" title="Model risk not shown">
               Construction model risk unavailable:{" "}
               {!p.modelRisk.available
                 ? p.modelRisk.reason
                 : !cur.modelRisk.available
                   ? cur.modelRisk.reason
                   : ""}
-            </p>
+            </Unavailable>
           )}
           <p className="hint">
             Model risk uses the shrinkage matrix the optimizer used, so both
@@ -350,14 +428,14 @@ export function ProposalView({
               label={p.label}
             />
           ) : (
-            <p className="hint">
+            <Unavailable kind="history" title="Comparison not shown">
               Historical comparison unavailable:{" "}
               {!cur.historical.available
                 ? cur.historical.reason
                 : !p.historical.available
                   ? p.historical.reason
                   : ""}
-            </p>
+            </Unavailable>
           )}
           <h3 className="group-title">
             Stress comparison · fixed windows · both portfolios&apos; holdings

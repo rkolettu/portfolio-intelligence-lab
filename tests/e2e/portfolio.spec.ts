@@ -919,3 +919,78 @@ for (const width of [390, 768, 1320, 1920])
     await page.getByRole("dialog").screenshot({ path: testInfo.outputPath(`drawer-${width}.png`) });
     expect(errors).toEqual([]);
   });
+
+// Phase 8: visual polish. Interaction details that make the analytics explorable.
+test("capital vs risk morphs between views and hover focus is shared across analytics", async ({
+  page,
+}) => {
+  await showLongResult(page);
+  const section = page.locator("section:has(#risk-title)");
+  const rows = section.locator(".cr-rows");
+  await expect(rows).toHaveAttribute("data-view", "both");
+  await section.getByRole("radio", { name: "Risk", exact: true }).check();
+  await expect(rows).toHaveAttribute("data-view", "risk");
+  await expect(section.locator(".cr-main").first()).toHaveCSS("opacity", "1");
+  await section.getByRole("radio", { name: "Overlay", exact: true }).check();
+  // Hovering a holding dims the others in the same view and lights the heatmap.
+  const first = section.locator(".cr-row:not(.cr-axis)").first();
+  await first.hover();
+  await expect(first).toHaveAttribute("data-focus", "on");
+  await expect(
+    section.locator(".cr-row:not(.cr-axis)").nth(1),
+  ).toHaveAttribute("data-focus", "dim");
+  await page.mouse.move(2, 400);
+  await expect(first).not.toHaveAttribute("data-focus", /.+/);
+});
+
+test("navigation follows the scroll position and the page never scrolls sideways", async ({
+  page,
+}) => {
+  await showLongResult(page);
+  const nav = page.locator('nav[aria-label="Sections"]');
+  await nav.getByRole("link", { name: "Stress", exact: true }).click();
+  await expect(nav.locator('a[aria-current="location"]')).toHaveText("Stress");
+  await nav.getByRole("link", { name: "Risk", exact: true }).click();
+  await expect(nav.locator('a[aria-current="location"]')).toHaveText("Risk");
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+});
+
+test("builder shows an allocation strip and a resolved or unresolved total", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(page.locator(".alloc-strip")).toHaveAttribute(
+    "data-state",
+    "ok",
+  );
+  await expect(page.locator(".alloc-state")).toContainText("Fully allocated");
+  await page.getByLabel("Weight 1", { exact: true }).fill("30");
+  await expect(page.locator(".alloc-strip")).toHaveAttribute(
+    "data-state",
+    "open",
+  );
+  await expect(page.locator(".alloc-state")).toContainText("unallocated");
+  await page.getByLabel("Weight 1", { exact: true }).fill("55");
+  await expect(page.locator(".alloc-state")).toContainText("over");
+});
+
+test("reduced motion removes decorative animation", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/");
+  expect(
+    await page
+      .locator(".candle")
+      .first()
+      .evaluate((el) => getComputedStyle(el).animationName),
+  ).toBe("none");
+  expect(
+    await page
+      .locator(".alloc-seg")
+      .first()
+      .evaluate((el) => getComputedStyle(el).transitionDuration),
+  ).toBe("0s");
+});

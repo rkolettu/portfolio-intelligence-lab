@@ -4,6 +4,8 @@ import {
   CartesianGrid,
   Line,
   LineChart,
+  ReferenceArea,
+  ReferenceDot,
   ReferenceLine,
   ResponsiveContainer,
   Tooltip,
@@ -33,7 +35,15 @@ import {
   shortDate,
   unsignedPercent,
 } from "@/lib/utils/format";
-import { CHART, usePrefersReducedMotion } from "@/components/charts/theme";
+import { ChartTooltip } from "@/components/charts/ChartTooltip";
+import { activeDot, ExtremumMark } from "@/components/charts/markers";
+import {
+  CHART,
+  chartMargin,
+  useNarrowChart,
+  usePrefersReducedMotion,
+} from "@/components/charts/theme";
+import { Segmented } from "@/components/ui/Segmented";
 
 const MAX_POINTS = 640;
 
@@ -49,6 +59,8 @@ export function RollingSection({
   benchmark: BenchmarkAnalytics;
 }) {
   const reduced = usePrefersReducedMotion();
+  const narrow = useNarrowChart();
+  const [hover, setHover] = useState<string | null>(null);
   const ticker = rolling.benchmarkTicker;
   const [metric, setMetric] = useState<RollingMetricKey>("volatility");
   const [window, setWindow] = useState(rolling.defaultWindow);
@@ -87,6 +99,16 @@ export function RollingSection({
   const y = rollingDomain(active, values, reference);
   const gaps = rollingGaps(values);
   const lastIndex = values.findLastIndex((v) => v !== null);
+  // Moving-window marker: the hovered close and the window of returns ending on it.
+  const hoverIndex = hover === null ? -1 : rolling.dates.indexOf(hover);
+  const windowStart =
+    hoverIndex >= 0
+      ? rolling.dates[Math.max(0, hoverIndex - window + 1)]
+      : null;
+  const shownStart =
+    windowStart === null
+      ? null
+      : (data.find((d) => d.date >= windowStart)?.date ?? null);
   const title = `${window}-session rolling ${selected.label}`;
   const returnsLabel =
     active === "volatility"
@@ -115,40 +137,23 @@ export function RollingSection({
   return (
     <>
       <div className="series-control">
-        <fieldset className="segmented">
-          <legend className="sr-only">Rolling statistic</legend>
-          {metrics.map((o) => (
-            <label
-              key={o.value}
-              className={active === o.value ? "selected" : undefined}
-            >
-              <input
-                type="radio"
-                name="rolling-metric"
-                value={o.value}
-                checked={active === o.value}
-                disabled={o.value !== "volatility" && !relativeOk}
-                onChange={() => setMetric(o.value)}
-              />
-              {o.label}
-            </label>
-          ))}
-        </fieldset>
-        <fieldset className="segmented">
-          <legend className="sr-only">Window</legend>
-          {rolling.windows.map((n) => (
-            <label key={n} className={window === n ? "selected" : undefined}>
-              <input
-                type="radio"
-                name="rolling-window"
-                value={n}
-                checked={window === n}
-                onChange={() => setWindow(n)}
-              />
-              {n}D
-            </label>
-          ))}
-        </fieldset>
+        <Segmented
+          legend="Rolling statistic"
+          name="rolling-metric"
+          options={metrics.map((o) => ({
+            ...o,
+            disabled: o.value !== "volatility" && !relativeOk,
+          }))}
+          value={active}
+          onChange={setMetric}
+        />
+        <Segmented
+          legend="Window"
+          name="rolling-window"
+          options={rolling.windows.map((n) => ({ value: n, label: `${n}D` }))}
+          value={window}
+          onChange={setWindow}
+        />
         {!rolling.beta.available && (
           <span className="hint">
             Benchmark Data Unavailable for rolling beta and correlation:{" "}
@@ -182,7 +187,15 @@ export function RollingSection({
           <ResponsiveContainer width="100%" height="100%">
             <LineChart
               data={data}
-              margin={{ top: 12, right: 112, bottom: 4, left: 4 }}
+              margin={chartMargin(narrow, 14)}
+              onMouseMove={(state) =>
+                setHover(
+                  state.isTooltipActive && state.activeLabel !== undefined
+                    ? String(state.activeLabel)
+                    : null,
+                )
+              }
+              onMouseLeave={() => setHover(null)}
             >
               <CartesianGrid vertical={false} stroke={CHART.grid} />
               <XAxis
@@ -207,16 +220,40 @@ export function RollingSection({
               {active !== "volatility" && (
                 <ReferenceLine y={0} stroke={CHART.axis} />
               )}
+              {shownStart && hover && (
+                <ReferenceArea
+                  x1={shownStart}
+                  x2={hover}
+                  fill={CHART.portfolio}
+                  fillOpacity={0.1}
+                  stroke={CHART.portfolio}
+                  strokeOpacity={0.35}
+                  strokeDasharray="3 3"
+                  ifOverflow="hidden"
+                />
+              )}
               {reference !== null && (
                 <ReferenceLine
                   y={reference}
                   stroke={CHART.reference}
-                  label={{
-                    value: `Full period ${selected.format(reference)}`,
-                    position: "right",
-                    fill: CHART.tick,
-                    fontSize: 11,
-                  }}
+                  strokeDasharray="3 4"
+                  label={
+                    narrow
+                      ? undefined
+                      : {
+                          value: `Full period ${selected.format(reference)}`,
+                          position: "right",
+                          fill: CHART.tick,
+                          fontSize: 11,
+                        }
+                  }
+                />
+              )}
+              {lastIndex >= 0 && (
+                <ReferenceDot
+                  x={rolling.dates[lastIndex]}
+                  y={values[lastIndex]!}
+                  shape={<ExtremumMark color={CHART.portfolio} />}
                 />
               )}
               <Tooltip
@@ -224,33 +261,34 @@ export function RollingSection({
                   props: TooltipContentProps<TooltipValueType, string | number>,
                 ) =>
                   props.active && props.payload?.length ? (
-                    <div className="chart-tooltip">
-                      <p>{shortDate(String(props.label))}</p>
-                      <div className="tooltip-row">
-                        <span
-                          className="line-key"
-                          style={{ background: CHART.portfolio }}
-                          aria-hidden
-                        />
-                        <strong>
-                          {selected.format(Number(props.payload[0].value))}
-                        </strong>
-                        <span>{window}-session window ending this close</span>
-                      </div>
-                    </div>
+                    <ChartTooltip
+                      date={shortDate(String(props.label))}
+                      rows={[
+                        {
+                          color: CHART.portfolio,
+                          label: `${window}-session ${selected.label}`,
+                          sub: "window ending this close",
+                          value: selected.format(Number(props.payload[0].value)),
+                        },
+                      ]}
+                    />
                   ) : null
                 }
-                cursor={{ stroke: CHART.reference, strokeWidth: 1 }}
+                cursor={{
+                  stroke: CHART.reference,
+                  strokeWidth: 1,
+                  strokeDasharray: "2 3",
+                }}
                 isAnimationActive={false}
               />
               <Line
                 name={title}
                 dataKey="value"
                 stroke={CHART.portfolio}
-                strokeWidth={2}
+                strokeWidth={CHART.line}
                 dot={false}
                 connectNulls={false}
-                activeDot={{ r: 4, stroke: CHART.surface, strokeWidth: 2 }}
+                activeDot={activeDot(CHART.portfolio)}
                 isAnimationActive={!reduced}
                 animationDuration={CHART.animationMs}
               />

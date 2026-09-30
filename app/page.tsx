@@ -1,4 +1,5 @@
 import { PortfolioWorkspace } from "@/components/portfolio/PortfolioWorkspace";
+import { SiteHeader } from "@/components/layout/SiteHeader";
 import { MethodologyButton } from "@/components/methodology/MethodologyDrawer";
 import { marketDate } from "@/lib/utils/dates";
 export const dynamic = "force-dynamic";
@@ -20,20 +21,9 @@ export default function Page() {
       <a className="skip-link" href="#builder">
         Skip to portfolio builder
       </a>
-      <header className="site-header">
-        <a className="brand" href="https://rishabkolettu.vercel.app/">
-          Rishab Kolettu <span aria-hidden>↗</span>
-        </a>
-        <nav aria-label="Sections">
-          <a href="#builder">Builder</a>
-          {SECTIONS.map(([href, label]) => (
-            <a key={href} href={href}>
-              {label}
-            </a>
-          ))}
-          <MethodologyButton className="nav-button" />
-        </nav>
-      </header>
+      <SiteHeader sections={SECTIONS}>
+        <MethodologyButton className="nav-button" />
+      </SiteHeader>
       <main className="container">
         <PortfolioWorkspace today={marketDate(new Date().toISOString())} />
         <footer>

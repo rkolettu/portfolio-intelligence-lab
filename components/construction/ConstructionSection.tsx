@@ -21,6 +21,7 @@ import { constructionStatus, errorState } from "@/lib/ui/quality";
 import { StatusNotice } from "@/components/ui/StatusNotice";
 import { StateBadge } from "@/components/ui/StateBadge";
 import { LoadingState } from "@/components/ui/LoadingState";
+import { Segmented } from "@/components/ui/Segmented";
 import { bindingSummary } from "@/lib/analytics/construction/observations";
 import { ProposalView } from "./ProposalView";
 
@@ -198,7 +199,11 @@ export function ConstructionSection({
           </p>
         ))}
 
-      <ol className="construct-steps" aria-label="Construction workflow">
+      <ol
+        className="construct-steps"
+        aria-label="Construction workflow"
+        data-stage={result ? "review" : "setup"}
+      >
         <li>Select method</li>
         <li>Set constraints</li>
         <li>Generate allocation</li>
@@ -210,24 +215,13 @@ export function ConstructionSection({
       </ol>
       <h3 className="group-title">1 · Method</h3>
       <div className="series-control">
-        <fieldset className="segmented">
-          <legend className="sr-only">Construction method</legend>
-          {METHODS.map((m) => (
-            <label
-              key={m.value}
-              className={method === m.value ? "selected" : undefined}
-            >
-              <input
-                type="radio"
-                name="construction-method"
-                value={m.value}
-                checked={method === m.value}
-                onChange={() => setMethod(m.value)}
-              />
-              {m.label}
-            </label>
-          ))}
-        </fieldset>
+        <Segmented
+          legend="Construction method"
+          name="construction-method"
+          options={METHODS}
+          value={method}
+          onChange={setMethod}
+        />
         <span className="hint">
           One generation solves all four methods on the same inputs; this
           chooses which to review.
@@ -375,11 +369,21 @@ export function ConstructionSection({
         <div className="actions">
           <button
             type="button"
-            className="primary"
+            className="primary cta"
             disabled={!parsed.ok || !consistency.ok || pending}
             aria-busy={pending}
             onClick={() => void generate()}
           >
+            <svg
+              className="cta-icon"
+              viewBox="0 0 16 12"
+              aria-hidden
+              focusable="false"
+            >
+              <rect x="0" y="0" width="9" height="3" rx="1" />
+              <rect x="0" y="4.5" width="14" height="3" rx="1" />
+              <rect x="0" y="9" width="6" height="3" rx="1" />
+            </svg>
             Generate allocation
           </button>
         </div>

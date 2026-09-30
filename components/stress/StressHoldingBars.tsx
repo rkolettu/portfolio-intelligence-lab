@@ -1,12 +1,19 @@
 "use client";
+import type { CSSProperties } from "react";
 import type { StressHoldingReturn } from "@/lib/types/analytics";
 import { capitalRiskScale } from "@/lib/charts/riskDisplay";
 import { axisPercent, percent, unsignedPercent } from "@/lib/utils/format";
+import {
+  focusHandlers,
+  focusState,
+  useHoldingFocus,
+} from "@/components/ui/HoldingFocus";
+import { useFlip } from "@/components/ui/useFlip";
 
-const BAR = "#8d8880";
-
-/** Each holding's own event return on one zero-anchored axis; losses extend left.
- * Direction and the signed value carry polarity, so color is never the only cue. */
+/** Each holding's own event return on one zero-anchored axis, ranked best to worst;
+ * losses extend left. Direction, the signed value and the best/worst tags carry
+ * polarity, so color is never the only cue. Rows glide to their new rank when the
+ * selected event changes. */
 export function StressHoldingBars({
   id,
   holdings,
@@ -18,6 +25,13 @@ export function StressHoldingBars({
   best: string[];
   worst: string[];
 }) {
+  const { focus, setFocus } = useHoldingFocus();
+  // Display order only: best return first; ties keep portfolio order.
+  const ranked = holdings
+    .map((h, order) => ({ h, order }))
+    .sort((a, b) => b.h.return - a.h.return || a.order - b.order)
+    .map(({ h }) => h);
+  const rows = useFlip<HTMLDivElement>(ranked.map((h) => h.ticker).join());
   const scale = capitalRiskScale(holdings.map((h) => h.return));
   const zero = scale.position(0) * 100;
   const bar = (value: number) => {
@@ -27,7 +41,10 @@ export function StressHoldingBars({
       : { left: `${at}%`, width: `${zero - at}%` };
   };
   return (
-    <figure className="capital-risk" aria-labelledby={`${id}-holdings-title`}>
+    <figure
+      className="capital-risk chart-figure"
+      aria-labelledby={`${id}-holdings-title`}
+    >
       <div className="chart-head">
         <div>
           <h3 id={`${id}-holdings-title`}>Holding returns over the event</h3>
@@ -38,9 +55,22 @@ export function StressHoldingBars({
           </p>
         </div>
       </div>
-      <div className="cr-rows" role="list">
-        {holdings.map((h) => (
-          <div className="cr-row" role="listitem" key={h.ticker}>
+      <div
+        className="cr-rows sh-rows"
+        role="list"
+        ref={rows}
+        onPointerLeave={() => setFocus(null)}
+      >
+        {ranked.map((h, i) => (
+          <div
+            className="cr-row"
+            role="listitem"
+            key={h.ticker}
+            data-flip={h.ticker}
+            data-focus={focusState(focus, h.ticker)}
+            style={{ ["--i" as string]: i } as CSSProperties}
+            {...focusHandlers(setFocus, [h.ticker])}
+          >
             <span className="cr-ticker">
               {h.ticker}
               {best.includes(h.ticker) && <span className="cr-tag">best</span>}
@@ -58,12 +88,16 @@ export function StressHoldingBars({
                 />
               ))}
               <span
-                className={`cr-bar sh-bar${h.return < 0 ? " cr-negative" : ""}`}
-                style={{ ...bar(h.return), background: BAR }}
+                className={`cr-bar sh-bar${h.return < 0 ? " cr-negative sh-loss" : " sh-gain"}`}
+                style={bar(h.return)}
               />
             </div>
-            <span className="cr-values">
-              <strong>{percent(h.return)}</strong>
+            <span className="cr-values cr-values-2">
+              <strong
+                className={h.return < 0 ? "is-neg" : h.return > 0 ? "is-pos" : ""}
+              >
+                {percent(h.return)}
+              </strong>
               <span>wt {unsignedPercent(h.weight)}</span>
             </span>
           </div>
@@ -74,14 +108,14 @@ export function StressHoldingBars({
             {scale.ticks.map((t) => (
               <span
                 key={t}
-                className="cr-tick"
+                className={t === 0 ? "cr-tick cr-tick-zero" : "cr-tick"}
                 style={{ left: `${scale.position(t) * 100}%` }}
               >
                 {axisPercent(t)}
               </span>
             ))}
           </div>
-          <span className="cr-values cr-values-head">
+          <span className="cr-values cr-values-2 cr-values-head">
             <strong>Return</strong>
             <span>Target</span>
           </span>

@@ -3,12 +3,12 @@ import {
   CartesianGrid,
   Line,
   LineChart,
+  ReferenceDot,
   ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
-  type LabelProps,
   type TooltipContentProps,
   type TooltipValueType,
 } from "recharts";
@@ -20,8 +20,16 @@ import {
   axisMoney,
   money,
   shortDate,
+  signedMoney,
 } from "@/lib/utils/format";
-import { CHART, usePrefersReducedMotion } from "@/components/charts/theme";
+import { ChartTooltip } from "@/components/charts/ChartTooltip";
+import { activeDot, endLabel, ExtremumMark } from "@/components/charts/markers";
+import {
+  CHART,
+  chartMargin,
+  useNarrowChart,
+  usePrefersReducedMotion,
+} from "@/components/charts/theme";
 
 function PathTooltip({
   active,
@@ -29,43 +37,28 @@ function PathTooltip({
   label,
 }: TooltipContentProps<TooltipValueType, string | number>) {
   if (!active || !payload?.length) return null;
+  const [first, second] = payload;
   return (
-    <div className="chart-tooltip">
-      <p>{shortDate(String(label))}</p>
-      {payload.map((p) => (
-        <div className="tooltip-row" key={String(p.dataKey)}>
-          <span
-            className="line-key"
-            style={{ background: p.color }}
-            aria-hidden
-          />
-          <strong>{money(Number(p.value))}</strong>
-          <span>{p.name}</span>
-        </div>
-      ))}
-    </div>
+    <ChartTooltip
+      date={shortDate(String(label))}
+      rows={payload.map((p) => ({
+        color: String(p.color),
+        label: String(p.name),
+        value: money(Number(p.value)),
+      }))}
+      foot={
+        second && (
+          <div className="tt-foot">
+            <span>
+              {String(first.name)} − {String(second.name)}
+            </span>
+            <strong>{signedMoney(Number(first.value) - Number(second.value))}</strong>
+          </div>
+        )
+      }
+    />
   );
 }
-
-const endLabel = (lastIndex: number, name: string, color: string, dy = 4) =>
-  function EndLabel({ x, y, index, value }: LabelProps) {
-    if (index !== lastIndex || x === undefined || y === undefined) return <g />;
-    return (
-      <g>
-        <circle
-          cx={Number(x)}
-          cy={Number(y)}
-          r={4}
-          fill={color}
-          stroke={CHART.surface}
-          strokeWidth={2}
-        />
-        <text x={Number(x) + 9} y={Number(y) + dy} className="end-label">
-          {name} {axisMoney(Number(value))}
-        </text>
-      </g>
-    );
-  };
 
 /** Wealth from $10,000 at the event start close; every value precomputed. */
 export function StressPathChart({
@@ -78,6 +71,7 @@ export function StressPathChart({
   benchmark: string;
 }) {
   const reduced = usePrefersReducedMotion();
+  const narrow = useNarrowChart();
   const withBenchmark = path[0].benchmark !== null;
   // Short events (e.g. COVID's 24 sessions) get session-spaced day ticks.
   const short = path.length < 70;
@@ -85,6 +79,10 @@ export function StressPathChart({
   const { ticks: periodTicks, unit } = axisTicks(dates);
   const ticks = short ? sessionTicks(dates) : periodTicks;
   const last = path.at(-1)!;
+  // Display-only: the deepest close of the portfolio path inside the event.
+  const trough = path.reduce((lo, p) => (p.portfolio < lo.portfolio ? p : lo));
+  const showTrough =
+    trough.portfolio < 10_000 && trough !== path[0] && trough !== last;
   const rows = path.length > 260 ? monthEndRows(path) : path;
   const summary = `From ${shortDate(path[0].date)} to ${shortDate(last.date)}: portfolio ${money(last.portfolio)}${
     last.benchmark !== null ? `, ${benchmark} ${money(last.benchmark)}` : ""
@@ -126,7 +124,7 @@ export function StressPathChart({
         <ResponsiveContainer width="100%" height="100%">
           <LineChart
             data={path}
-            margin={{ top: 24, right: 112, bottom: 4, left: 4 }}
+            margin={chartMargin(narrow)}
           >
             <CartesianGrid vertical={false} stroke={CHART.grid} />
             <XAxis
@@ -149,34 +147,73 @@ export function StressPathChart({
               axisLine={false}
               tick={{ fill: CHART.tick, fontSize: 11 }}
             />
-            <ReferenceLine y={10_000} stroke={CHART.reference} />
+            <ReferenceLine
+              y={10_000}
+              stroke={CHART.reference}
+              strokeDasharray="3 4"
+            />
+            {showTrough && (
+              <ReferenceDot
+                x={trough.date}
+                y={trough.portfolio}
+                shape={<ExtremumMark color={CHART.negative} />}
+                label={{
+                  value: `Trough ${axisMoney(trough.portfolio)}`,
+                  position: "bottom",
+                  fill: CHART.negative,
+                  fontSize: 10,
+                }}
+              />
+            )}
             <Tooltip
               content={PathTooltip}
-              cursor={{ stroke: CHART.reference, strokeWidth: 1 }}
+              cursor={{
+                stroke: CHART.reference,
+                strokeWidth: 1,
+                strokeDasharray: "2 3",
+              }}
               isAnimationActive={false}
             />
             <Line
               name="Portfolio"
               dataKey="portfolio"
               stroke={CHART.portfolio}
-              strokeWidth={2}
+              strokeWidth={CHART.line}
               dot={false}
-              activeDot={{ r: 4, stroke: CHART.surface, strokeWidth: 2 }}
+              activeDot={activeDot(CHART.portfolio)}
               isAnimationActive={!reduced}
-              animationDuration={CHART.animationMs}
-              label={endLabel(path.length - 1, "Portfolio", CHART.portfolio, withBenchmark ? (last.portfolio >= last.benchmark! ? -7 : 17) : 4)}
+              animationDuration={CHART.animationMs + 160}
+              label={
+                endLabel(
+                      path.length - 1,
+                      "Portfolio",
+                      CHART.portfolio,
+                      withBenchmark
+                        ? last.portfolio >= last.benchmark!
+                          ? -7
+                          : 17
+                        : 4,
+                    )
+              }
             />
             {withBenchmark && (
               <Line
                 name={benchmark}
                 dataKey="benchmark"
                 stroke={CHART.benchmark}
-                strokeWidth={2}
+                strokeWidth={CHART.lineSecondary}
                 dot={false}
-                activeDot={{ r: 4, stroke: CHART.surface, strokeWidth: 2 }}
+                activeDot={activeDot(CHART.benchmark)}
                 isAnimationActive={!reduced}
-                animationDuration={CHART.animationMs}
-                label={endLabel(path.length - 1, benchmark, CHART.benchmark, last.portfolio >= last.benchmark! ? 17 : -7)}
+                animationDuration={CHART.animationMs + 160}
+                label={
+                  endLabel(
+                        path.length - 1,
+                        benchmark,
+                        CHART.benchmark,
+                        last.portfolio >= last.benchmark! ? 17 : -7,
+                      )
+                }
               />
             )}
           </LineChart>

@@ -1,5 +1,5 @@
 "use client";
-import type { CSSProperties } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import type { Metric } from "@/lib/types/analytics";
 import { InfoTip } from "./InfoTip";
 
@@ -9,6 +9,12 @@ export type Kpi = {
   format: (value: number) => string;
   formula: string;
   footnote: (m: Extract<Metric, { available: true }>) => string;
+  /** Color the value by sign: positive and negative read at a glance. */
+  signed?: boolean;
+  /** Optional decorative micro-visualization under the footnote (aria-hidden). */
+  viz?: ReactNode;
+  /** Lead metric of a strip: larger value with an accent rule. */
+  emphasis?: boolean;
 };
 
 /** Dense strip of precomputed metrics: N/A carries its reason in the tooltip. */
@@ -17,10 +23,16 @@ export function KpiStrip({ items, label }: { items: Kpi[]; label?: string }) {
     <dl
       className="kpi-strip"
       aria-label={label}
-      style={{ "--kpi-cols": items.length } as CSSProperties}
+      style={
+        {
+          "--kpi-cols": items.length,
+          // Mid widths: six items sit in two even rows of three, others in fours.
+          "--kpi-cols-md": items.length === 6 ? 3 : Math.min(items.length, 4),
+        } as CSSProperties
+      }
     >
       {items.map((k) => (
-        <div className="kpi" key={k.label}>
+        <div className={`kpi${k.emphasis ? " kpi-lead" : ""}`} key={k.label}>
           <dt>
             {k.label}
             <InfoTip label={k.label}>
@@ -41,8 +53,24 @@ export function KpiStrip({ items, label }: { items: Kpi[]; label?: string }) {
           <dd>
             {k.metric.available ? (
               <>
-                <span className="kpi-value">{k.format(k.metric.value)}</span>
+                <span
+                  key={k.format(k.metric.value)}
+                  className={`kpi-value${
+                    k.signed && k.metric.value !== 0
+                      ? k.metric.value > 0
+                        ? " is-pos"
+                        : " is-neg"
+                      : ""
+                  }`}
+                >
+                  {k.format(k.metric.value)}
+                </span>
                 <span className="kpi-foot">{k.footnote(k.metric)}</span>
+                {k.viz && (
+                  <span className="kpi-viz" aria-hidden>
+                    {k.viz}
+                  </span>
+                )}
               </>
             ) : (
               <>

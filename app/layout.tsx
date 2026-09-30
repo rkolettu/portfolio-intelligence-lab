@@ -5,6 +5,7 @@ import "@fontsource/inter/500.css";
 import "@fontsource/inter/600.css";
 import "@fontsource/inter/700.css";
 import "./globals.css";
+import "./analytics.css";
 export const metadata: Metadata = {
   title: "Portfolio Intelligence & Construction Lab | Rishab Kolettu",
   description:
