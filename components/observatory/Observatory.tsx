@@ -331,6 +331,15 @@ export function Observatory({
               monthly
             </span>
           </div>
+          <h1 id="hero-title" className="obs-title">
+            <span>Portfolio</span>
+            <span>Intelligence</span>
+          </h1>
+          <p className="obs-sub" aria-hidden>
+            <span>&amp; Construction Lab</span>
+            <span className="obs-rule" />
+            <span>Fig. 00</span>
+          </p>
           <dl className="obs-spec" aria-label="Draft portfolio">
             <div>
               <dt>Holdings</dt>
@@ -355,15 +364,6 @@ export function Observatory({
               </dd>
             </div>
           </dl>
-          <h1 id="hero-title" className="obs-title">
-            <span>Portfolio</span>
-            <span>Intelligence</span>
-          </h1>
-          <p className="obs-sub" aria-hidden>
-            <span>&amp; Construction Lab</span>
-            <span className="obs-rule" />
-            <span>Fig. 00</span>
-          </p>
           <div className="obs-lede">
             <p>
               A financial observatory for one portfolio: where capital sits,
