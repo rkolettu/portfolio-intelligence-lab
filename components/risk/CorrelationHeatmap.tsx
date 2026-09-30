@@ -1,9 +1,13 @@
 "use client";
-import { useRef, useState, type MouseEvent } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { CorrelationPair } from "@/lib/types/analytics";
 import { DIVERGING, divergingColor, inkFor } from "@/lib/charts/diverging";
 import { decimal, fixed } from "@/lib/utils/format";
-import { useHoldingFocus } from "@/components/ui/HoldingFocus";
+import {
+  canHover,
+  focusHandlers,
+  useHoldingFocus,
+} from "@/components/ui/HoldingFocus";
 import { PairDots } from "@/components/ui/motifs";
 
 /** Two decimals; values that round to zero print as 0.00, never "-0.00". */
@@ -40,7 +44,8 @@ export function CorrelationHeatmap({
   undefinedTickers,
 }: Props) {
   const stage = useRef<HTMLDivElement>(null);
-  const { focus, setFocus } = useHoldingFocus();
+  const holdingFocus = useHoldingFocus();
+  const { focus, setFocus } = holdingFocus;
   const [hover, setHover] = useState<{ i: number; j: number } | null>(null);
   const [tip, setTip] = useState<{
     x: number;
@@ -55,10 +60,10 @@ export function CorrelationHeatmap({
   const rowOn = hover ? hover.i : (external[0] ?? -1);
   const colOn = hover ? hover.j : (external[1] ?? external[0] ?? -1);
   const active = rowOn >= 0 || colOn >= 0;
-  const enter = (e: MouseEvent<HTMLTableCellElement>, i: number, j: number) => {
+  const enter = (el: HTMLElement, i: number, j: number) => {
     setHover({ i, j });
     setFocus([tickers[i], tickers[j]]);
-    const box = e.currentTarget.getBoundingClientRect();
+    const box = el.getBoundingClientRect();
     const host = stage.current?.getBoundingClientRect();
     // Upper rows open the panel below the cell so it never covers the column headers.
     const below = i < tickers.length / 2;
@@ -74,6 +79,19 @@ export function CorrelationHeatmap({
     setTip(null);
     setFocus(null);
   };
+  // Touch: a tap outside the matrix closes the cell panel.
+  useEffect(() => {
+    if (!hover) return;
+    const outside = (e: PointerEvent) => {
+      if (e.pointerType === "mouse") return;
+      if (!stage.current?.contains(e.target as Node)) {
+        setHover(null);
+        setTip(null);
+      }
+    };
+    document.addEventListener("pointerdown", outside);
+    return () => document.removeEventListener("pointerdown", outside);
+  }, [hover]);
   return (
     <figure
       className="heatmap-figure chart-figure"
@@ -103,7 +121,13 @@ export function CorrelationHeatmap({
         </div>
       </div>
       <div className="heat-stage" ref={stage} data-active={active ? "" : undefined}>
-        <div className="table-wrap heatmap-wrap" onMouseLeave={leave}>
+        <div
+          className="table-wrap heatmap-wrap"
+          onMouseLeave={() => {
+            if (canHover()) leave();
+          }}
+          data-focusable=""
+        >
           <table className={`heatmap${dense ? " heatmap-dense" : ""}`}>
             <caption className="sr-only">
               Correlation matrix of {tickers.join(", ")}
@@ -151,7 +175,16 @@ export function CorrelationHeatmap({
                             ? undefined
                             : { background, color: inkFor(background) }
                         }
-                        onMouseEnter={(e) => enter(e, i, j)}
+                        // Mouse hover on hover-capable devices; a tap selects
+                        // the cell and a second tap on it clears the selection.
+                        onMouseEnter={(e) => {
+                          if (canHover()) enter(e.currentTarget, i, j);
+                        }}
+                        onPointerUp={(e) => {
+                          if (e.pointerType === "mouse") return;
+                          if (hover?.i === i && hover.j === j) leave();
+                          else enter(e.currentTarget, i, j);
+                        }}
                       >
                         {v === null ? "—" : cellText(v)}
                       </td>
@@ -173,10 +206,13 @@ export function CorrelationHeatmap({
                   type="button"
                   className="heat-pair"
                   key={label}
-                  onPointerEnter={() => setFocus([pair.a, pair.b])}
-                  onPointerLeave={() => setFocus(null)}
-                  onFocus={() => setFocus([pair.a, pair.b])}
-                  onBlur={() => setFocus(null)}
+                  aria-pressed={
+                    !!focus &&
+                    focus.length === 2 &&
+                    focus[0] === pair.a &&
+                    focus[1] === pair.b
+                  }
+                  {...focusHandlers(holdingFocus, [pair.a, pair.b])}
                 >
                   <span>{label}</span>
                   <b>

@@ -417,11 +417,18 @@ input[type="radio"] {
 .site-header nav a:hover {
   color: var(--text);
 }
-.site-header nav a[aria-current="location"] {
+.site-header nav a[aria-current="page"] {
   color: var(--text);
 }
-.site-header nav a[aria-current="location"]::after {
+.site-header nav a[aria-current="page"]::after {
   transform: scaleX(1);
+}
+.nav-divider {
+  align-self: center;
+  width: 1px;
+  height: 14px;
+  margin: 0 5px;
+  background: var(--border);
 }
 .site-header nav a[data-absent] {
   color: var(--faint);
@@ -639,12 +646,14 @@ input[type="radio"] {
   );
   background-color: #6d6a63;
 }
-.alloc-strip:hover .alloc-seg {
-  opacity: 0.55;
-}
-.alloc-strip .alloc-seg:hover {
-  opacity: 1;
-  filter: brightness(1.15);
+@media (hover: hover) {
+  .alloc-strip:hover .alloc-seg {
+    opacity: 0.55;
+  }
+  .alloc-strip .alloc-seg:hover {
+    opacity: 1;
+    filter: brightness(1.15);
+  }
 }
 .alloc-seg::after {
   content: attr(data-tip);
@@ -667,8 +676,12 @@ input[type="radio"] {
 }
 /* Display, not opacity: a hidden tip must not widen the page. The last segments
    anchor to the strip's right edge so their tips stay on screen. */
+@media (hover: hover) {
+  .alloc-seg:hover::after {
+    display: block;
+  }
+}
 .alloc-seg:hover::after {
-  display: block;
   animation: tick-in var(--dur-1) var(--ease) both;
 }
 .alloc-seg:nth-last-child(-n + 2)::after {
@@ -1123,6 +1136,13 @@ td {
   border-bottom: 1px solid var(--hairline);
   white-space: nowrap;
 }
+td.wrap-cell {
+  height: auto;
+  min-width: 220px;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  white-space: normal;
+}
 tbody tr:last-child td {
   border-bottom: 0;
 }
@@ -1133,11 +1153,13 @@ th:not(:first-child) {
 tbody tr {
   transition: background-color var(--dur-1);
 }
-tbody tr:hover {
-  background: rgba(244, 241, 234, 0.03);
-}
-tbody tr:hover td:first-child {
-  box-shadow: inset 2px 0 0 var(--accent-line);
+@media (hover: hover) {
+  tbody tr:hover {
+    background: rgba(244, 241, 234, 0.03);
+  }
+  tbody tr:hover td:first-child {
+    box-shadow: inset 2px 0 0 var(--accent-line);
+  }
 }
 tfoot td {
   border-top: 1px solid var(--border);

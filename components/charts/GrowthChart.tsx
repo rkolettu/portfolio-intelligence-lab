@@ -70,7 +70,14 @@ function GrowthTooltip({
   );
 }
 
-export function GrowthChart({ result }: { result: BacktestResult }) {
+export function GrowthChart({
+  result,
+  height = 330,
+}: {
+  result: BacktestResult;
+  /** Plot height; the Overview uses a compact chart. */
+  height?: number;
+}) {
   const reduced = usePrefersReducedMotion();
   const narrow = useNarrowChart();
   const benchmarkOk = result.benchmark.ok;
@@ -157,7 +164,7 @@ export function GrowthChart({ result }: { result: BacktestResult }) {
           Benchmark Data Unavailable: {result.benchmark.error.message}
         </p>
       )}
-      <div className="chart-frame" style={{ height: 330 }}>
+      <div className="chart-frame" style={{ height }}>
         <ResponsiveContainer width="100%" height="100%">
           <LineChart
             data={data}

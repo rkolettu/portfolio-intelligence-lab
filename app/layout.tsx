@@ -6,20 +6,54 @@ import "@fontsource/inter/600.css";
 import "@fontsource/inter/700.css";
 import "./globals.css";
 import "./analytics.css";
+import { WorkspaceProvider } from "@/components/workspace/WorkspaceProvider";
+import { MethodologyHost } from "@/components/workspace/MethodologyHost";
+import { SiteHeader, SkipLink } from "@/components/layout/SiteHeader";
+import { MethodologyButton } from "@/components/methodology/MethodologyDrawer";
+import { marketDate } from "@/lib/utils/dates";
+
+export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
-  title: "Portfolio Intelligence & Construction Lab | Rishab Kolettu",
+  title: {
+    default: "Portfolio Intelligence & Construction Lab | Rishab Kolettu",
+    template: "%s · Portfolio Intelligence Lab",
+  },
   description:
     "Reproducible portfolio simulations with explicit historical data coverage and methodology.",
 };
+
+/** The workspace (builder draft, displayed analysis, per-analysis page state)
+ * lives here, above every route, so client-side navigation never refetches. */
 export default function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const today = marketDate(new Date().toISOString());
   return (
     <html lang="en">
       <body>
-        {children}
+        <WorkspaceProvider today={today}>
+          <SkipLink />
+          <SiteHeader>
+            <MethodologyButton className="nav-button" />
+          </SiteHeader>
+          <main className="container" id="main">
+            {children}
+            <footer>
+              <p>
+                For educational and analytical purposes only. Historical results
+                do not guarantee future performance and should not be considered
+                investment advice.
+              </p>
+              <div>
+                <span>Portfolio Intelligence &amp; Construction Lab</span>
+                <span>Historical analytics · portfolio construction</span>
+              </div>
+            </footer>
+          </main>
+          <MethodologyHost />
+        </WorkspaceProvider>
         <Analytics />
       </body>
     </html>

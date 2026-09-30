@@ -6,6 +6,7 @@ import { axisPercent, percent, unsignedPercent } from "@/lib/utils/format";
 import {
   focusHandlers,
   focusState,
+  isMouse,
   useHoldingFocus,
 } from "@/components/ui/HoldingFocus";
 import { useFlip } from "@/components/ui/useFlip";
@@ -25,7 +26,8 @@ export function StressHoldingBars({
   best: string[];
   worst: string[];
 }) {
-  const { focus, setFocus } = useHoldingFocus();
+  const holdingFocus = useHoldingFocus();
+  const { focus, setFocus } = holdingFocus;
   // Display order only: best return first; ties keep portfolio order.
   const ranked = holdings
     .map((h, order) => ({ h, order }))
@@ -59,7 +61,9 @@ export function StressHoldingBars({
         className="cr-rows sh-rows"
         role="list"
         ref={rows}
-        onPointerLeave={() => setFocus(null)}
+        onPointerLeave={(e) => {
+          if (isMouse(e)) setFocus(null);
+        }}
       >
         {ranked.map((h, i) => (
           <div
@@ -69,7 +73,7 @@ export function StressHoldingBars({
             data-flip={h.ticker}
             data-focus={focusState(focus, h.ticker)}
             style={{ ["--i" as string]: i } as CSSProperties}
-            {...focusHandlers(setFocus, [h.ticker])}
+            {...focusHandlers(holdingFocus, [h.ticker])}
           >
             <span className="cr-ticker">
               {h.ticker}

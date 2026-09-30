@@ -8,7 +8,11 @@ import {
   within,
 } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
-import { PortfolioWorkspace } from "@/components/portfolio/PortfolioWorkspace";
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), prefetch: vi.fn() }),
+  usePathname: () => "/",
+}));
+import { PortfolioWorkspace } from "./workspaceHarness";
 import {
   MethodologyDrawer,
   openMethodology,
@@ -123,7 +127,8 @@ it("a failed ticker offers Retry, Edit and Remove for that holding", async () =>
   fireEvent.click(
     screen.getByRole("button", { name: /Analyze Sample Portfolio/ }),
   );
-  const alert = await screen.findByRole("alert");
+  // The landing page's alert (the analysis shell repeats the failure on its routes).
+  const [alert] = await screen.findAllByRole("alert");
   expect(alert.textContent).toMatch(/^QQQ · Ticker Not Found/);
   expect(within(alert).getByRole("button", { name: "Retry analysis" }));
   const index = [

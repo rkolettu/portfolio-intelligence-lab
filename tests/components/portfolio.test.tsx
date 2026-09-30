@@ -8,7 +8,11 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
-import { PortfolioWorkspace } from "@/components/portfolio/PortfolioWorkspace";
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), prefetch: vi.fn() }),
+  usePathname: () => "/",
+}));
+import { PortfolioWorkspace } from "./workspaceHarness";
 import { simulate } from "@/lib/backtest/engine";
 import { series, sessions } from "../fixtures/helpers";
 import { STORAGE_KEY } from "@/lib/state/persistence";
@@ -103,8 +107,10 @@ it("discards obsolete responses even when an upstream fetch ignores abort", asyn
   fireEvent.click(
     screen.getByRole("button", { name: /Analyze Sample Portfolio/ }),
   );
+  // The analysis request follows the (advisory) market-data readiness check.
+  await waitFor(() => expect(completions).toHaveLength(1));
   fireEvent.click(screen.getByRole("button", { name: /Restart analysis/ }));
-  expect(completions).toHaveLength(2);
+  await waitFor(() => expect(completions).toHaveLength(2));
   await act(async () => {
     completions[1](Response.json({ ok: true, value: result }));
   });

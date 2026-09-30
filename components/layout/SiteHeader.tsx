@@ -1,51 +1,36 @@
 "use client";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { useWorkspace } from "@/components/workspace/WorkspaceProvider";
 
-/** Sticky header with scroll-spy navigation. The active section is the last one
- * whose top has passed a reading line under the header; a hairline along the
- * header's bottom edge shows page progress. Sections that are not on the page yet
- * (before an analysis) are dimmed but keep their anchors. */
-export function SiteHeader({
-  sections,
-  children,
-}: {
-  sections: [string, string][];
-  children?: ReactNode;
-}) {
+export const ANALYSIS_ROUTES: { href: string; label: string }[] = [
+  { href: "/analysis/overview", label: "Overview" },
+  { href: "/analysis/performance", label: "Performance" },
+  { href: "/analysis/benchmark", label: "Benchmark" },
+  { href: "/analysis/risk", label: "Risk" },
+  { href: "/analysis/rolling", label: "Rolling" },
+  { href: "/analysis/stress", label: "Stress Lab" },
+  { href: "/analysis/constructor", label: "Constructor" },
+];
+
+/** Sticky application header with the workspace navigation: real routes, the
+ * current one marked with aria-current="page". Analysis links are dimmed (not
+ * disabled) before an analysis exists; following one shows builder guidance. A
+ * hairline along the header's bottom edge shows scroll progress on long pages. */
+export function SiteHeader({ children }: { children?: ReactNode }) {
+  const pathname = usePathname() ?? "/";
+  const { result } = useWorkspace();
   const header = useRef<HTMLElement>(null);
   const nav = useRef<HTMLElement>(null);
-  const [active, setActive] = useState<string>("#builder");
-  const [present, setPresent] = useState<Set<string>>(new Set(["#builder"]));
   useEffect(() => {
     let frame = 0;
     const measure = () => {
       frame = 0;
-      const doc = document.documentElement;
-      const max = doc.scrollHeight - window.innerHeight;
+      const max = document.documentElement.scrollHeight - window.innerHeight;
       header.current?.style.setProperty(
         "--scroll",
         max > 0 ? String(Math.min(1, window.scrollY / max)) : "0",
-      );
-      const line = window.innerHeight * 0.32;
-      let current = "#builder";
-      const found = new Set<string>();
-      for (const [href] of sections) {
-        const target = document.querySelector(href);
-        if (!target) continue;
-        found.add(href);
-        const top = (target.closest("section") ?? target).getBoundingClientRect().top;
-        if (top <= line) current = href;
-      }
-      // Bottom of the page: the final section is active even if it is short.
-      if (max > 0 && window.scrollY >= max - 4) {
-        const last = [...found].at(-1);
-        if (last) current = last;
-      }
-      setActive((prev) => (prev === current ? prev : current));
-      setPresent((prev) =>
-        prev.size === found.size && [...found].every((h) => prev.has(h))
-          ? prev
-          : found,
       );
     };
     const schedule = () => {
@@ -54,28 +39,19 @@ export function SiteHeader({
     measure();
     window.addEventListener("scroll", schedule, { passive: true });
     window.addEventListener("resize", schedule);
-    const mutations = new MutationObserver(schedule);
-    mutations.observe(document.querySelector("main") ?? document.body, {
-      childList: true,
-      subtree: true,
-    });
     return () => {
       if (frame) cancelAnimationFrame(frame);
       window.removeEventListener("scroll", schedule);
       window.removeEventListener("resize", schedule);
-      mutations.disconnect();
     };
-  }, [sections]);
+  }, [pathname]);
   useEffect(() => {
-    // Keep the active link visible when the nav scrolls horizontally (narrow screens).
+    // Keep the current page's link in view when the nav scrolls (narrow screens).
     const el = nav.current;
-    const link = el?.querySelector<HTMLElement>('a[aria-current="location"]');
+    const link = el?.querySelector<HTMLElement>('a[aria-current="page"]');
     if (!el || !link || el.scrollWidth <= el.clientWidth) return;
-    el.scrollTo({
-      left: link.offsetLeft - (el.clientWidth - link.offsetWidth) / 2,
-      behavior: "smooth",
-    });
-  }, [active]);
+    el.scrollTo({ left: link.offsetLeft - (el.clientWidth - link.offsetWidth) / 2 });
+  }, [pathname]);
   return (
     <header className="site-header" ref={header}>
       <a className="brand" href="https://rishabkolettu.vercel.app/">
@@ -88,19 +64,37 @@ export function SiteHeader({
           Rishab Kolettu <span aria-hidden>↗</span>
         </span>
       </a>
-      <nav aria-label="Sections" ref={nav}>
-        {[["#builder", "Builder"], ...sections].map(([href, label]) => (
-          <a
+      <nav aria-label="Workspace" ref={nav}>
+        <Link href="/" aria-current={pathname === "/" ? "page" : undefined}>
+          Builder
+        </Link>
+        <span className="nav-divider" aria-hidden />
+        {ANALYSIS_ROUTES.map(({ href, label }) => (
+          <Link
             key={href}
             href={href}
-            aria-current={active === href ? "location" : undefined}
-            data-absent={present.has(href) ? undefined : ""}
+            aria-current={pathname === href ? "page" : undefined}
+            data-absent={result ? undefined : ""}
           >
             {label}
-          </a>
+          </Link>
         ))}
         {children}
       </nav>
     </header>
+  );
+}
+
+/** Skip link targeting the main work area of the current page. */
+export function SkipLink() {
+  const pathname = usePathname() ?? "/";
+  return pathname === "/" ? (
+    <a className="skip-link" href="#builder">
+      Skip to portfolio builder
+    </a>
+  ) : (
+    <a className="skip-link" href="#main">
+      Skip to analysis
+    </a>
   );
 }

@@ -109,7 +109,11 @@ function HeroMotif({ holdings }: { holdings: Holding[] }) {
       className="motif"
       ref={root}
       onPointerMove={move}
-      onPointerLeave={leave}
+      onPointerDown={move}
+      onPointerLeave={(e) => {
+        // A touch pointer leaves after every tap; keep the tapped node's label.
+        if (e.pointerType === "mouse") leave();
+      }}
       data-active={hot === null ? undefined : ""}
       aria-hidden
     >

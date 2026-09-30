@@ -133,7 +133,8 @@ export function ProposalView({
         : b.upper.includes(t)
           ? "at maximum"
           : null;
-  const { focus, setFocus } = useHoldingFocus();
+  const holdingFocus = useHoldingFocus();
+  const { focus } = holdingFocus;
   const usable = !!p.weights;
   const benchmark = analytics.config.benchmark;
   const cur = analytics.current;
@@ -225,7 +226,7 @@ export function ProposalView({
                       key={w.ticker}
                       data-moved={moved ? (diff > 0 ? "up" : "down") : "none"}
                       data-focus={focusState(focus, w.ticker)}
-                      {...focusHandlers(setFocus, [w.ticker])}
+                      {...focusHandlers(holdingFocus, [w.ticker])}
                     >
                       <td>
                         {w.ticker}

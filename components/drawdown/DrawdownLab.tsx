@@ -173,13 +173,16 @@ const describe = (v: View) =>
 export function DrawdownLab({
   performance,
   benchmark,
+  initialMode = "portfolio",
 }: {
   performance: PerformanceSummary;
   benchmark?: BenchmarkAnalytics;
+  /** The Benchmark page opens on the side-by-side comparison. */
+  initialMode?: Mode;
 }) {
   const reduced = usePrefersReducedMotion();
   const narrow = useNarrowChart();
-  const [mode, setMode] = useState<Mode>("portfolio");
+  const [mode, setMode] = useState<Mode>(initialMode);
   const portfolio: View = {
     key: "portfolio",
     name: "Portfolio",

@@ -7,8 +7,7 @@ import type {
   QuoteProvider,
 } from "../types";
 import { normalizePrices } from "../normalize";
-import { normalizeQuote, preferRecentQuote } from "../quotes";
-import { sessionsBetween } from "@/lib/backtest/calendar";
+import { quoteFromObservation } from "../quoteObservation";
 import { addDays, marketDate } from "@/lib/utils/dates";
 import { fail } from "@/lib/utils/errors";
 import { fetchPublic, type Fetcher } from "@/lib/server/http";
@@ -183,80 +182,23 @@ export class YahooProvider implements HistoricalProvider, QuoteProvider {
       responseDate && Number.isFinite(Date.parse(responseDate))
         ? new Date(responseDate).toISOString()
         : now;
-    const current =
-      data.meta.regularMarketPrice !== undefined &&
-      data.meta.regularMarketTime !== undefined
-        ? normalizeQuote(
-            {
-              ticker,
-              price: data.meta.regularMarketPrice,
-              marketTimestamp: new Date(
-                data.meta.regularMarketTime * 1000,
-              ).toISOString(),
-              fetchedAt,
-              provider: this.name,
-              session: "regular",
-            },
-            now,
-          )
-        : null;
     const closes = data.indicators.quote?.[0]?.close ?? [];
-    const candidates = (data.timestamp ?? []).flatMap((ts, i) => {
-      const date = marketDate(new Date(ts * 1000).toISOString());
-      const price = closes[i];
-      if (
-        date >= marketDate(now) ||
-        price === null ||
-        price === undefined ||
-        price <= 0
-      )
-        return [];
-      const session = sessionsBetween(date, date, now)[0];
-      return session
-        ? [
-            normalizeQuote(
-              {
-                ticker,
-                price,
-                marketTimestamp: session.close,
-                fetchedAt,
-                provider: this.name,
-                session: "regular",
-                claimedStatus: "end_of_day",
-              },
-              now,
-            ),
-          ]
-        : [];
-    });
-    const close = candidates
-      .sort((a, b) => a.marketTimestamp.localeCompare(b.marketTimestamp))
-      .at(-1);
-    // chartPreviousClose can mean start-of-range close, so day change remains unavailable.
-    if (current && close) {
-      const chosen = preferRecentQuote(current, close);
-      if (chosen === close && current.marketTimestamp !== close.marketTimestamp)
-        chosen.provenance = {
-          ...chosen.provenance,
-          fallbackUsed: true,
-          fallbackReason: "Current quote was older than finalized raw close.",
-        };
-      return chosen;
-    }
-    if (current) return current;
-    if (close) {
-      close.provenance = {
-        ...close.provenance,
-        fallbackUsed: true,
-        fallbackReason:
-          "Current quote unavailable; latest finalized raw close used.",
-      };
-      return close;
-    }
-    fail(
-      "PROVIDER_ERROR",
-      "No current or finalized raw closing quote is available.",
-      { ticker, retryable: true },
+    return quoteFromObservation(
+      {
+        ticker,
+        provider: this.name,
+        fetchedAt,
+        regularMarketPrice: data.meta.regularMarketPrice,
+        regularMarketTime:
+          data.meta.regularMarketTime !== undefined
+            ? new Date(data.meta.regularMarketTime * 1000).toISOString()
+            : null,
+        recentCloses: (data.timestamp ?? []).map((ts, i) => ({
+          date: marketDate(new Date(ts * 1000).toISOString()),
+          close: closes[i] ?? null,
+        })),
+      },
+      now,
     );
   }
 }

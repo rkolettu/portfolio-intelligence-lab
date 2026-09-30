@@ -15,7 +15,9 @@
     "test": "vitest",
     "test:e2e": "playwright test",
     "calendar:check": "tsx scripts/check-calendars.ts",
-    "smoke:providers": "tsx --conditions=react-server scripts/provider-smoke.ts"
+    "smoke:providers": "tsx --conditions=react-server scripts/provider-smoke.ts",
+    "sample:snapshot": "tsx --conditions=react-server scripts/cached-sample.ts",
+    "qualify:service": "tsx --conditions=react-server scripts/service-qualification.ts"
   },
   "dependencies": {
     "@fontsource/inter": "^5.3.0",

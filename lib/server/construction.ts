@@ -1,14 +1,11 @@
 import "server-only";
 import type { ConstructionAnalytics } from "@/lib/types/construction";
 import type {
-  DataError,
-  HistoricalSeries,
   Result,
   TreasurySeries,
 } from "@/lib/types/data";
 import { STRESS_WINDOWS } from "@/config/stressWindows";
 import { PROVIDER_POLICY } from "@/config/providers";
-import { historicalWithFallback } from "@/lib/market-data/fallback";
 import { parseConstructionRequest } from "@/lib/validation/construction";
 import { addDays, marketDate } from "@/lib/utils/dates";
 import { errorResult, fail } from "@/lib/utils/errors";
@@ -19,55 +16,7 @@ import {
   zeroRiskyExposure,
 } from "@/lib/backtest/construction";
 import { services, type DataServices } from "./analyze";
-
-/** Fetch whole adjusted series with the analysis's cache-key format, TTL,
- * concurrency and fallback registry. Failures are returned per security. */
-async function fetchHistories(
-  data: DataServices,
-  tickers: string[],
-  start: string,
-  end: string,
-  now: string,
-) {
-  const prices: HistoricalSeries[] = [];
-  const failures: { ticker: string; error: DataError }[] = [];
-  for (let i = 0; i < tickers.length; i += PROVIDER_POLICY.maxConcurrentFetches)
-    await Promise.all(
-      tickers
-        .slice(i, i + PROVIDER_POLICY.maxConcurrentFetches)
-        .map(async (ticker) => {
-          try {
-            const r = await data.cache.get(
-              `history:${data.history.map((p) => p.name).join("|")}:${ticker}:${start}:${end}:USD:adjusted:v1`,
-              PROVIDER_POLICY.historyTtlMs,
-              () =>
-                historicalWithFallback(data.history, {
-                  ticker,
-                  startDate: start,
-                  endDate: end,
-                  now,
-                }),
-            );
-            prices.push({
-              ...r.value,
-              provenance: {
-                ...r.value.provenance,
-                cacheAgeSeconds:
-                  r.value.provenance.cacheAgeSeconds + r.ageSeconds,
-              },
-            });
-          } catch (error) {
-            const failure = errorResult<HistoricalSeries>(error);
-            if (!failure.ok)
-              failures.push({ ticker, error: { ...failure.error, ticker } });
-          }
-        }),
-    );
-  const order = (t: string) => tickers.indexOf(t);
-  prices.sort((a, b) => order(a.ticker) - order(b.ticker));
-  failures.sort((a, b) => order(a.ticker) - order(b.ticker));
-  return { prices, failures };
-}
+import { loadHistories } from "./history";
 
 async function rates(
   data: DataServices,
@@ -122,7 +71,7 @@ export async function construct(
       config.holdings.some((h) => h.ticker === "CASH" && h.weight > 0) ||
       (request.cash.mode === "fixed" && request.cash.weight > 0);
     const estimationRates = rates(data, config.requestedStartDate, end, now);
-    const estimation = await fetchHistories(
+    const estimation = await loadHistories(
       data,
       tickers,
       config.requestedStartDate,
@@ -149,7 +98,7 @@ export async function construct(
     const stressRates = cashHeld
       ? rates(data, presetStart, presetEnd, now)
       : null;
-    const stress = await fetchHistories(
+    const stress = await loadHistories(
       data,
       tickers,
       presetStart,

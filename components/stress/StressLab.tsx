@@ -10,6 +10,7 @@ import { errorState } from "@/lib/ui/quality";
 import { LoadingState } from "@/components/ui/LoadingState";
 import { StatusNotice } from "@/components/ui/StatusNotice";
 import { Segmented } from "@/components/ui/Segmented";
+import { useSlot } from "@/components/workspace/WorkspaceProvider";
 import { StressEventDetail } from "./StressEventDetail";
 
 type Load =
@@ -136,20 +137,32 @@ function Row({ e }: { e: StressTestResult }) {
 export function StressLab({
   config,
   today,
+  slot = "local",
 }: {
   config: PortfolioConfig;
   today: string;
+  /** Workspace slot prefix (the analysis hash): loaded events, the selected event
+   * and the custom window survive page navigation instead of refetching. */
+  slot?: string;
 }) {
   const key = JSON.stringify(config);
-  const [presets, setPresets] = useState<Load>({ state: "loading" });
+  const [presets, setPresets] = useSlot<Load>(`${slot}:stress:presets`, {
+    state: "loading",
+  });
   const [attempt, setAttempt] = useState(0);
-  const [selected, setSelected] = useState("gfc");
-  const [custom, setCustom] = useState<Load | null>(null);
-  const [draft, setDraft] = useState({ startDate: "", endDate: "" });
+  const [selected, setSelected] = useSlot(`${slot}:stress:selected`, "gfc");
+  const [custom, setCustom] = useSlot<Load | null>(`${slot}:stress:custom`, null);
+  const [draft, setDraft] = useSlot(`${slot}:stress:draft`, {
+    startDate: "",
+    endDate: "",
+  });
   const [invalid, setInvalid] = useState<string | null>(null);
   const customRequest = useRef<AbortController | null>(null);
 
   useEffect(() => {
+    // Only while loading: events already loaded for this analysis are reused, and
+    // a request cut short by leaving the page is simply made again on return.
+    if (presets.state !== "loading") return;
     const controller = new AbortController();
     post({ config: JSON.parse(key) as PortfolioConfig }, controller.signal)
       .then((r) => setPresets(loaded(r)))
@@ -158,11 +171,13 @@ export function StressLab({
           setPresets(failed("The stress request failed."));
       });
     return () => controller.abort();
-  }, [key, attempt]);
+  }, [key, attempt, presets.state, setPresets]);
   useEffect(() => {
     const pending = customRequest;
+    // A custom run interrupted by navigation is not left spinning.
+    setCustom((c) => (c?.state === "loading" ? null : c));
     return () => pending.current?.abort();
-  }, []);
+  }, [setCustom]);
 
   function runCustom() {
     let bounds;

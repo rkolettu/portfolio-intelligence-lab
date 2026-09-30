@@ -1,46 +1,19 @@
 "use client";
-import {
-  useEffect,
-  useReducer,
-  useRef,
-  useState,
-  type CSSProperties,
-} from "react";
+import { useEffect, type CSSProperties } from "react";
+import Link from "next/link";
 import { samplePortfolio } from "@/config/samplePortfolio";
-import {
-  draftConfig,
-  portfolioReducer,
-  toDraft,
-  type DraftAction,
-} from "@/lib/state/portfolioReducer";
-import { persistDraft, restoreDraft } from "@/lib/state/persistence";
+import { toDraft } from "@/lib/state/portfolioReducer";
 import { fixed } from "@/lib/utils/format";
-import { errorResult } from "@/lib/utils/errors";
-import { referenceMaturity } from "@/lib/treasury-data/reference";
 import { errorState } from "@/lib/ui/quality";
-import { ConstructionSection } from "@/components/construction/ConstructionSection";
-import { MethodologyDrawer } from "@/components/methodology/MethodologyDrawer";
-import { SectionHeading } from "@/components/ui/SectionHeading";
 import { Hero } from "@/components/hero/Hero";
-import { HoldingFocusProvider } from "@/components/ui/HoldingFocus";
 import {
   AllocationStrip,
   allocationColor,
 } from "@/components/ui/AllocationStrip";
 import { StatusNotice } from "@/components/ui/StatusNotice";
-import { LoadingState } from "@/components/ui/LoadingState";
-import { AnalysisSections, type ResultStatus } from "./AnalysisSections";
-import { CurrentMarket } from "./CurrentMarket";
-import { LineageSection } from "./LineageSection";
-import type { BacktestResult } from "@/lib/types/analytics";
-import type {
-  CurrentQuote,
-  DataError,
-  Result,
-  TreasuryCurve,
-  TreasuryMaturity,
-} from "@/lib/types/data";
-import type { Period, PortfolioConfig } from "@/lib/types/portfolio";
+import { AnalysisProgress } from "./AnalysisProgress";
+import { useWorkspace } from "./WorkspaceProvider";
+import type { Period } from "@/lib/types/portfolio";
 
 const PRESET_BENCHMARKS = ["SPY", "VT", "QQQ", "AGG"];
 const focusField = (id: string) => {
@@ -49,170 +22,41 @@ const focusField = (id: string) => {
   el?.focus();
 };
 
-export function PortfolioWorkspace({ today }: { today: string }) {
-  const [draft, dispatch] = useReducer(
-    portfolioReducer,
-    toDraft(samplePortfolio(today)),
-  );
-  const [ready, setReady] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
-  const [error, setError] = useState<DataError | null>(null);
-  const [result, setResult] = useState<BacktestResult | null>(null);
-  const [pending, setPending] = useState(false);
-  const [quotes, setQuotes] = useState<Result<CurrentQuote>[] | null>(null);
-  const [curve, setCurve] = useState<Result<TreasuryCurve> | null>(null);
-  // Maturity matching the submitted horizon; highlighted on the current curve.
-  const [horizon, setHorizon] = useState<TreasuryMaturity | null>(null);
-  // The current-market section owns its clock, isolating quote ageing from charts.
-  const [quotesReceived, setQuotesReceived] = useState<number | null>(null);
-  const sequence = useRef(0);
-  const controller = useRef<AbortController | null>(null);
+/** Landing page: compact hero and the portfolio builder. Analyze runs the analysis
+ * and opens /analysis/overview; the report itself lives on the analysis routes. */
+export function Landing() {
+  const {
+    today,
+    draft,
+    validated,
+    validation,
+    total,
+    notice,
+    edit,
+    submit,
+    analyzeSample,
+    loadCachedSample,
+    cachedSampleOffer,
+    pending,
+    stage,
+    woke,
+    wakeSlow,
+    pendingSample,
+    wakeService,
+    error,
+    result,
+    source,
+    status,
+  } = useWorkspace();
+  // Wake a sleeping market-data service as soon as the builder appears, without
+  // delaying render: by the time Analyze is clicked it is usually awake.
   useEffect(() => {
-    // Storage is intentionally read only after hydration; SSR never accesses browser state.
-    let restored;
-    try {
-      restored = restoreDraft(
-        window.localStorage,
-        toDraft(samplePortfolio(today)),
-        today,
-      );
-    } catch {
-      restored = {
-        draft: toDraft(samplePortfolio(today)),
-        notice: "Local storage is disabled; preferences will not persist.",
-      };
-    }
-    dispatch({ type: "replace", draft: restored.draft });
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrate validated browser preferences
-    setNotice(restored.notice);
-    setReady(true);
-    return () => {
-      controller.current?.abort();
-      // eslint-disable-next-line react-hooks/exhaustive-deps -- request counter, not a DOM ref; invalidate pending callbacks
-      sequence.current++;
-    };
-  }, [today]);
-
-  let validated: PortfolioConfig | null = null;
-  let validation = "";
-  try {
-    validated = draftConfig(draft, today);
-  } catch (e) {
-    validation = e instanceof Error ? e.message : "Invalid portfolio.";
-  }
-  const total = draft.holdings.reduce(
-    (sum, h) =>
-      sum + (Number.isFinite(Number(h.weight)) ? Number(h.weight) : 0),
-    0,
-  );
-  const changed =
-    !!result && JSON.stringify(validated) !== JSON.stringify(result.config);
-  function edit(action: DraftAction) {
-    if (ready) {
-      try {
-        if (!persistDraft(window.localStorage, portfolioReducer(draft, action)))
-          setNotice("Local storage is disabled; preferences will not persist.");
-      } catch {
-        setNotice("Local storage is disabled; preferences will not persist.");
-      }
-    }
-    sequence.current++;
-    controller.current?.abort();
-    setPending(false);
-    setError(null);
-    setQuotes(null);
-    setQuotesReceived(null);
-    setCurve(null);
-    dispatch(action);
-  }
-  async function submit(config: PortfolioConfig) {
-    controller.current?.abort();
-    const active = new AbortController();
-    controller.current = active;
-    const id = ++sequence.current;
-    setPending(true);
-    setError(null);
-    setQuotes(null);
-    setQuotesReceived(null);
-    setCurve(null);
-    setHorizon(referenceMaturity(config.requestedStartDate, config.endDate));
-    const request = async <T,>(path: string, body: unknown): Promise<T> => {
-      const response = await fetch(path, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-        signal: active.signal,
-      });
-      return response.json() as Promise<T>;
-    };
-    // Independent requests: current context never gates historical success.
-    void request<Result<CurrentQuote>[] | Result<never>>("/api/quotes", [
-      ...config.holdings.filter((h) => h.weight > 0).map((h) => h.ticker),
-      config.benchmark,
-    ])
-      .then((q) => {
-        if (sequence.current === id) {
-          const received = Date.now();
-          setQuotes(Array.isArray(q) ? q : [q]);
-          setQuotesReceived(received);
-        }
-      })
-      .catch(() => {
-        if (sequence.current === id)
-          setQuotes([
-            {
-              ok: false,
-              error: {
-                code: "PROVIDER_ERROR",
-                message:
-                  "Current quotes unavailable; historical analysis is unaffected.",
-                retryable: true,
-              },
-            },
-          ]);
-      });
-    void request<Result<TreasuryCurve>>("/api/treasury/current", {})
-      .then((q) => {
-        if (sequence.current === id) setCurve(q);
-      })
-      .catch(() => {
-        if (sequence.current === id)
-          setCurve({
-            ok: false,
-            error: {
-              code: "TREASURY_UNAVAILABLE",
-              message: "Current Treasury Reference unavailable.",
-              retryable: true,
-            },
-          });
-      });
-    try {
-      const response = await request<Result<BacktestResult>>(
-        "/api/analysis",
-        config,
-      );
-      if (sequence.current !== id) return;
-      if (response.ok) setResult(response.value);
-      else setError(response.error);
-    } catch (e) {
-      if (sequence.current === id) {
-        const failure = errorResult(e);
-        if (!failure.ok) setError(failure.error);
-      }
-    } finally {
-      if (sequence.current === id) setPending(false);
-    }
-  }
-  const analyzeSample = () => {
-    const sample = samplePortfolio(today);
-    edit({ type: "replace", draft: toDraft(sample) });
-    void submit(sample);
-  };
+    wakeService();
+  }, [wakeService]);
   const failedIndex = error?.ticker
     ? draft.holdings.findIndex((h) => h.ticker === error.ticker)
     : -1;
   const failedBenchmark = !!error?.ticker && draft.benchmark === error.ticker;
-  const status: ResultStatus = pending ? "pending" : changed ? "changed" : "current";
   const stripHoldings = draft.holdings.map((h) => ({
     ticker: h.ticker.trim().toUpperCase(),
     weight: Number.isFinite(Number(h.weight)) ? Number(h.weight) : 0,
@@ -220,13 +64,13 @@ export function PortfolioWorkspace({ today }: { today: string }) {
   const gap = total - 100;
   const balanced = Math.abs(gap) <= 0.0001;
   return (
-    <HoldingFocusProvider>
+    <>
       <Hero
         holdings={draft.holdings.map((h) => ({
           ticker: h.ticker.trim().toUpperCase(),
           weight: Number.isFinite(Number(h.weight)) ? Number(h.weight) : 0,
         }))}
-        onAnalyze={analyzeSample}
+        onAnalyze={() => analyzeSample()}
         onBuild={() => focusField("ticker-0")}
       />
       {notice && (
@@ -239,7 +83,7 @@ export function PortfolioWorkspace({ today }: { today: string }) {
         aria-label="Portfolio builder"
         onSubmit={(e) => {
           e.preventDefault();
-          if (validated) void submit(validated);
+          if (validated) void submit(validated, { navigate: true });
         }}
       >
         <div className="workspace-grid">
@@ -538,12 +382,18 @@ export function PortfolioWorkspace({ today }: { today: string }) {
           </div>
         </div>
       </form>
-      {pending && (
-        <LoadingState
-          label="Loading market history, validating coverage and calculating analytics…"
+      {pending && stage && (
+        <AnalysisProgress
+          stage={stage}
+          woke={woke}
+          cachedOffer={
+            stage === "waking" && wakeSlow && pendingSample
+              ? () => void loadCachedSample({ navigate: true })
+              : undefined
+          }
           detail={
             result
-              ? "Your last successful analysis remains below while this request runs."
+              ? "Your last successful analysis stays available while this request runs."
               : undefined
           }
         />
@@ -561,7 +411,7 @@ export function PortfolioWorkspace({ today }: { today: string }) {
                   className="secondary"
                   disabled={!validated}
                   onClick={() => {
-                    if (validated) void submit(validated);
+                    if (validated) void submit(validated, { navigate: true });
                   }}
                 >
                   Retry analysis
@@ -612,41 +462,39 @@ export function PortfolioWorkspace({ today }: { today: string }) {
           {error.dates && (
             <p>Missing sessions: {error.dates.slice(0, 8).join(", ")}</p>
           )}
+          {cachedSampleOffer && (
+            <div className="cached-offer">
+              <p>
+                Live market data is unavailable. A cached copy of the sample
+                analysis is available, clearly labelled with when it was last
+                refreshed.
+              </p>
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => void loadCachedSample({ navigate: true })}
+              >
+                View cached sample
+              </button>
+            </div>
+          )}
         </StatusNotice>
       )}
-      {result && (
-        <>
-          <AnalysisSections result={result} today={today} status={status} />
-          <section className="results" aria-labelledby="constructor-title">
-            <SectionHeading
-              number={9}
-              eyebrow="Portfolio Constructor"
-              id="constructor-title"
-              title="Mathematical alternative allocations."
-              subtitle="Four methods, explicit constraints, judged against your current portfolio."
-              glyph="constructor"
-              aside={<span className="tag">Not a recommendation</span>}
-            />
-            <ConstructionSection
-              key={result.metadata.snapshotHash}
-              config={result.config}
-              analysisHash={result.metadata.snapshotHash}
-              today={today}
-              builder={draft}
-              onApply={(next) => edit({ type: "replace", draft: next })}
-            />
-          </section>
-        </>
+      {result && !pending && (
+        <div className="resume">
+          <span className="resume-dot" aria-hidden data-state={status} />
+          <p>
+            {source.kind === "cached-sample"
+              ? "Viewing the cached sample analysis."
+              : status === "changed"
+                ? "An analysis of your previous allocation is open. Your edits have not been analyzed yet."
+                : "Your analysis is ready."}
+          </p>
+          <Link className="secondary" href="/analysis/overview">
+            Open analysis <span aria-hidden>→</span>
+          </Link>
+        </div>
       )}
-      <CurrentMarket
-        quotes={quotes}
-        receivedAt={quotesReceived}
-        curve={curve}
-        horizon={horizon}
-        pending={pending}
-      />
-      <LineageSection result={result} status={status} />
-      <MethodologyDrawer result={result} />
-    </HoldingFocusProvider>
+    </>
   );
 }

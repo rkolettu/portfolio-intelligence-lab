@@ -17,7 +17,8 @@ export function ReturnContribution({
   contribution: RiskAnalytics["returnContribution"];
   cumulativeReturn: number | null;
 }) {
-  const { focus, setFocus } = useHoldingFocus();
+  const holdingFocus = useHoldingFocus();
+  const { focus } = holdingFocus;
   const rows = [...contribution.rows].sort(
     (a, b) => b.periodContribution - a.periodContribution,
   );
@@ -61,7 +62,7 @@ export function ReturnContribution({
                 <tr
                   key={r.ticker}
                   data-focus={focusState(focus, r.ticker)}
-                  {...focusHandlers(setFocus, [r.ticker])}
+                  {...focusHandlers(holdingFocus, [r.ticker])}
                 >
                   <td>{r.ticker}</td>
                   <td>{unsignedPercent(r.averageWeight)}</td>

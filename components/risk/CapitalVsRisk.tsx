@@ -6,6 +6,7 @@ import { percentagePoints, unsignedPercent } from "@/lib/utils/format";
 import {
   focusHandlers,
   focusState,
+  isMouse,
   useHoldingFocus,
 } from "@/components/ui/HoldingFocus";
 import { Segmented } from "@/components/ui/Segmented";
@@ -28,7 +29,8 @@ const VIEWS: { value: View; label: string }[] = [
  * keeps the other in place, so the gap reads as a movement, not two charts. */
 export function CapitalVsRisk({ holdings }: { holdings: HoldingRisk[] }) {
   const [view, setView] = useState<View>("both");
-  const { focus, setFocus } = useHoldingFocus();
+  const holdingFocus = useHoldingFocus();
+  const { focus, setFocus } = holdingFocus;
   const rows = useFlip<HTMLDivElement>(holdings.map((h) => h.ticker).join());
   const pcr = holdings.map((h) =>
     h.percentage.available ? h.percentage.value : 0,
@@ -125,7 +127,9 @@ export function CapitalVsRisk({ holdings }: { holdings: HoldingRisk[] }) {
         role="list"
         data-view={view}
         ref={rows}
-        onPointerLeave={() => setFocus(null)}
+        onPointerLeave={(e) => {
+          if (isMouse(e)) setFocus(null);
+        }}
       >
         {holdings.map((h, i) => {
           const p = h.percentage;
@@ -142,7 +146,7 @@ export function CapitalVsRisk({ holdings }: { holdings: HoldingRisk[] }) {
               data-flip={h.ticker}
               data-focus={focusState(focus, h.ticker)}
               style={{ ["--i" as string]: i } as CSSProperties}
-              {...focusHandlers(setFocus, [h.ticker])}
+              {...focusHandlers(holdingFocus, [h.ticker])}
             >
               <span className="cr-ticker">
                 {h.ticker}
@@ -172,12 +176,12 @@ export function CapitalVsRisk({ holdings }: { holdings: HoldingRisk[] }) {
                 )}
                 <span
                   className="cr-bar cr-capital"
-                  style={{ ...bar(h.weight), background: CAPITAL }}
+                  style={{ ...bar(h.weight), backgroundColor: CAPITAL }}
                 />
                 {p.available && p.value !== 0 && (
                   <span
                     className={`cr-bar cr-risk${p.value < 0 ? " cr-negative" : ""}`}
-                    style={{ ...bar(p.value), background: RISK }}
+                    style={{ ...bar(p.value), backgroundColor: RISK }}
                   />
                 )}
                 <span

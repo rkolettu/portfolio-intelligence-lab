@@ -4,7 +4,8 @@ import { MethodologyButton } from "@/components/methodology/MethodologyDrawer";
 import { SectionHeading } from "@/components/ui/SectionHeading";
 import { money, percent, timestamp } from "@/lib/utils/format";
 import type { BacktestResult } from "@/lib/types/analytics";
-import { ResultTag, type ResultStatus } from "./AnalysisSections";
+import type { ResultStatus } from "@/components/workspace/WorkspaceProvider";
+import { ResultTag } from "@/components/pages/shared";
 
 /** Section 11: methodology entry point, return ledger and data lineage. */
 export const LineageSection = memo(function LineageSection({
@@ -18,7 +19,6 @@ export const LineageSection = memo(function LineageSection({
   return (
     <section className="results" aria-labelledby="methodology-section-title">
       <SectionHeading
-        number={11}
         eyebrow="Methodology"
         id="methodology-section-title"
         title="Methodology & data lineage."
@@ -110,7 +110,7 @@ export const LineageSection = memo(function LineageSection({
                       <td>{c.firstAvailableDate ?? "—"}</td>
                       <td>{c.lastAvailableDate ?? "—"}</td>
                       <td>{c.observationCount.toLocaleString()}</td>
-                      <td>
+                      <td className="wrap-cell">
                         {s
                           ? `${s.provenance.provider}${s.provenance.fallbackUsed ? " · fallback" : ""} · fetched ${timestamp(s.provenance.fetchedAt)}`
                           : "—"}

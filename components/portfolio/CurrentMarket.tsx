@@ -49,7 +49,6 @@ export const CurrentMarket = memo(function CurrentMarket({
       aria-labelledby="context-title"
     >
       <SectionHeading
-        number={10}
         eyebrow="Current Market"
         id="context-title"
         title="Current market & Treasury reference."
@@ -107,7 +106,7 @@ export const CurrentMarket = memo(function CurrentMarket({
                       <StateBadge state={quoteBadge(v)} />
                     </td>
                     <td>{timestamp(v.marketTimestamp)}</td>
-                    <td className="hint">
+                    <td className="hint wrap-cell">
                       {v.provider} · observation age{" "}
                       {Math.round(v.observationAgeSeconds)}s · cache age at fetch{" "}
                       {Math.round(v.provenance.cacheAgeSeconds)}s · refreshed{" "}

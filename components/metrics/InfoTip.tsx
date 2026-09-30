@@ -34,11 +34,18 @@ export function InfoTip({ label, children }: { label: string; children: ReactNod
     const dismiss = (e: KeyboardEvent) => {
       if (e.key === "Escape") setDismissed(true);
     };
+    // Touch opens the tip on tap (Safari never focuses a tapped button); a tap
+    // anywhere outside the trigger and tip closes it.
+    const outside = (e: PointerEvent) => {
+      if (!anchor.current?.contains(e.target as Node)) setActive(false);
+    };
     place();
     window.addEventListener("resize", place);
     window.addEventListener("scroll", place, true);
     document.addEventListener("keydown", dismiss);
+    document.addEventListener("pointerdown", outside);
     return () => {
+      document.removeEventListener("pointerdown", outside);
       window.removeEventListener("resize", place);
       window.removeEventListener("scroll", place, true);
       document.removeEventListener("keydown", dismiss);
@@ -50,8 +57,12 @@ export function InfoTip({ label, children }: { label: string; children: ReactNod
       ref={anchor}
       className="info-tip"
       data-dismissed={dismissed || undefined}
+      data-open={(active && !dismissed) || undefined}
       onPointerEnter={show}
-      onPointerLeave={() => { if (!anchor.current?.contains(document.activeElement)) setActive(false); }}
+      onPointerLeave={(e) => {
+        // Touch pointers leave right after every tap; only a mouse leaving closes.
+        if (e.pointerType === "mouse" && !anchor.current?.contains(document.activeElement)) setActive(false);
+      }}
       onFocus={show}
       onBlur={() => { if (!anchor.current?.matches(":hover")) setActive(false); }}
       onKeyDown={(e) => { if (e.key === "Escape") setDismissed(true); }}

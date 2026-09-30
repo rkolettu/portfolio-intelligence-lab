@@ -2,14 +2,11 @@ import "server-only";
 import { z } from "zod";
 import type { StressAnalytics } from "@/lib/types/analytics";
 import type {
-  DataError,
-  HistoricalSeries,
   Result,
   TreasurySeries,
 } from "@/lib/types/data";
 import { STRESS_WINDOWS } from "@/config/stressWindows";
 import { PROVIDER_POLICY } from "@/config/providers";
-import { historicalWithFallback } from "@/lib/market-data/fallback";
 import { parsePortfolio } from "@/lib/validation/portfolio";
 import { customStressWindow } from "@/lib/validation/stress";
 import { addDays, marketDate } from "@/lib/utils/dates";
@@ -17,6 +14,7 @@ import { errorResult, fail } from "@/lib/utils/errors";
 import { CALENDAR_COVERAGE, sessionsBetween } from "@/lib/backtest/calendar";
 import { runStress, trimStressSnapshot } from "@/lib/backtest/stress";
 import { services, type DataServices } from "./analyze";
+import { loadHistories } from "./history";
 
 const request = z
   .object({
@@ -79,8 +77,6 @@ export async function stress(
       "2100-01-01T00:00:00Z",
     );
     const tickers = [...new Set([...risky, config.benchmark])];
-    const prices: HistoricalSeries[] = [];
-    const unavailable: { ticker: string; error: DataError }[] = [];
     const cash = config.holdings.some(
       (h) => h.ticker === "CASH" && h.weight > 0,
     );
@@ -101,52 +97,13 @@ export async function stress(
           }))
           .catch(() => null)
       : Promise.resolve(null);
-    for (
-      let offset = 0;
-      offset < tickers.length;
-      offset += PROVIDER_POLICY.maxConcurrentFetches
-    ) {
-      await Promise.all(
-        tickers
-          .slice(offset, offset + PROVIDER_POLICY.maxConcurrentFetches)
-          .map(async (ticker) => {
-            try {
-              const r = await data.cache.get(
-                `history:${data.history.map((p) => p.name).join("|")}:${ticker}:${start}:${end}:USD:adjusted:v1`,
-                PROVIDER_POLICY.historyTtlMs,
-                () =>
-                  historicalWithFallback(data.history, {
-                    ticker,
-                    startDate: start,
-                    endDate: end,
-                    now,
-                  }),
-              );
-              prices.push({
-                ...r.value,
-                provenance: {
-                  ...r.value.provenance,
-                  cacheAgeSeconds:
-                    r.value.provenance.cacheAgeSeconds + r.ageSeconds,
-                },
-              });
-            } catch (error) {
-              const failure = errorResult<HistoricalSeries>(error);
-              if (!failure.ok)
-                unavailable.push({
-                  ticker,
-                  error: { ...failure.error, ticker },
-                });
-            }
-          }),
-      );
-    }
-    // Deterministic order for the snapshot hash, independent of fetch completion.
-    prices.sort(
-      (a, b) => tickers.indexOf(a.ticker) - tickers.indexOf(b.ticker),
-    );
-    unavailable.sort(
-      (a, b) => tickers.indexOf(a.ticker) - tickers.indexOf(b.ticker),
+    // Failures are recorded per security and judged per event, never dropped.
+    const { prices, failures: unavailable } = await loadHistories(
+      data,
+      tickers,
+      start,
+      end,
+      now,
     );
     const treasury = await rateWork;
     const trimmed = trimStressSnapshot({ windows, prices, treasury, sessions });

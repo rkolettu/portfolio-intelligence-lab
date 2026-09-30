@@ -2,7 +2,6 @@ import "server-only";
 import type { BacktestResult } from "@/lib/types/analytics";
 import type {
   CurrentQuote,
-  HistoricalSeries,
   Result,
   TreasuryCurve,
   TreasurySeries,
@@ -14,14 +13,16 @@ import type {
 import type { TreasuryProvider } from "@/lib/treasury-data/types";
 import { YahooProvider } from "@/lib/market-data/providers/yahoo";
 import { FredProvider } from "@/lib/treasury-data/historical";
-import { historicalWithFallback } from "@/lib/market-data/fallback";
 import { DataCache } from "./cache";
 import { PROVIDER_POLICY } from "@/config/providers";
 import {
   assertQualified,
+  configuredMarketDataService,
   deployedHistoryProviders,
   deployedQuoteProvider,
 } from "@/config/deployed-providers";
+import { isQuoteBatch } from "@/lib/market-data/types";
+import { microBatcher } from "@/lib/market-data/batch";
 import { refreshQuoteFreshness } from "@/lib/market-data/quotes";
 import { parsePortfolio } from "@/lib/validation/portfolio";
 import { symbolSchema } from "@/lib/validation/symbols";
@@ -33,6 +34,7 @@ import {
   sessionsBetween,
 } from "@/lib/backtest/calendar";
 import { simulate } from "@/lib/backtest/engine";
+import { loadHistories } from "./history";
 export type DataServices = {
   history: HistoricalProvider[];
   quotes: QuoteProvider | null;
@@ -40,13 +42,21 @@ export type DataServices = {
   cache: DataCache;
 };
 const yahoo = new YahooProvider();
+// Precedence: the configured market-data service (deployments, and local runs that
+// point at it); else the direct Yahoo adapter for local research only; else any
+// registered provider. On Vercel without the service, equity history is unavailable.
+const marketDataService = configuredMarketDataService();
 export const services: DataServices = {
-  history: PROVIDER_POLICY.yahooEnabled
-    ? [yahoo]
-    : deployedHistoryProviders.map(assertQualified),
-  quotes: PROVIDER_POLICY.yahooEnabled
-    ? yahoo
-    : deployedQuoteProvider && assertQualified(deployedQuoteProvider),
+  history: marketDataService
+    ? [marketDataService]
+    : PROVIDER_POLICY.yahooEnabled
+      ? [yahoo]
+      : deployedHistoryProviders.map(assertQualified),
+  quotes: marketDataService
+    ? marketDataService
+    : PROVIDER_POLICY.yahooEnabled
+      ? yahoo
+      : deployedQuoteProvider && assertQualified(deployedQuoteProvider),
   treasury: new FredProvider(),
   cache: new DataCache(),
 };
@@ -77,8 +87,6 @@ export async function analyze(
       "2100-01-01T00:00:00Z",
     );
     const tickers = [...new Set([...risky, config.benchmark])];
-    const prices: HistoricalSeries[] = [];
-    const failures = new Map<string, Result<HistoricalSeries>>();
     const rateWork = data.cache
       .get(
         `fred:DGS3MO:${config.requestedStartDate}:${end}:v1`,
@@ -94,53 +102,17 @@ export async function analyze(
         },
       }))
       .catch(() => null);
-    for (
-      let offset = 0;
-      offset < tickers.length;
-      offset += PROVIDER_POLICY.maxConcurrentFetches
-    ) {
-      const batch = await Promise.all(
-        tickers
-          .slice(offset, offset + PROVIDER_POLICY.maxConcurrentFetches)
-          .map(async (ticker) => {
-            try {
-              const result = await data.cache.get(
-                `history:${data.history.map((p) => p.name).join("|")}:${ticker}:${config.requestedStartDate}:${end}:USD:adjusted:v1`,
-                PROVIDER_POLICY.historyTtlMs,
-                () =>
-                  historicalWithFallback(data.history, {
-                    ticker,
-                    startDate: config.requestedStartDate,
-                    endDate: end,
-                    now,
-                  }),
-              );
-              return {
-                ok: true as const,
-                value: {
-                  ...result.value,
-                  provenance: {
-                    ...result.value.provenance,
-                    cacheAgeSeconds:
-                      result.value.provenance.cacheAgeSeconds +
-                      result.ageSeconds,
-                  },
-                },
-              };
-            } catch (error) {
-              const failure = errorResult<HistoricalSeries>(error);
-              failures.set(ticker, failure);
-              return failure;
-            }
-          }),
-      );
-      for (const item of batch) if (item.ok) prices.push(item.value);
-    }
-    for (const ticker of risky) {
-      const failure = failures.get(ticker);
-      if (failure && !failure.ok)
-        return { ok: false, error: { ...failure.error, ticker } };
-    }
+    const { prices, failures } = await loadHistories(
+      data,
+      tickers,
+      config.requestedStartDate,
+      end,
+      now,
+    );
+    // A risky holding that fails ends the analysis with its exact failure; it is
+    // never silently removed. A benchmark failure leaves the benchmark unavailable.
+    const failed = failures.find((f) => risky.includes(f.ticker));
+    if (failed) return { ok: false, error: failed.error };
     const treasury: TreasurySeries | null = await rateWork;
     const result = simulate({
       config,
@@ -171,9 +143,18 @@ export async function currentQuotes(
     ...new Set(tickers.map((t) => symbolSchema.parse(t))),
   ].filter((t) => t !== "CASH");
   const output: Result<CurrentQuote>[] = [];
-  for (let offset = 0; offset < normalized.length; offset += 4) {
+  const provider = data.quotes;
+  // One upstream request for every uncached quote when the provider batches.
+  const batched =
+    provider && isQuoteBatch(provider)
+      ? microBatcher<string, CurrentQuote>(provider.maxBatch, (tickers) =>
+          provider.getCurrentQuotes(tickers, now),
+        )
+      : null;
+  const step = batched ? normalized.length || 1 : 4;
+  for (let offset = 0; offset < normalized.length; offset += step) {
     const batch = await Promise.all(
-      normalized.slice(offset, offset + 4).map(async (ticker) => {
+      normalized.slice(offset, offset + step).map(async (ticker) => {
         try {
           if (!data.quotes)
             fail("UNQUALIFIED_PROVIDER", "Current quotes are unavailable.", {
@@ -182,7 +163,8 @@ export async function currentQuotes(
           const r = await data.cache.get(
             `quote:${data.quotes.name}:${ticker}:v1`,
             PROVIDER_POLICY.quoteTtlMs,
-            () => data.quotes!.getCurrentQuote(ticker, now),
+            () =>
+              batched ? batched(ticker) : data.quotes!.getCurrentQuote(ticker, now),
           );
           // Re-derived per read from the immutable cached value; never mutate it.
           const fresh = refreshQuoteFreshness(

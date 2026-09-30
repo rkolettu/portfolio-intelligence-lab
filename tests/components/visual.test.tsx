@@ -150,11 +150,30 @@ it("hovering a holding dims the others and lights the heatmap row and column", (
   );
   const rows = container.querySelectorAll<HTMLElement>(".cr-row:not(.cr-axis)");
   expect(rows[0].dataset.focus).toBeUndefined();
-  fireEvent.pointerEnter(rows[0]);
+  fireEvent.pointerEnter(rows[0], { pointerType: "mouse" });
   expect(rows[0].dataset.focus).toBe("on");
   expect(rows[1].dataset.focus).toBe("dim");
-  fireEvent.pointerLeave(rows[0]);
+  fireEvent.pointerLeave(rows[0], { pointerType: "mouse" });
   expect(rows[1].dataset.focus).toBeUndefined();
+  // Touch: enter/leave around a tap are ignored; the tap itself pins the highlight,
+  // a second tap releases it and a tap elsewhere clears it.
+  fireEvent.pointerEnter(rows[0], { pointerType: "touch" });
+  fireEvent.pointerUp(rows[0], { pointerType: "touch" });
+  fireEvent.pointerLeave(rows[0], { pointerType: "touch" });
+  expect(rows[0].dataset.focus).toBe("on");
+  fireEvent.pointerUp(rows[0], { pointerType: "touch" });
+  expect(rows[0].dataset.focus).toBeUndefined();
+  fireEvent.pointerUp(rows[1], { pointerType: "touch" });
+  expect(rows[1].dataset.focus).toBe("on");
+  fireEvent.pointerDown(document.body, { pointerType: "touch" });
+  expect(rows[1].dataset.focus).toBeUndefined();
+  // Pair cards pin both holdings and report their pressed state.
+  const pair = screen.getByRole("button", { name: /Most correlated pair/ });
+  fireEvent.pointerUp(pair, { pointerType: "touch" });
+  expect(pair.getAttribute("aria-pressed")).toBe("true");
+  expect(container.querySelectorAll(".heatmap th[data-on]")).toHaveLength(2);
+  fireEvent.pointerUp(pair, { pointerType: "touch" });
+  expect(pair.getAttribute("aria-pressed")).toBe("false");
   // Heatmap: entering a cell lights its row and column headers and opens the panel.
   const cells = container.querySelectorAll<HTMLElement>(".heatmap tbody td");
   fireEvent.mouseEnter(cells[1]);
@@ -208,4 +227,41 @@ it("unavailable states are quiet bordered panels, not alerts", () => {
   expect(screen.getByText("Not enough history")).toBeTruthy();
   expect(screen.queryByRole("alert")).toBeNull();
   expect(screen.getByText("Only 39 sessions.")).toBeTruthy();
+});
+
+it("negative risk contribution: extends left of the true zero, is labelled, not color-only", async () => {
+  const { hedgeResult } = await import("../fixtures/hedge");
+  const ra = hedgeResult().riskAnalytics;
+  const h = ra.holdings.find((x) => x.ticker === "HEDGE")!;
+  expect(h.percentage.available && h.percentage.value).toBeLessThan(0);
+  const { container } = render(<CapitalVsRisk holdings={ra.holdings} />);
+  const row = screen
+    .getAllByRole("listitem")
+    .find((li) => li.textContent?.startsWith("HEDGE"))!;
+  const zero = parseFloat(row.querySelector<HTMLElement>(".cr-zero")!.style.left);
+  // The axis tick at the zero line reads exactly "0%".
+  const zeroTick = container.querySelector<HTMLElement>(".cr-tick-zero")!;
+  expect(zeroTick.textContent).toBe("0%");
+  expect(parseFloat(zeroTick.style.left)).toBeCloseTo(zero, 6);
+  expect(zero).toBeGreaterThan(0);
+  const end = (el: HTMLElement) =>
+    parseFloat(el.style.left) + parseFloat(el.style.width);
+  // Overlay: the thin risk bar ends exactly at zero and starts left of it.
+  const risk = row.querySelector<HTMLElement>(".cr-risk")!;
+  expect(risk.classList.contains("cr-negative")).toBe(true);
+  expect(end(risk)).toBeCloseTo(zero, 6);
+  expect(parseFloat(risk.style.left)).toBeLessThan(zero);
+  // Risk view: the morphing bar takes the same negative geometry; the capital
+  // ghost starts at zero and extends right.
+  fireEvent.click(screen.getByRole("radio", { name: "Risk" }));
+  const main = row.querySelector<HTMLElement>(".cr-main")!;
+  expect(main.classList.contains("cr-negative")).toBe(true);
+  expect(end(main)).toBeCloseTo(zero, 6);
+  const ghost = row.querySelector<HTMLElement>(".cr-ghost")!;
+  expect(parseFloat(ghost.style.left)).toBeCloseTo(zero, 6);
+  // Non-color cues: a "hedge" tag, a minus-signed share and a signed delta.
+  expect(row.querySelector(".cr-tag-hedge")!.textContent).toBe("hedge");
+  expect(row.querySelector(".cr-v-risk")!.textContent).toMatch(/^-\d+\.\d{2}%$/);
+  expect(row.querySelector(".cr-v-delta")!.textContent).toMatch(/^-\d+\.\d{2} pp$/);
+  expect(document.body.textContent).not.toMatch(/NaN|Infinity/);
 });

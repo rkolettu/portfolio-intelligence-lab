@@ -14,7 +14,8 @@ export function SectionHeading({
   glyph,
   aside,
 }: {
-  number: number;
+  /** Page sections are numbered in navigation order; sub-sections are not. */
+  number?: number;
   eyebrow: string;
   id: string;
   title: string;
@@ -52,7 +53,9 @@ export function SectionHeading({
     >
       <div className="section-title">
         <p className="eyebrow">
-          {String(number).padStart(2, "0")} / {eyebrow}
+          {number === undefined
+            ? eyebrow
+            : `${String(number).padStart(2, "0")} / ${eyebrow}`}
         </p>
         <h2 id={id}>{title}</h2>
         {subtitle && <p className="section-subtitle">{subtitle}</p>}

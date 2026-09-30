@@ -92,7 +92,8 @@ export function RiskSection({
   performance: PerformanceSummary;
 }) {
   const [sort, setSort] = useState<RiskSortKey>("weight");
-  const { focus, setFocus } = useHoldingFocus();
+  const holdingFocus = useHoldingFocus();
+  const { focus } = holdingFocus;
   const s = risk.sample;
   const p = risk.portfolio;
   const realized = performance.risk.volatility;
@@ -208,7 +209,7 @@ export function RiskSection({
               <tr
                 key={h.ticker}
                 data-focus={focusState(focus, h.ticker)}
-                {...focusHandlers(setFocus, [h.ticker])}
+                {...focusHandlers(holdingFocus, [h.ticker])}
               >
                 <td>
                   {h.ticker}

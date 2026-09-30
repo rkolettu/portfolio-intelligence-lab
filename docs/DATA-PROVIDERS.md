@@ -1,3 +1,119 @@
+# Data providers
+
+## Phase 9: deployed market data through Portfolio Lab's own Market Data API
+
+Deployed equity history and current quotes come from the **market-data service**,
+Portfolio Lab's standalone backend in its own repository, `portfolio-lab-market-data`
+(FastAPI + yfinance, Render Free; its README documents routes, cache and settings).
+Portfolio Lab depends on no other project. The flow is:
+
+```
+Browser → Portfolio Lab API routes (Vercel) → /api/market-data (Render) → yfinance → Yahoo
+```
+
+- The browser never calls Render. Portfolio Lab's server routes authenticate with
+  `X-Portfolio-Lab-Service-Key`; the key exists only in Render and Vercel settings
+  and is never logged or bundled (checked: absent from `.next/static`).
+- The free instance sleeps when idle (no keep-warm). The landing page wakes it through
+  Portfolio Lab's server without blocking render; see DEPLOYMENT.md.
+- Render retrieves, normalizes, validates, caches and reports provenance. Every
+  calculation (returns, Sharpe, beta, covariance, risk contribution, stress,
+  optimization) stays in this repository's TypeScript engine, unchanged.
+- Portfolio Lab adapter: `lib/market-data/providers/marketDataService.ts`
+  (`MarketDataServiceProvider`). It implements the unchanged `HistoricalProvider` /
+  `QuoteProvider` contracts plus optional batch capabilities. Nothing Yahoo-specific
+  crosses it: the service returns provider-neutral records (dates, adjusted closes,
+  currency, exchange, instrument, first trade date, provenance).
+- **Batching:** `lib/server/history.ts` (`loadHistories`) serves the analysis, the
+  Stress Lab and the Constructor. Every ticker is looked up in the per-instance cache
+  under the unchanged keys; all misses from one call go upstream as **one** request
+  (≤ 21 symbols: 20 holdings + benchmark). The direct research adapter keeps its
+  bounded four-at-a-time per-ticker path. A failed security keeps its exact typed
+  failure; it is never removed.
+- **Quotes** batch the same way (one request for all uncached symbols). The service
+  returns the raw observation (latest regular-market print and time, recent raw
+  closes, retrieval time); Portfolio Lab classifies freshness with its existing
+  rules (`lib/market-data/quoteObservation.ts`, shared with the direct adapter). A
+  print is **Latest Available**, never Live; a finalized raw close is **End of Day**
+  (the "previous close" case, labelled with its fallback reason); stale status is
+  re-derived on every read as before.
+
+### Adjustment convention (qualified 2026-09-30)
+
+yfinance is called with every option explicit: `interval="1d"`, `auto_adjust=False`,
+`back_adjust=False`, `repair=False`, `actions=True`, `keepna=False`,
+`prepost=False`, `rounding=False`, and an explicit `start`. The value served is
+Yahoo's own `adjclose` ("Adj Close"): split- **and** dividend-adjusted; ETF
+distributions are dividends. It is the same series the direct adapter reads.
+
+- `period="max"`/`range=max` is never used. Yahoo answers it with **monthly** bars even
+  for `interval=1d` (405 SPY bars instead of 8,474 daily; values up to 15 % off the
+  daily series at the shared dates).
+- Missing adjusted closes are dropped, never filled. No forward fill, interpolation
+  or bridging. Pre-listing ranges return `INSUFFICIENT_HISTORY` with the same message
+  as the direct adapter; a partial range starts at the first listed session and
+  carries the provider-reported first trade date.
+- Only final sessions are cached (a weekday's bar after 16:20 New York). Portfolio
+  Lab additionally applies its unchanged prior-market-day rule to every series.
+- The request's start is the analysis start minus ten days, exactly as the direct
+  adapter requests.
+
+### Live qualification (2026-09-30)
+
+`npm run qualify:service` (`scripts/service-qualification.ts`) ran the direct Yahoo
+adapter and the service on identical securities and dates, then the unchanged
+engine on both:
+
+| Check | Result |
+|---|---|
+| Session dates (sample 5Y; 10Y vs VT; AAPL/MSFT/NVDA/AGG 3Y) | identical: 1,253 / 2,511 / 750 returns, identical first trade dates |
+| Adjusted close | max relative difference 1.38e-6 |
+| Daily portfolio return | max absolute difference 6.8e-7 |
+| Ending wealth | max $0.004 on ~$16,700 (1.3e-7 relative) |
+| CAGR, volatility, Sharpe, Sortino, maximum drawdown | ≤ 7e-7 relative; identical trough dates |
+| Beta, alpha, tracking error | beta 6.8e-6 abs; alpha 1.9e-8 abs; TE 1.1e-7 abs |
+| Correlations, MRC, PCR, sample-covariance volatility | ≤ 3.1e-6 abs |
+| Stress (GFC, COVID, 2022): returns and drawdowns | ≤ 1.4e-7 abs; identical statuses |
+| Construction: Ledoit–Wolf δ, μ; weights for all four methods | δ 1.5e-8 abs; weights ≤ 5.8e-7 abs; identical statuses |
+
+Every difference is explained by one upstream property: Yahoo re-derives `adjclose`
+per request and rounds it to float32. Two identical direct requests differ by 4–7e-7
+relative, and the full-history request the service caches differs from a windowed
+request by the same order. No difference appears at display precision. Replay of
+analysis, stress and construction from their snapshots is exact through the service
+(`npm run smoke:providers` with the service configured), and a repeated construction
+is identical.
+
+### Service cache, refresh and failure handling (Render)
+
+Complete-history cache per (provider, ticker, interval, convention), sliced per request;
+bounded LRU (3M sessions, ~36 MB). Incremental refresh fetches only the tail plus a
+14-day overlap and appends when the overlap matches within 5e-6; any mismatch (a new
+dividend or split re-bases every earlier adjusted close, or a corrected close) triggers
+a full refetch, so adjustment bases are never spliced. Single-flight per symbol.
+Retries (backoff + jitter) only for timeouts, connection resets, temporary 5xx and
+throttling. A circuit breaker (5 failures → 30 s, doubling to 5 min) serves cached
+history marked `stale` (Portfolio Lab adds a provenance warning) and fails uncached
+requests fast with a typed retryable error. Four concurrent upstream calls at most.
+Background prewarm of SPY, QQQ, IWM, BND, GLD (full histories cover every stress
+window), rerun after every cold start. Details and measurements: the
+`portfolio-lab-market-data` README.
+
+### Terms
+
+Yahoo Finance is an unofficial source with no redistribution or data licence. The
+project owner chose this $0 path for a non-commercial educational deployment on
+2026-09-30; the registration in `config/deployed-providers.ts` records that
+acceptance explicitly (`upstreamAcceptance`). The direct browser-facing adapter
+remains local research only.
+
+### Future providers
+
+Add `TwelveDataProvider`, `PolygonProvider` or another adapter by implementing the
+same contracts, either in Portfolio Lab (`lib/market-data/providers/`) or behind the
+service (a new `provider.py` returning the same normalized records). Register it
+through the path below. No analytics, cache keys, validation or UI code changes.
+
 # Phase 1 provider qualification
 
 ## Separation and source selection
@@ -10,7 +126,10 @@ Current quotes: independent Yahoo chart capability. Latency is unqualified, so r
 
 The fallback registry replaces entire equivalent historical series, preserves source/error lineage, and rejects different securities/currencies/conventions. Identical duplicate dates collapse; conflicts fail. Missing adjusted values are left as gaps for calendar validation, never replaced by raw closes.
 
-## Yahoo is local-only
+## The direct Yahoo adapter is local-only
+
+(Phase 9: deployments reach Yahoo only through the authenticated market-data service
+above; this section still governs the direct adapter.)
 
 `yahooLocalResearchEnabled` in `config/providers.ts` is default-deny:
 
@@ -30,7 +149,7 @@ Deployed adapters are registered in code, in `config/deployed-providers.ts`, nev
 
 1. Implement `HistoricalProvider` (and/or `QuoteProvider`) under `lib/market-data/providers/`. History must return whole series under `total_return_aware_adjusted` with split **and** distribution adjustment. Quotes must not claim `live` without qualified latency metadata.
 2. Qualify it: terms/licence review for public display, caching and retention; a deployed-runtime smoke from the intended Vercel region covering every sample holding and SPY/VT/QQQ/AGG, an invalid symbol, range limits and throttling; and split/distribution fixture reconciliation (for example 2-for-1 raw 100→50 adjusted 50→50 yields zero return).
-3. Register `{ provider, qualification }` with `termsUrl` (https), `termsReviewedOn`, `deployedSmoke`, `conventionEvidence` and `reviewer`. `assertQualified` runs at module load and rejects incomplete evidence and any Yahoo-named adapter, failing closed with `UNQUALIFIED_PROVIDER`.
+3. Register `{ provider, qualification }` with `termsUrl` (https), `termsReviewedOn`, `deployedSmoke`, `conventionEvidence` and `reviewer`. `assertQualified` runs at module load and rejects incomplete evidence and the direct Yahoo adapter, failing closed with `UNQUALIFIED_PROVIDER`. A provider whose upstream is Yahoo is admissible only through the market-data service and only with a recorded `upstreamAcceptance` (owner, date, scope, `transport: "market-data-service"`). The environment supplies only the service URL and key, never qualification.
 4. The existing fallback registry, identity/convention checks, cache keys (which include provider names) and snapshot metadata apply unchanged.
 
 ## Treasury publication timing
@@ -101,7 +220,7 @@ The in-memory cache deduplicates identical concurrent calls on one instance. Pro
 
 ## Unresolved production qualification — do not misrepresent this as live production data
 
-1. **No qualified deployed equity provider.** Yahoo is local-only by construction; deployed equity analysis stays unavailable until a replacement completes the registration path above.
+1. **Deployed equity provider (Phase 9):** the Render market-data service is registered with local qualification evidence and the owner's recorded acceptance of Yahoo's terms. Its deployed-runtime smoke must be re-run against the real Render and Vercel URLs after the first deployment and recorded in `config/deployed-providers.ts`. Without `MARKET_DATA_SERVICE_URL`/`MARKET_DATA_SERVICE_KEY`, deployed equity analysis stays unavailable, as before.
 2. **Vercel runtime checks:** no deployment was authorized or performed. After deploying, verify streamed >4.5 MB responses and CDN compression, FRED egress from the chosen region, and the default-deny gate (`UNQUALIFIED_PROVIDER`).
 3. **Yahoo rights and stability** (local research): no documented SLA/quota or redistribution/retention licence. Special/capital-gain distributions, historical symbol reuse/delistings and all corporate actions have not been independently certified; unsupported terminal events fail closed.
 4. **FRED vintages:** CSV exposes revised observations, not release histories. DGS3MO starts 1981-09-01; CASH-holding runs requiring earlier rates fail closed. Exact point-in-time studies require a qualified vintage source.

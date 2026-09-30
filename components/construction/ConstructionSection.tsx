@@ -22,6 +22,7 @@ import { StatusNotice } from "@/components/ui/StatusNotice";
 import { StateBadge } from "@/components/ui/StateBadge";
 import { LoadingState } from "@/components/ui/LoadingState";
 import { Segmented } from "@/components/ui/Segmented";
+import { useSlot } from "@/components/workspace/WorkspaceProvider";
 import { bindingSummary } from "@/lib/analytics/construction/observations";
 import { ProposalView } from "./ProposalView";
 
@@ -52,17 +53,23 @@ export function ConstructionSection({
   builder: Draft;
   onApply: (draft: Draft) => void;
 }) {
-  const [draft, setDraft] = useState<ConstructorDraft>(() =>
+  // Per-analysis state survives page navigation; an in-flight request does not
+  // (leaving the page aborts it), so `pending` stays local.
+  const slot = `${analysisHash}:construction`;
+  const [draft, setDraft] = useSlot<ConstructorDraft>(`${slot}:draft`, () =>
     defaultConstructorDraft(config),
   );
-  const [method, setMethod] = useState<ConstructionMethod>("minimum_variance");
-  const [proposal, setProposal] = useState<Proposal | null>(null);
+  const [method, setMethod] = useSlot<ConstructionMethod>(
+    `${slot}:method`,
+    "minimum_variance",
+  );
+  const [proposal, setProposal] = useSlot<Proposal | null>(`${slot}:proposal`, null);
   const [pending, setPending] = useState(false);
-  const [error, setError] = useState<DataError | null>(null);
-  const [applyMessage, setApplyMessage] = useState<{
+  const [error, setError] = useSlot<DataError | null>(`${slot}:error`, null);
+  const [applyMessage, setApplyMessage] = useSlot<{
     ok: boolean;
     text: string;
-  } | null>(null);
+  } | null>(`${slot}:apply`, null);
   const request = useRef<AbortController | null>(null);
   useEffect(() => {
     const pendingRequest = request;
