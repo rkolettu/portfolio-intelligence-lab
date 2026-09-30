@@ -15,8 +15,8 @@ import { Constellation, type Correlation } from "@/components/observatory/Conste
 import { TickerChip, useDossier } from "@/components/observatory/Dossier";
 
 /** Capital is warm paper, risk the family blue: the Risk Shadow pair. */
-const CAPITAL = "#d9d3c7";
-const RISK = "#8fb0ff";
+const CAPITAL = "#b3aa9c";
+const RISK = "#1d4ed8";
 
 type View = "both" | "capital" | "risk";
 const VIEWS: { value: View; label: string }[] = [
@@ -210,10 +210,10 @@ export function CapitalVsRisk({
                         ...bar(ghost),
                         borderColor:
                           view === "risk"
-                            ? "rgba(244,241,234,0.55)"
-                            : "rgba(96,160,255,0.75)",
+                            ? "rgba(23,23,23,0.5)"
+                            : "rgba(29,78,216,0.75)",
                         ["--ghost" as string]:
-                          view === "risk" ? "#f4f1ea" : "#7db2ff",
+                          view === "risk" ? "#171717" : "#1d4ed8",
                       } as CSSProperties
                     }
                   />

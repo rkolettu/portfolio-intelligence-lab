@@ -445,13 +445,13 @@ export function Constellation({
       >
         <defs>
           <radialGradient id={`${uid}-puck`} cx="0.36" cy="0.3" r="0.8">
-            <stop offset="0" stopColor="#2e2e2b" />
-            <stop offset="0.7" stopColor="#1b1b1a" />
-            <stop offset="1" stopColor="#151514" />
+            <stop offset="0" stopColor="#ffffff" />
+            <stop offset="0.7" stopColor="#f7f4ee" />
+            <stop offset="1" stopColor="#ebe6dc" />
           </radialGradient>
           <pattern id={`${uid}-hatch`} width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-            <rect width="5" height="5" fill="#171716" />
-            <path d="M0 0v5" stroke="rgba(244,241,234,.28)" strokeWidth="1" />
+            <rect width="5" height="5" fill="#f4f1ea" />
+            <path d="M0 0v5" stroke="rgba(23,23,23,.3)" strokeWidth="1" />
           </pattern>
         </defs>
         <g className="cs-field" aria-hidden>
