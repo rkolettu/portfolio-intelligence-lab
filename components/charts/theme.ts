@@ -1,22 +1,22 @@
 "use client";
 import { useSyncExternalStore } from "react";
 
-// Validated with the dataviz palette checker against the dark chart surface:
-// lightness band, chroma floor, CVD ΔE 26.8, normal-vision ΔE 31.8, contrast ≥ 3:1.
+// Paper theme: the portfolio family's blue for the portfolio, a burnt orange for
+// the benchmark and the family green for proposals, each ≥ 3:1 on #fbfaf7.
 // SVG presentation attributes take literal colors, so these are hex, not CSS vars.
 export const CHART = {
-  portfolio: "#3987e5",
-  benchmark: "#d95926",
-  /** Construction "Proposed" series (dataviz slot 3; blue/aqua CVD ΔE 19.6 on #1e1e1d). */
-  proposed: "#199e70",
-  grid: "rgba(244, 241, 234, 0.055)",
-  axis: "rgba(244, 241, 234, 0.16)",
-  tick: "#969188",
-  reference: "rgba(244, 241, 234, 0.3)",
+  portfolio: "#1d4ed8",
+  benchmark: "#c2552a",
+  /** Construction "Proposed" series. */
+  proposed: "#287252",
+  grid: "rgba(23, 23, 23, 0.06)",
+  axis: "rgba(23, 23, 23, 0.18)",
+  tick: "#7a766f",
+  reference: "rgba(23, 23, 23, 0.3)",
   /** Panel surface the chart sits on (the --surface token). */
-  surface: "#181817",
-  positive: "#8fcfa9",
-  negative: "#f0a08f",
+  surface: "#fbfaf7",
+  positive: "#287252",
+  negative: "#a43e39",
   /** Main series 1.75px, secondary series 1.5px: thin marks, clear hierarchy. */
   line: 1.75,
   lineSecondary: 1.5,

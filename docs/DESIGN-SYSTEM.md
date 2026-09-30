@@ -73,3 +73,14 @@ sticky band that reserves no flow height and steps aside for the builder.
 **Material**: a single fixed 5%-opacity grain layer (static SVG noise) over the ink
 background. **Motion**: transforms/opacity; all ambient motion (drift, scan, ripple,
 rails) stops under `prefers-reduced-motion`.
+
+### Paper theme (2026-09-30)
+
+Portfolio Lab now uses the portfolio site's own light palette rather than an on-ink
+adaptation: `--bg #f4f1ea`, `--surface #fbfaf7`, `--text #171717`, muted `#5f5c56`,
+accent `#1d4ed8`, positive `#287252`, negative `#a43e39`, hairlines at 7–20% ink, and
+shadows in the family's warm `rgba(36, 31, 24, …)`. Chart series: portfolio `#1d4ed8`,
+benchmark `#c2552a`, proposed `#287252`. The correlation heatmap diverges blue ↔ red
+around a warm neutral `#ebe6dd`, darkening away from zero, with cell ink chosen for
+≥ 4.5:1 contrast. Constellation pucks are paper discs with ink rims; the grain layer
+is ink noise at low opacity.

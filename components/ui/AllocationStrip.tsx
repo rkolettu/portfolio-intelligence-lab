@@ -4,7 +4,7 @@ import type { CSSProperties } from "react";
  * segment share a color without a rainbow. CASH is hatched instead. */
 export const allocationColor = (index: number, count: number) => {
   const t = count <= 1 ? 0 : index / (count - 1);
-  return `hsl(221 ${62 - t * 12}% ${74 - t * 34}%)`;
+  return `hsl(221 ${72 - t * 14}% ${56 - t * 26}%)`;
 };
 
 export type StripHolding = { ticker: string; weight: number };

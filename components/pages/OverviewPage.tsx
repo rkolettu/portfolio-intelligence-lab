@@ -165,7 +165,7 @@ const OverviewBody = withAnalysis(function OverviewBody({ result, status }) {
                       width: `${(h.weight / largest) * 100}%`,
                       background:
                         h.ticker === "CASH"
-                          ? "#6d6a63"
+                          ? "#b7b0a4"
                           : allocationColor(i, holdings.length),
                     }}
                   />
