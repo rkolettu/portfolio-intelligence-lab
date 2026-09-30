@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/AllocationStrip";
 import { StatusNotice } from "@/components/ui/StatusNotice";
 import { AnalysisProgress } from "./AnalysisProgress";
+import { TickerCombobox } from "./TickerCombobox";
 import { useWorkspace } from "./WorkspaceProvider";
 import type { Period } from "@/lib/types/portfolio";
 
@@ -115,21 +116,12 @@ export function Landing() {
                 <label className="sr-only" htmlFor={`ticker-${i}`}>
                   Ticker {i + 1}
                 </label>
-                <input
-                  id={`ticker-${i}`}
-                  aria-label={`Ticker ${i + 1}`}
-                  aria-invalid={i === failedIndex || undefined}
+                <TickerCombobox
+                  index={i}
                   value={h.ticker}
-                  maxLength={12}
-                  autoComplete="off"
-                  spellCheck={false}
-                  onChange={(e) =>
-                    edit({
-                      type: "holding",
-                      index: i,
-                      field: "ticker",
-                      value: e.target.value,
-                    })
+                  invalid={i === failedIndex}
+                  onChange={(value) =>
+                    edit({ type: "holding", index: i, field: "ticker", value })
                   }
                 />
                 <label className="sr-only" htmlFor={`weight-${i}`}>

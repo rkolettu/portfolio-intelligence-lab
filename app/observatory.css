@@ -96,8 +96,15 @@ body {
 }
 
 /* Chapter choreography: one object, re-framed. */
+.obs[data-chapter="portfolio"] .cs-ticker {
+  font-size: 16px;
+}
+.obs[data-chapter="portfolio"] .cs-weight {
+  font-size: 12.5px;
+}
 .obs[data-chapter="portfolio"] .stage-object {
-  transform: translate(-16%, 4%) scale(1.14);
+  /* In the hero the object settles low and right, clear of the display title. */
+  transform: translate(10%, 26%) scale(0.68);
 }
 .obs[data-chapter="performance"] .stage-object {
   transform: translateY(-10%) scale(0.72);
@@ -114,7 +121,7 @@ body {
 .obs-hero {
   position: relative;
   display: grid;
-  grid-template-rows: auto auto 1fr auto auto auto;
+  grid-template-rows: auto auto auto auto 1fr auto;
   /* The column stays the flow column's width: the no-wrap title may overflow
      into the stage, but the meta, spec and lede never do. */
   grid-template-columns: minmax(0, 1fr);
@@ -135,8 +142,8 @@ body {
   color: var(--muted);
 }
 .obs-title {
-  align-self: end;
-  margin: 0;
+  align-self: start;
+  margin: 5vh 0 0;
   font-family: var(--display);
   font-size: clamp(64px, 11.2vw, 184px);
   font-weight: 650;
@@ -155,7 +162,7 @@ body {
   display: grid;
   grid-template-columns: repeat(2, max-content);
   gap: 10px 40px;
-  margin: 8vh 0 0;
+  margin: 5vh 0 0;
   font-family: var(--mono);
   font-size: 10px;
   letter-spacing: 0.07em;
@@ -203,6 +210,7 @@ body {
   background: var(--border-strong);
 }
 .obs-lede {
+  align-self: end;
   margin-top: 42px;
   max-width: 420px;
 }
@@ -1630,4 +1638,77 @@ body {
 .tt-head {
   font-family: var(--mono);
   letter-spacing: 0.08em;
+}
+
+/* ---------- Ticker autocomplete ---------- */
+.ticker-combo {
+  position: relative;
+  min-width: 0;
+}
+.ticker-combo input {
+  width: 100%;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+.ticker-combo input::placeholder {
+  font-weight: 400;
+  color: var(--faint);
+}
+.ticker-list {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 30;
+  width: max(100%, 340px);
+  max-width: calc(100vw - 40px);
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-3);
+  background: var(--surface-2);
+  box-shadow: 0 18px 36px -14px rgba(0, 0, 0, 0.85);
+  animation: dossier-in 0.2s var(--ease) both;
+}
+.ticker-list[hidden] {
+  display: none;
+}
+.ticker-list li {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 10px;
+  padding: 7px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+.ticker-list li[aria-selected="true"] {
+  background: var(--accent-soft);
+}
+.ticker-list b {
+  font-weight: 600;
+  color: var(--text);
+}
+.ticker-list li[aria-selected="true"] b {
+  color: var(--accent);
+}
+.ticker-list span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+}
+.ticker-list i {
+  font-style: normal;
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+@media (prefers-reduced-motion: reduce) {
+  .ticker-list {
+    animation: none;
+  }
 }
