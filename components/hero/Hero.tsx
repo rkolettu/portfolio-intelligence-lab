@@ -1,250 +1,177 @@
 "use client";
-import { useMemo, useRef, useState, type PointerEvent } from "react";
+
+import {
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type PointerEvent,
+} from "react";
 
 type Holding = { ticker: string; weight: number };
 
-/** mulberry32: a tiny seeded generator so the candles are identical on server and
- * client and across reloads (no hydration mismatch, no random flicker). */
-function seeded(seed: number) {
-  let a = seed;
-  return () => {
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
+const CENTER = { x: 360, y: 260 };
+const TAU = Math.PI * 2;
+
+/** A deterministic map of the entered portfolio. Radius encodes capital and the
+ * angular position is stable for a ticker, so this is a view of the allocation,
+ * not decorative randomness. */
+function tickerAngle(ticker: string, index: number) {
+  const hash = [...ticker].reduce((value, char) => value * 31 + char.charCodeAt(0), 17);
+  return ((hash % 360) / 360) * TAU + index * 0.36;
 }
 
-const CANDLES = (() => {
-  const rand = seeded(20260929);
-  let close = 50;
-  return Array.from({ length: 27 }, () => {
-    const open = close;
-    close = Math.min(70, Math.max(30, open + (rand() - 0.46) * 11));
-    const high = Math.max(open, close) + rand() * 5;
-    const low = Math.min(open, close) - rand() * 5;
-    return { open, close, high, low };
-  });
-})();
-
-const NODE_CENTER = { x: 168, y: 46 };
-
-/** One finance-native motif, tiny: portfolio weights as nodes (size = weight, the
- * largest highlighted) drifting slightly with the pointer, over a row of candles
- * that draw in once. The nodes come from the builder, so editing weights resizes
- * them. Decorative: aria-hidden and out of the tab order. */
-function HeroMotif({ holdings }: { holdings: Holding[] }) {
+function PortfolioInstrument({ holdings }: { holdings: Holding[] }) {
   const root = useRef<HTMLDivElement>(null);
-  const [hot, setHot] = useState<number | null>(null);
+  const [active, setActive] = useState<number | null>(null);
   const nodes = useMemo(() => {
-    const live = holdings.filter((h) => h.ticker && h.weight > 0);
-    const total = live.reduce((s, h) => s + h.weight, 0) || 1;
-    const sorted = live
-      .map((h) => ({ ...h, share: h.weight / total }))
-      .sort((a, b) => b.share - a.share)
-      .slice(0, 14);
-    return sorted.map((h, i) => {
-      // Golden-angle spiral: deterministic, well spread, largest node central.
-      const angle = i * 2.399963;
-      const radius = 24 * Math.sqrt(i + 0.35);
+    const live = holdings
+      .filter((holding) => holding.ticker && holding.weight > 0)
+      .map((holding) => ({ ...holding, ticker: holding.ticker.toUpperCase() }));
+    const total = live.reduce((sum, holding) => sum + holding.weight, 0) || 1;
+
+    return live.map((holding, index) => {
+      const share = holding.weight / total;
+      const angle = tickerAngle(holding.ticker, index);
+      const orbit = 92 + index * 24;
       return {
-        ...h,
-        x: NODE_CENTER.x + Math.cos(angle) * radius * 2.05,
-        y: NODE_CENTER.y + Math.sin(angle) * radius * 0.62,
-        r: 2.6 + 15 * Math.sqrt(h.share),
-        depth: 2 + (i % 4) * 2.4,
+        ...holding,
+        share,
+        x: CENTER.x + Math.cos(angle) * orbit * 1.32,
+        y: CENTER.y + Math.sin(angle) * orbit * 0.72,
+        radius: 8 + Math.sqrt(share) * 54,
       };
     });
   }, [holdings]);
-  const links = useMemo(() => {
-    const seen = new Set<string>();
-    const out: [number, number][] = [];
-    nodes.forEach((a, i) => {
-      nodes
-        .map((b, j) => ({ j, d: Math.hypot(a.x - b.x, a.y - b.y) }))
-        .filter((n) => n.j !== i)
-        .sort((p, q) => p.d - q.d)
-        .slice(0, 2)
-        .forEach(({ j }) => {
-          const key = i < j ? `${i}-${j}` : `${j}-${i}`;
-          if (!seen.has(key)) {
-            seen.add(key);
-            out.push([i, j]);
-          }
-        });
-    });
-    return out;
-  }, [nodes]);
-  const move = (e: PointerEvent<HTMLDivElement>) => {
-    const el = root.current;
-    if (!el) return;
-    const box = el.getBoundingClientRect();
-    const nx = ((e.clientX - box.left) / box.width) * 2 - 1;
-    const ny = ((e.clientY - box.top) / box.height) * 2 - 1;
-    el.style.setProperty("--mx", nx.toFixed(3));
-    el.style.setProperty("--my", ny.toFixed(3));
-    const px = ((e.clientX - box.left) / box.width) * 420;
-    const py = ((e.clientY - box.top) / box.height) * 150;
-    let best: number | null = null;
-    let bestD = 30;
-    nodes.forEach((n, i) => {
-      const d = Math.hypot(n.x - px, n.y - py) - n.r * 0.4;
-      if (d < bestD) {
-        bestD = d;
-        best = i;
+
+  const pointer = (event: PointerEvent<HTMLDivElement>) => {
+    const element = root.current;
+    if (!element) return;
+    const bounds = element.getBoundingClientRect();
+    const x = ((event.clientX - bounds.left) / bounds.width) * 720;
+    const y = ((event.clientY - bounds.top) / bounds.height) * 520;
+    element.style.setProperty("--px", `${((x / 720) * 100).toFixed(2)}%`);
+    element.style.setProperty("--py", `${((y / 520) * 100).toFixed(2)}%`);
+    element.style.setProperty("--shift-x", ((x / 720 - 0.5) * 2).toFixed(3));
+    element.style.setProperty("--shift-y", ((y / 520 - 0.5) * 2).toFixed(3));
+    let nearest: number | null = null;
+    let distance = 46;
+    nodes.forEach((node, index) => {
+      const candidate = Math.hypot(node.x - x, node.y - y) - node.radius;
+      if (candidate < distance) {
+        nearest = index;
+        distance = candidate;
       }
     });
-    setHot(best);
+    setActive(nearest);
   };
-  const leave = () => {
-    root.current?.style.setProperty("--mx", "0");
-    root.current?.style.setProperty("--my", "0");
-    setHot(null);
-  };
-  const lo = 22;
-  const hi = 78;
-  const y = (v: number) => 146 - ((v - lo) / (hi - lo)) * 46;
+
   return (
     <div
-      className="motif"
+      className="portfolio-instrument"
       ref={root}
-      onPointerMove={move}
-      onPointerDown={move}
-      onPointerLeave={(e) => {
-        // A touch pointer leaves after every tap; keep the tapped node's label.
-        if (e.pointerType === "mouse") leave();
+      onPointerMove={pointer}
+      onPointerDown={pointer}
+      onPointerLeave={(event) => {
+        if (event.pointerType !== "mouse") return;
+        setActive(null);
+        root.current?.style.setProperty("--shift-x", "0");
+        root.current?.style.setProperty("--shift-y", "0");
       }}
-      data-active={hot === null ? undefined : ""}
-      aria-hidden
+      data-inspecting={active === null ? undefined : ""}
+      aria-label="Portfolio allocation constellation. Node area represents capital weight."
+      role="img"
     >
-      <svg viewBox="0 0 420 150" focusable="false">
+      <div className="instrument-coordinate micro" aria-hidden>
+        ALLOCATION FIELD / 100.00
+      </div>
+      <svg viewBox="0 0 720 520" focusable="false" aria-hidden>
         <defs>
-          <pattern id="motif-dots" width="14" height="14" patternUnits="userSpaceOnUse">
-            <circle cx="1" cy="1" r="0.8" fill="var(--text)" opacity="0.1" />
-          </pattern>
-          <linearGradient id="motif-fade" x1="0" x2="1">
-            <stop offset="0" stopColor="#fff" stopOpacity="0" />
-            <stop offset="0.25" stopColor="#fff" />
-            <stop offset="1" stopColor="#fff" />
-          </linearGradient>
-          <mask id="motif-mask">
-            <rect width="420" height="150" fill="url(#motif-fade)" />
-          </mask>
+          <radialGradient id="field-light">
+            <stop offset="0" stopColor="var(--accent)" stopOpacity=".12" />
+            <stop offset=".62" stopColor="var(--accent)" stopOpacity=".025" />
+            <stop offset="1" stopColor="var(--accent)" stopOpacity="0" />
+          </radialGradient>
+          <filter id="node-glow" x="-100%" y="-100%" width="300%" height="300%">
+            <feGaussianBlur stdDeviation="8" />
+          </filter>
         </defs>
-        <rect width="420" height="150" fill="url(#motif-dots)" mask="url(#motif-mask)" />
-        {links.map(([i, j]) => (
-          <line
-            key={`${i}-${j}`}
-            className="motif-link"
-            x1={nodes[i].x}
-            y1={nodes[i].y}
-            x2={nodes[j].x}
-            y2={nodes[j].y}
-          />
+        <ellipse className="field-light" cx="360" cy="260" rx="310" ry="215" fill="url(#field-light)" />
+        {[92, 140, 188, 236].map((radius) => (
+          <ellipse key={radius} className="orbit" cx="360" cy="260" rx={radius * 1.32} ry={radius * .72} />
         ))}
-        {nodes.map((n, i) => (
+        <path className="instrument-axis" d="M18 260H702M360 18V502" />
+        <g className="portfolio-core">
+          <circle cx="360" cy="260" r="3" />
+          <circle cx="360" cy="260" r="12" />
+          <path d="M338 260h-13m57 0h13M360 238v-13m0 57v13" />
+        </g>
+        {nodes.map((node, index) => (
           <g
-            key={n.ticker + i}
-            className="motif-dot"
-            data-hot={hot === i ? "" : undefined}
-            style={{ ["--depth" as string]: n.depth }}
+            className="allocation-node"
+            data-active={active === index ? "" : undefined}
+            data-muted={active !== null && active !== index ? "" : undefined}
+            key={`${node.ticker}-${index}`}
+            style={{ "--node-index": index } as CSSProperties}
           >
-            {n.ticker === "CASH" ? (
-              <circle
-                cx={n.x}
-                cy={n.y}
-                style={{ r: n.r }}
-                fill="none"
-                stroke="var(--muted)"
-                strokeDasharray="2 2"
-                opacity="0.8"
-              />
-            ) : (
-              <circle
-                cx={n.x}
-                cy={n.y}
-                style={{ r: n.r }}
-                fill={i === 0 ? "var(--accent)" : "var(--muted)"}
-                opacity={i === 0 ? 0.92 : 0.5}
-              />
-            )}
-            <text
-              x={n.x > 290 ? n.x - n.r - 5 : n.x + n.r + 5}
-              y={n.y + 3}
-              textAnchor={n.x > 290 ? "end" : "start"}
-            >
-              {n.ticker} {(n.share * 100).toFixed(1)}%
+            <line x1="360" y1="260" x2={node.x} y2={node.y} />
+            <circle className="node-aura" cx={node.x} cy={node.y} r={node.radius + 11} />
+            <circle className="node-body" cx={node.x} cy={node.y} r={node.radius} />
+            <circle className="node-ring" cx={node.x} cy={node.y} r={node.radius + 5} />
+            <text className="node-ticker" x={node.x} y={node.y + 3} textAnchor="middle">{node.ticker}</text>
+            <text className="node-weight" x={node.x} y={node.y + node.radius + 18} textAnchor="middle">
+              {(node.share * 100).toFixed(2)}%
             </text>
           </g>
         ))}
-        <line x1="8" x2="412" y1="146.5" y2="146.5" stroke="var(--text)" strokeOpacity="0.14" />
-        {CANDLES.map((c, i) => {
-          const up = c.close >= c.open;
-          const x = 14 + i * 15;
-          const color = up ? "var(--positive)" : "var(--negative)";
-          return (
-            <g className="candle" key={i} style={{ ["--i" as string]: i }}>
-              <line x1={x} x2={x} y1={y(c.high)} y2={y(c.low)} stroke={color} strokeOpacity="0.7" />
-              <rect
-                x={x - 3.2}
-                y={y(Math.max(c.open, c.close))}
-                width="6.4"
-                height={Math.max(1.5, Math.abs(y(c.open) - y(c.close)))}
-                rx="1"
-                fill={color}
-                opacity={up ? 0.75 : 0.62}
-              />
-            </g>
-          );
-        })}
+        <g className="field-scale">
+          <text x="18" y="250">−1.00</text><text x="684" y="250">+1.00</text>
+          <text x="370" y="28">CAPITAL / RELATIVE MASS</text>
+          <text x="370" y="498">HOLDINGS / {nodes.length.toString().padStart(2, "0")}</text>
+        </g>
       </svg>
+      <div className="inspection-lens" aria-hidden />
+      <div className="instrument-readout" aria-live="polite">
+        <span>{active === null ? "MOVE TO INSPECT" : nodes[active].ticker}</span>
+        <strong>{active === null ? "CAPITAL MAP" : `${(nodes[active].share * 100).toFixed(2)}%`}</strong>
+      </div>
     </div>
   );
 }
 
-/** Compact hero: title, one line of context, the motif and the two actions. */
-export function Hero({
-  holdings,
-  onAnalyze,
-  onBuild,
-}: {
+export function Hero({ holdings, onAnalyze, onBuild }: {
   holdings: Holding[];
   onAnalyze: () => void;
   onBuild: () => void;
 }) {
+  const live = holdings.filter((holding) => holding.ticker && holding.weight > 0);
   return (
-    <div className="hero">
-      <div>
-        <p className="hero-tape">
-          <span>
-            <i aria-hidden />
-            <b>Portfolio analytics</b>
-          </span>
-          <span>Construction</span>
-          <span>Reproducible daily data</span>
-        </p>
-        <h1>
-          Portfolio Intelligence
-          <br className="desktop-break" /> &amp; Construction Lab
-          <span className="title-dot">.</span>
-        </h1>
-        <p className="hero-lede">
-          <strong>See what actually drives your portfolio.</strong> Performance,
-          risk concentration, diversification, benchmark behavior, historical
-          stress periods and alternative allocations.
-        </p>
+    <section className="hero" aria-labelledby="hero-title">
+      <div className="hero-index micro" aria-hidden>PI / CL — 001</div>
+      <div className="hero-heading">
+        <p className="hero-kicker"><span aria-hidden /> Financial observatory</p>
+        <h1 id="hero-title"><span>Portfolio</span><span>Intelligence</span></h1>
       </div>
-      <div className="hero-side">
-        <HeroMotif holdings={holdings} />
+      <div className="hero-observatory">
+        <PortfolioInstrument holdings={holdings} />
+      </div>
+      <div className="hero-context">
+        <p>Understand the architecture of a portfolio—where capital sits, where risk originates, and how both change through time.</p>
         <div className="actions hero-actions">
-          <button type="button" className="primary" onClick={onAnalyze}>
-            Analyze Sample Portfolio <span aria-hidden>↗</span>
-          </button>
-          <button type="button" className="secondary" onClick={onBuild}>
-            Build Portfolio
-          </button>
+          <button type="button" className="primary" onClick={onAnalyze}>Analyze sample <span aria-hidden>↗</span></button>
+          <button type="button" className="secondary" onClick={onBuild}>Construct portfolio</button>
         </div>
       </div>
-    </div>
+      <div className="market-spine" aria-label="Sample portfolio allocation">
+        <span className="micro">CAPITAL / 100</span>
+        <div className="market-spine-track" aria-hidden>
+          {live.map((holding, index) => (
+            <i key={`${holding.ticker}-${index}`} style={{ flexGrow: Math.max(holding.weight, .2) } as CSSProperties} />
+          ))}
+        </div>
+        <span className="micro">{live.length.toString().padStart(2, "0")} POSITIONS</span>
+      </div>
+      <a className="hero-scroll micro" href="#builder">ENTER WORKSPACE <span aria-hidden>↓</span></a>
+    </section>
   );
 }
