@@ -115,6 +115,9 @@ body {
   position: relative;
   display: grid;
   grid-template-rows: auto auto 1fr auto auto auto;
+  /* The column stays the flow column's width: the no-wrap title may overflow
+     into the stage, but the meta, spec and lede never do. */
+  grid-template-columns: minmax(0, 1fr);
   min-height: calc(100svh - var(--header-h));
   padding: 26px 0 30px;
 }
@@ -171,6 +174,7 @@ body {
   margin: 0;
   color: var(--text);
 }
+.obs[data-title] .stage-top,
 .obs[data-chapter="portfolio"] .stage-top,
 .obs[data-chapter="portfolio"] .cs-readout {
   opacity: 0;
@@ -498,6 +502,11 @@ body {
 }
 .cs-label text {
   pointer-events: none;
+  /* A thin ink halo keeps labels legible where the display type runs behind. */
+  paint-order: stroke;
+  stroke: var(--bg);
+  stroke-width: 3px;
+  stroke-linejoin: round;
   transition: transform 0.4s var(--ease);
 }
 .cs-ticker {
