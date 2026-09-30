@@ -1312,17 +1312,21 @@
 /* ---------- Return contribution ---------- */
 .contribution-table td:nth-child(4),
 .contribution-table th:nth-child(4) {
-  width: 32%;
+  width: 38%;
 }
 .rc-bar-cell {
   position: relative;
   height: 36px;
 }
+/* The bars live in an inset track so they never touch the panel edge. */
+.rc-track {
+  position: absolute;
+  inset: 0 24px 0 28px;
+}
 .rc-axis {
   position: absolute;
   top: 8px;
   bottom: 8px;
-  left: 50%;
   width: 1px;
   background: rgba(244, 241, 234, 0.42);
 }
@@ -1356,6 +1360,12 @@ tbody tr[data-focus="on"] td:first-child {
 }
 .contribution-table tfoot td:last-child {
   font-size: 10px;
+  text-align: right;
+}
+.rc-note {
+  margin: 0;
+  padding: 2px 18px 16px;
+  white-space: normal;
 }
 
 /* ---------- Drawdown statistics ---------- */

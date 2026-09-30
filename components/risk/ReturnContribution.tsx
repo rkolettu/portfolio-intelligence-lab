@@ -22,10 +22,12 @@ export function ReturnContribution({
   const rows = [...contribution.rows].sort(
     (a, b) => b.periodContribution - a.periodContribution,
   );
-  const extent = Math.max(
-    ...rows.map((r) => Math.abs(r.periodContribution)),
-    1e-12,
-  );
+  // Display scale only: zero sits where the data needs it, so an almost
+  // all-positive set uses the full track instead of half of it.
+  const hi = Math.max(0, ...rows.map((r) => r.periodContribution));
+  const lo = Math.min(0, ...rows.map((r) => r.periodContribution));
+  const span = Math.max(hi - lo, 1e-12);
+  const zero = (-lo / span) * 100;
   const { startDate, endDate, returnCount } = contribution.sample;
   return (
     <figure className="chart-figure rc-figure" aria-labelledby="rc-title rc-summary">
@@ -57,7 +59,7 @@ export function ReturnContribution({
           </thead>
           <tbody>
             {rows.map((r) => {
-              const width = (Math.abs(r.periodContribution) / extent) * 50;
+              const width = (Math.abs(r.periodContribution) / span) * 100;
               return (
                 <tr
                   key={r.ticker}
@@ -68,15 +70,17 @@ export function ReturnContribution({
                   <td>{unsignedPercent(r.averageWeight)}</td>
                   <td>{percentagePoints(r.periodContribution)}</td>
                   <td className="rc-bar-cell" aria-hidden>
-                    <span className="rc-axis" />
-                    <span
-                      className={`rc-bar${r.periodContribution < 0 ? " rc-negative" : ""}`}
-                      style={
-                        r.periodContribution < 0
-                          ? { right: "50%", width: `${width}%` }
-                          : { left: "50%", width: `${width}%` }
-                      }
-                    />
+                    <span className="rc-track">
+                      <span className="rc-axis" style={{ left: `${zero}%` }} />
+                      <span
+                        className={`rc-bar${r.periodContribution < 0 ? " rc-negative" : ""}`}
+                        style={
+                          r.periodContribution < 0
+                            ? { right: `${100 - zero}%`, width: `${width}%` }
+                            : { left: `${zero}%`, width: `${width}%` }
+                        }
+                      />
+                    </span>
                   </td>
                 </tr>
               );
@@ -92,7 +96,7 @@ export function ReturnContribution({
           </tfoot>
         </table>
       </div>
-      <p className="hint">
+      <p className="hint rc-note">
         Identity check: daily holding contributions equal each day&rsquo;s
         portfolio return (max residual{" "}
         {contribution.maxIdentityResidual.toExponential(1)}).
