@@ -1452,10 +1452,15 @@ body {
 .engine-dock {
   position: fixed;
   right: max(20px, calc(var(--gut) - 12px));
-  top: calc(var(--header-h) + 18px);
+  bottom: 20px;
   z-index: 45;
   width: min(440px, calc(100vw - 40px));
   animation: dossier-in 0.4s var(--ease) both;
+}
+/* While analysis runs, the spine yields to the engine panel docked over it. */
+.obs[data-pending] .obs-stage .spine {
+  opacity: 0;
+  transition: opacity 0.3s var(--ease);
 }
 .engine-dock .engine {
   margin: 0;

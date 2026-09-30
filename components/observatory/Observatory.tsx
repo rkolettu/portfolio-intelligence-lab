@@ -142,8 +142,11 @@ export function Observatory({
   benchmark,
   onAnalyze,
   onBuild,
+  pending = false,
   children,
 }: {
+  /** An analysis is running: the stage makes room for the engine panel. */
+  pending?: boolean;
   draft: Draft;
   period: { start: string; end: string; label: string };
   benchmark: string;
@@ -286,7 +289,7 @@ export function Observatory({
       : "Loading the cached sample…";
 
   return (
-    <div className="obs" data-chapter={chapter}>
+    <div className="obs" data-chapter={chapter} data-pending={pending ? "" : undefined}>
       <div className="obs-flow">
         <section className="obs-hero" data-chapter="portfolio" aria-labelledby="hero-title">
           <div className="obs-meta" aria-hidden>

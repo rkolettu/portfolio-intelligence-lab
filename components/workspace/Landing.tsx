@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, type CSSProperties } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { samplePortfolio } from "@/config/samplePortfolio";
 import { toDraft } from "@/lib/state/portfolioReducer";
@@ -73,6 +74,7 @@ export function Landing() {
           label: draft.period,
         }}
         benchmark={draft.benchmark || "—"}
+        pending={pending}
         onAnalyze={() => analyzeSample()}
         onBuild={() => focusField("ticker-0")}
       >
@@ -385,7 +387,11 @@ export function Landing() {
           </div>
         </div>
       </form>
-      {pending && stage && (
+      {pending &&
+        stage &&
+        typeof document !== "undefined" &&
+        // Portaled above every stacking context (the stage's pucks included).
+        createPortal(
         <div className="engine-dock">
         <AnalysisProgress
           stage={stage}
@@ -401,8 +407,9 @@ export function Landing() {
               : undefined
           }
         />
-        </div>
-      )}
+        </div>,
+          document.body,
+        )}
       {error && (
         <StatusNotice
           tone={errorState(error.code).tone}
