@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { TickerChip } from "@/components/observatory/Dossier";
 import type {
   Metric,
   PerformanceSummary,
@@ -183,7 +184,14 @@ export function RiskSection({
         />
         <span className="hint">Sorts the chart and table · N/A last</span>
       </div>
-      <CapitalVsRisk holdings={holdings} />
+      <CapitalVsRisk
+        holdings={holdings}
+        correlation={
+          risk.correlation.available
+            ? { tickers: risk.correlation.tickers, matrix: risk.correlation.matrix }
+            : null
+        }
+      />
       <div className="table-wrap">
         <table className="risk-table">
           <caption>
@@ -212,7 +220,7 @@ export function RiskSection({
                 {...focusHandlers(holdingFocus, [h.ticker])}
               >
                 <td>
-                  {h.ticker}
+                  <TickerChip ticker={h.ticker} focusable={false} />
                   {h.riskless && <span className="cr-tag">riskless</span>}
                 </td>
                 <td>{unsignedPercent(h.weight)}</td>
