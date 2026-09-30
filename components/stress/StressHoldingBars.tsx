@@ -1,5 +1,6 @@
 "use client";
 import type { CSSProperties } from "react";
+import { TickerChip } from "@/components/observatory/Dossier";
 import type { StressHoldingReturn } from "@/lib/types/analytics";
 import { capitalRiskScale } from "@/lib/charts/riskDisplay";
 import { axisPercent, percent, unsignedPercent } from "@/lib/utils/format";
@@ -76,7 +77,7 @@ export function StressHoldingBars({
             {...focusHandlers(holdingFocus, [h.ticker])}
           >
             <span className="cr-ticker">
-              {h.ticker}
+              <TickerChip ticker={h.ticker} focusable={false} />
               {best.includes(h.ticker) && <span className="cr-tag">best</span>}
               {worst.includes(h.ticker) && (
                 <span className="cr-tag">worst</span>

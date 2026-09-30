@@ -9,6 +9,8 @@ import { AllocationStrip } from "@/components/ui/AllocationStrip";
 import { StatusNotice, Unavailable } from "@/components/ui/StatusNotice";
 import { AnalysisProgress } from "./AnalysisProgress";
 import { useWorkspace } from "./WorkspaceProvider";
+import { DossierProvider, TickerChip } from "@/components/observatory/Dossier";
+import { WorkspaceSpine } from "@/components/observatory/WorkspaceSpine";
 
 /** Compact identity of the analysis on screen: allocation, period, benchmark and
  * where the data came from, plus the way back to the builder. */
@@ -29,8 +31,12 @@ function PortfolioBar() {
         <p className="pb-holdings">
           {c.holdings
             .filter((h) => h.weight > 0)
-            .map((h) => `${h.ticker} ${unsignedPercent(h.weight)}`)
-            .join(" · ")}
+            .map((h, i) => (
+              <span key={h.ticker}>
+                {i > 0 && <span aria-hidden> · </span>}
+                <TickerChip ticker={h.ticker} /> {unsignedPercent(h.weight)}
+              </span>
+            ))}
         </p>
       </div>
       <dl className="pb-facts">
@@ -183,10 +189,17 @@ export function AnalysisShell({ children }: { children: ReactNode }) {
         </div>
       </div>
     );
+  const route = pathname?.split("/").pop() ?? "overview";
+  const content = (
+    <>
+      <PortfolioBar />
+      {result && <WorkspaceSpine result={result} route={route} />}
+      {body}
+    </>
+  );
   return (
     <HoldingFocusProvider>
-      <PortfolioBar />
-      {body}
+      {result ? <DossierProvider result={result}>{content}</DossierProvider> : content}
     </HoldingFocusProvider>
   );
 }

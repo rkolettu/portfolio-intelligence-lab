@@ -1025,7 +1025,7 @@ test("capital vs risk morphs between views and hover focus is shared across anal
   await section.getByRole("radio", { name: "Risk", exact: true }).check();
   await expect(rows).toHaveAttribute("data-view", "risk");
   await expect(section.locator(".cr-main").first()).toHaveCSS("opacity", "1");
-  await section.getByRole("radio", { name: "Overlay", exact: true }).check();
+  await section.getByRole("radio", { name: "Shadow", exact: true }).check();
   // Hovering a holding dims the others in the same view and lights the heatmap.
   const first = section.locator(".cr-row:not(.cr-axis)").first();
   await first.hover();
@@ -1170,7 +1170,7 @@ test("reduced motion removes decorative animation", async ({ page }) => {
   await page.goto("/");
   expect(
     await page
-      .locator(".candle")
+      .locator(".spine-marks > *")
       .first()
       .evaluate((el) => getComputedStyle(el).animationName),
   ).toBe("none");

@@ -5,7 +5,7 @@ import { samplePortfolio } from "@/config/samplePortfolio";
 import { toDraft } from "@/lib/state/portfolioReducer";
 import { fixed } from "@/lib/utils/format";
 import { errorState } from "@/lib/ui/quality";
-import { Hero } from "@/components/hero/Hero";
+import { Observatory } from "@/components/observatory/Observatory";
 import {
   AllocationStrip,
   allocationColor,
@@ -65,14 +65,17 @@ export function Landing() {
   const balanced = Math.abs(gap) <= 0.0001;
   return (
     <>
-      <Hero
-        holdings={draft.holdings.map((h) => ({
-          ticker: h.ticker.trim().toUpperCase(),
-          weight: Number.isFinite(Number(h.weight)) ? Number(h.weight) : 0,
-        }))}
+      <Observatory
+        draft={stripHoldings}
+        period={{
+          start: draft.requestedStartDate,
+          end: draft.endDate,
+          label: draft.period,
+        }}
+        benchmark={draft.benchmark || "—"}
         onAnalyze={() => analyzeSample()}
         onBuild={() => focusField("ticker-0")}
-      />
+      >
       {notice && (
         <StatusNotice tone="info" role="status">
           {notice}
@@ -383,6 +386,7 @@ export function Landing() {
         </div>
       </form>
       {pending && stage && (
+        <div className="engine-dock">
         <AnalysisProgress
           stage={stage}
           woke={woke}
@@ -397,6 +401,7 @@ export function Landing() {
               : undefined
           }
         />
+        </div>
       )}
       {error && (
         <StatusNotice
@@ -495,6 +500,7 @@ export function Landing() {
           </Link>
         </div>
       )}
+      </Observatory>
     </>
   );
 }

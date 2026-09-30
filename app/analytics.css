@@ -380,11 +380,17 @@
   max-height: calc(100dvh - 32px);
   overflow-y: auto;
 }
-.info-tip:hover .tip,
 .info-tip:focus-within .tip,
 .info-tip[data-open] .tip {
   display: block;
   animation: tick-in 150ms var(--ease) both;
+}
+/* Touch browsers keep :hover at the last tap point; only real hover opens. */
+@media (hover: hover) {
+  .info-tip:hover .tip {
+    display: block;
+    animation: tick-in 150ms var(--ease) both;
+  }
 }
 .info-tip[data-dismissed] .tip {
   display: none !important;

@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
 import { Analytics } from "@vercel/analytics/next";
-import "@fontsource/inter/400.css";
-import "@fontsource/inter/500.css";
-import "@fontsource/inter/600.css";
-import "@fontsource/inter/700.css";
+import "@fontsource-variable/inter";
+import "@fontsource/ibm-plex-mono/400.css";
+import "@fontsource/ibm-plex-mono/500.css";
 import "./globals.css";
 import "./analytics.css";
+import "./observatory.css";
 import { WorkspaceProvider } from "@/components/workspace/WorkspaceProvider";
 import { MethodologyHost } from "@/components/workspace/MethodologyHost";
 import { SiteHeader, SkipLink } from "@/components/layout/SiteHeader";
