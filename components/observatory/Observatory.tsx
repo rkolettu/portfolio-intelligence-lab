@@ -160,6 +160,18 @@ export function Observatory({
   const [event, setEvent] = useState("gfc");
   const [focusTicker, setFocusTicker] = useState<string | null>(null);
   const stage = useRef<HTMLDivElement>(null);
+  // The stage caption waits until the display title has left the viewport, so
+  // the two never overlap while the title scrolls behind the stage.
+  const [titleVisible, setTitleVisible] = useState(true);
+  useEffect(() => {
+    const el = document.getElementById("hero-title");
+    if (!el || typeof IntersectionObserver === "undefined") return;
+    const io = new IntersectionObserver(([e]) =>
+      setTitleVisible(e.isIntersecting),
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
 
   const live = draft.filter((h) => h.ticker && h.weight > 0);
   const total = live.reduce((s, h) => s + h.weight, 0) || 1;
@@ -172,7 +184,9 @@ export function Observatory({
 
   const usesSample =
     !!digest &&
-    ["performance", "relationship", "risk", "stress", "construction"].includes(chapter);
+    ["performance", "relationship", "risk", "stress", "construction"].includes(
+      chapter,
+    );
   const sampleEvent = digest?.stress.find((e) => e.id === event) ?? null;
   const topRisk = digest?.holdings
     .filter((h) => !h.riskless && h.risk != null)
@@ -207,7 +221,8 @@ export function Observatory({
     nodes = sampleNodes.map((n) => ({
       ...n,
       risk: null,
-      tone: sampleEvent.holdings.find((h) => h.ticker === n.ticker)?.return ?? null,
+      tone:
+        sampleEvent.holdings.find((h) => h.ticker === n.ticker)?.return ?? null,
     }));
   if (usesSample && chapter === "construction")
     nodes = sampleNodes.map((n) => ({ ...n, ghost: n.weight }));
@@ -234,13 +249,21 @@ export function Observatory({
     } else if (chapter === "risk") {
       spine = {
         kind: "capital-risk",
-        rows: digest.holdings.map((h) => ({ ticker: h.ticker, weight: h.weight, risk: h.risk })),
+        rows: digest.holdings.map((h) => ({
+          ticker: h.ticker,
+          weight: h.weight,
+          risk: h.risk,
+        })),
       };
       spineLabel = "Spine / capital · risk contribution";
     } else if (chapter === "stress") {
       spine = {
         kind: "events",
-        events: digest.stress.map((e) => ({ ...e, name: SHORT[e.id] ?? e.name, value: e.portfolio })),
+        events: digest.stress.map((e) => ({
+          ...e,
+          name: SHORT[e.id] ?? e.name,
+          value: e.portfolio,
+        })),
         selected: event,
         bracket: [digest.start, digest.end],
         today: digest.end,
@@ -289,13 +312,23 @@ export function Observatory({
       : "Loading the cached sample…";
 
   return (
-    <div className="obs" data-chapter={chapter} data-pending={pending ? "" : undefined}>
+    <div
+      className="obs"
+      data-chapter={chapter}
+      data-pending={pending ? "" : undefined}
+      data-title={titleVisible ? "" : undefined}
+    >
       <div className="obs-flow">
-        <section className="obs-hero" data-chapter="portfolio" aria-labelledby="hero-title">
+        <section
+          className="obs-hero"
+          data-chapter="portfolio"
+          aria-labelledby="hero-title"
+        >
           <div className="obs-meta" aria-hidden>
             <span>Portfolio Intelligence &amp; Construction Lab</span>
             <span>
-              Window {dot(period.start)}—{dot(period.end)} · {benchmark} · monthly
+              Window {dot(period.start)}—{dot(period.end)} · {benchmark} ·
+              monthly
             </span>
           </div>
           <dl className="obs-spec" aria-label="Draft portfolio">
@@ -305,7 +338,11 @@ export function Observatory({
             </div>
             <div>
               <dt>Largest</dt>
-              <dd>{largest ? `${largest.ticker} ${pct(largest.weight / total)}` : "—"}</dd>
+              <dd>
+                {largest
+                  ? `${largest.ticker} ${pct(largest.weight / total)}`
+                  : "—"}
+              </dd>
             </div>
             <div>
               <dt>Benchmark</dt>
@@ -313,7 +350,9 @@ export function Observatory({
             </div>
             <div>
               <dt>Window</dt>
-              <dd>{period.label} · {months.length} rebalances</dd>
+              <dd>
+                {period.label} · {months.length} rebalances
+              </dd>
             </div>
           </dl>
           <h1 id="hero-title" className="obs-title">
@@ -327,9 +366,9 @@ export function Observatory({
           </p>
           <div className="obs-lede">
             <p>
-              A financial observatory for one portfolio: where capital sits, where
-              risk actually originates, how both behave through time, and how the
-              same holdings reorganize under four construction methods.
+              A financial observatory for one portfolio: where capital sits,
+              where risk actually originates, how both behave through time, and
+              how the same holdings reorganize under four construction methods.
             </p>
             <div className="actions">
               <button type="button" className="primary" onClick={onAnalyze}>
@@ -369,19 +408,25 @@ export function Observatory({
           id="performance"
           n="02"
           title={["Performance"]}
-          figure={digest?.metrics.cagr != null ? signed(digest.metrics.cagr) : "—"}
+          figure={
+            digest?.metrics.cagr != null ? signed(digest.metrics.cagr) : "—"
+          }
           figureLabel="CAGR"
           notes={[
-            digest ? `Obs / ${digest.observations.toLocaleString()} daily returns` : null,
+            digest
+              ? `Obs / ${digest.observations.toLocaleString()} daily returns`
+              : null,
             digest ? `Window / ${dot(digest.start)}—${dot(digest.end)}` : null,
-            digest?.metrics.maxDrawdown != null ? `Max DD / ${pct(digest.metrics.maxDrawdown)}` : null,
+            digest?.metrics.maxDrawdown != null
+              ? `Max DD / ${pct(digest.metrics.maxDrawdown)}`
+              : null,
             sampleNote,
           ]}
         >
           <p>
             Daily closes compound into one path. On the spine, each candle is a
-            month of the sample portfolio&apos;s wealth: open, high, low and close
-            of the same $10,000.
+            month of the sample portfolio&apos;s wealth: open, high, low and
+            close of the same $10,000.
           </p>
         </Chapter>
 
@@ -393,14 +438,16 @@ export function Observatory({
           figureLabel={pairs[0] ? `ρ ${pairs[0].a}–${pairs[0].b}` : "ρ"}
           notes={[
             pairs.length ? `Pairs / ${pairs.length}` : null,
-            pairs.length ? `ρ min / ${pairs[pairs.length - 1].a}–${pairs[pairs.length - 1].b} ${pairs[pairs.length - 1].c.toFixed(2)}` : null,
+            pairs.length
+              ? `ρ min / ${pairs[pairs.length - 1].a}–${pairs[pairs.length - 1].b} ${pairs[pairs.length - 1].c.toFixed(2)}`
+              : null,
             sampleNote,
           ]}
         >
           <p>
             Every pair of holdings has a correlation. Point at a node: a ripple
-            leaves it and reaches each other holding with a strength equal to how
-            closely the two have moved together.
+            leaves it and reaches each other holding with a strength equal to
+            how closely the two have moved together.
           </p>
         </Chapter>
 
@@ -409,7 +456,11 @@ export function Observatory({
           n="04"
           title={["Risk", "Contribution"]}
           figure={topRisk?.risk != null ? pct(topRisk.risk) : "—"}
-          figureLabel={topRisk ? `${topRisk.ticker} · ${pct(topRisk.weight)} of capital` : undefined}
+          figureLabel={
+            topRisk
+              ? `${topRisk.ticker} · ${pct(topRisk.weight)} of capital`
+              : undefined
+          }
           notes={[
             digest ? `Obs / ${digest.observations.toLocaleString()}` : null,
             digest ? `Window / ${dot(digest.start)}—${dot(digest.end)}` : null,
@@ -428,14 +479,18 @@ export function Observatory({
           id="stress"
           n="05"
           title={["Stress"]}
-          figure={sampleEvent?.portfolio != null ? signed(sampleEvent.portfolio) : "—"}
+          figure={
+            sampleEvent?.portfolio != null ? signed(sampleEvent.portfolio) : "—"
+          }
           figureLabel={
             sampleEvent
               ? `${sampleEvent.name}${sampleEvent.benchmark != null ? ` · ${digest?.benchmark} ${signed(sampleEvent.benchmark)}` : ""}`
               : undefined
           }
           notes={[
-            sampleEvent ? `Slice / ${sampleEvent.start} → ${sampleEvent.end}` : null,
+            sampleEvent
+              ? `Slice / ${sampleEvent.start} → ${sampleEvent.end}`
+              : null,
             sampleNote,
           ]}
         >
@@ -445,7 +500,11 @@ export function Observatory({
             color of its own return through the slice.
           </p>
           {digest && digest.stress.length > 0 && (
-            <div className="ch-events" role="group" aria-label="Historical event">
+            <div
+              className="ch-events"
+              role="group"
+              aria-label="Historical event"
+            >
               {digest.stress.map((e) => (
                 <button
                   key={e.id}
@@ -475,9 +534,9 @@ export function Observatory({
         >
           <p>
             The current geometry stays on the table as an outline. In the
-            Constructor, the same nodes migrate to each method&apos;s weights under
-            long-only bounds and a Ledoit–Wolf covariance. Mathematical outputs,
-            not recommendations.
+            Constructor, the same nodes migrate to each method&apos;s weights
+            under long-only bounds and a Ledoit–Wolf covariance. Mathematical
+            outputs, not recommendations.
           </p>
         </Chapter>
 
@@ -497,7 +556,11 @@ export function Observatory({
         </div>
       </div>
 
-      <aside className="obs-stage" aria-label="Portfolio constellation" ref={stage}>
+      <aside
+        className="obs-stage"
+        aria-label="Portfolio constellation"
+        ref={stage}
+      >
         <div className="stage-frame">
           <div className="stage-top" aria-hidden>
             <span>
@@ -505,7 +568,11 @@ export function Observatory({
             </span>
             <span className="stage-index">
               {IDS.map((id, i) => (
-                <i key={id} data-on={i === n ? "" : undefined} data-past={i < n ? "" : undefined} />
+                <i
+                  key={id}
+                  data-on={i === n ? "" : undefined}
+                  data-past={i < n ? "" : undefined}
+                />
               ))}
             </span>
           </div>
@@ -514,9 +581,13 @@ export function Observatory({
               nodes={nodes}
               mode={mode}
               drift={chapter === "portfolio" || chapter === "capital"}
-              correlation={usesSample ? digest?.correlation ?? null : null}
+              correlation={usesSample ? (digest?.correlation ?? null) : null}
               activeTicker={
-                chapter === "relationship" ? (pairs[0]?.a ?? null) : chapter === "builder" ? focusTicker : null
+                chapter === "relationship"
+                  ? (pairs[0]?.a ?? null)
+                  : chapter === "builder"
+                    ? focusTicker
+                    : null
               }
               fill={0.16}
               label={`${usesSample ? "Sample" : "Draft"} portfolio constellation. ${nodes
@@ -525,7 +596,11 @@ export function Observatory({
               onSelect={onSelect}
             />
           </div>
-          <MarketSpine data={spineData} label={spineLabel} caption={`${dot(period.start)} — ${dot(period.end)}`} />
+          <MarketSpine
+            data={spineData}
+            label={spineLabel}
+            caption={`${dot(period.start)} — ${dot(period.end)}`}
+          />
         </div>
       </aside>
     </div>

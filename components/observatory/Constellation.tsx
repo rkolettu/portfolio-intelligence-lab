@@ -450,6 +450,7 @@ export function Constellation({
             <stop offset="1" stopColor="#151514" />
           </radialGradient>
           <pattern id={`${uid}-hatch`} width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+            <rect width="5" height="5" fill="#171716" />
             <path d="M0 0v5" stroke="rgba(244,241,234,.28)" strokeWidth="1" />
           </pattern>
         </defs>
