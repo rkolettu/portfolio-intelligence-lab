@@ -11,6 +11,9 @@ import { Constellation, type StarNode } from "./Constellation";
 import { MarketSpine, type SpineData } from "./MarketSpine";
 import type { SampleDigest } from "./digest";
 import { monthKeys, pct } from "./geometry";
+import { RiskMixer, evaluateMix, type Mix } from "./RiskMixer";
+import { DotField } from "./DotField";
+import { Odometer } from "./Odometer";
 
 export type ChapterId =
   | "portfolio"
@@ -86,6 +89,19 @@ const IDS: ChapterId[] = [
   "builder",
 ];
 
+/** Chapter copy set word by word, so it can ink in as the chapter activates. */
+function Reveal({ text }: { text: string }) {
+  return (
+    <p className="reveal">
+      {text.split(" ").map((w, i) => (
+        <span key={i} style={{ ["--i" as string]: i }}>
+          {w}{" "}
+        </span>
+      ))}
+    </p>
+  );
+}
+
 /** A chapter's numbered, architectural heading with one large figure. */
 function Chapter({
   id,
@@ -142,9 +158,12 @@ export function Observatory({
   benchmark,
   onAnalyze,
   onBuild,
+  onUseMix,
   pending = false,
   children,
 }: {
+  /** Replace the builder draft with a mix from the Risk Mixer (percent weights). */
+  onUseMix?: (holdings: { ticker: string; weight: string }[]) => void;
   /** An analysis is running: the stage makes room for the engine panel. */
   pending?: boolean;
   draft: Draft;
@@ -188,9 +207,6 @@ export function Observatory({
       chapter,
     );
   const sampleEvent = digest?.stress.find((e) => e.id === event) ?? null;
-  const topRisk = digest?.holdings
-    .filter((h) => !h.riskless && h.risk != null)
-    .sort((a, b) => (b.risk ?? 0) - (a.risk ?? 0))[0];
   const pairs = useMemo(() => {
     const c = digest?.correlation;
     if (!c) return [];
@@ -203,6 +219,41 @@ export function Observatory({
     );
     return out.sort((x, y) => y.c - x.c);
   }, [digest]);
+
+  // Risk Mixer: the sample's weights as a starting point, re-mixed by the user.
+  const baseline = useMemo<Mix | null>(
+    () =>
+      digest
+        ? Object.fromEntries(digest.holdings.map((h) => [h.ticker, h.weight]))
+        : null,
+    [digest],
+  );
+  const [mixState, setMix] = useState<Mix | null>(null);
+  const mix = mixState ?? baseline;
+  const mixResult = useMemo(
+    () =>
+      mix && digest?.covariance ? evaluateMix(mix, digest.covariance) : null,
+    [mix, digest],
+  );
+  const applyMix = () => {
+    if (!mix || !onUseMix) return;
+    const rows = Object.keys(baseline ?? mix).map((ticker) => [ticker, mix[ticker] ?? 0] as const).map(([ticker, w]) => ({
+      ticker,
+      w: Math.round(w * 10000) / 100,
+    }));
+    const drift =
+      Math.round((100 - rows.reduce((s, r) => s + r.w, 0)) * 100) / 100;
+    const big = rows.reduce((a, b) => (b.w > a.w ? b : a));
+    big.w = Math.round((big.w + drift) * 100) / 100;
+    onUseMix(
+      rows
+        .filter((r) => r.w > 0)
+        .map((r) => ({ ticker: r.ticker, weight: String(r.w) })),
+    );
+    document
+      .getElementById("builder")
+      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
 
   const sampleNodes: StarNode[] = useMemo(
     () =>
@@ -223,6 +274,12 @@ export function Observatory({
       risk: null,
       tone:
         sampleEvent.holdings.find((h) => h.ticker === n.ticker)?.return ?? null,
+    }));
+  if (usesSample && chapter === "risk" && mix && mixResult)
+    nodes = sampleNodes.map((n) => ({
+      ...n,
+      weight: mix[n.ticker] ?? 0,
+      risk: n.riskless ? null : Math.max(0, mixResult.risk[n.ticker] ?? 0),
     }));
   if (usesSample && chapter === "construction")
     nodes = sampleNodes.map((n) => ({ ...n, ghost: n.weight }));
@@ -251,8 +308,8 @@ export function Observatory({
         kind: "capital-risk",
         rows: digest.holdings.map((h) => ({
           ticker: h.ticker,
-          weight: h.weight,
-          risk: h.risk,
+          weight: mix?.[h.ticker] ?? h.weight,
+          risk: mixResult ? (mixResult.risk[h.ticker] ?? 0) : h.risk,
         })),
       };
       spineLabel = "Spine / capital · risk contribution";
@@ -318,6 +375,7 @@ export function Observatory({
       data-pending={pending ? "" : undefined}
       data-title={titleVisible ? "" : undefined}
     >
+      <DotField />
       <div className="obs-flow">
         <section
           className="obs-hero"
@@ -389,7 +447,9 @@ export function Observatory({
           id="capital"
           n="01"
           title={["Capital"]}
-          figure={largest ? pct(largest.weight / total) : "—"}
+          figure={
+            largest ? <Odometer value={pct(largest.weight / total)} /> : "—"
+          }
           figureLabel={largest?.ticker}
           notes={[
             `Holdings / ${String(live.filter((h) => h.ticker !== "CASH").length).padStart(2, "0")} risky`,
@@ -397,11 +457,7 @@ export function Observatory({
             `Σ / ${pct(total / 100)}`,
           ]}
         >
-          <p>
-            Each node is a holding. Its area is its capital weight and its place
-            is deterministic: the same portfolio always draws the same picture.
-            CASH sits apart on the axis, outside the risky system.
-          </p>
+          <Reveal text="Each node is a holding. Its area is its capital weight and its place is deterministic: the same portfolio always draws the same picture. CASH sits apart on the axis, outside the risky system. Grab a node and throw it." />
         </Chapter>
 
         <Chapter
@@ -409,7 +465,11 @@ export function Observatory({
           n="02"
           title={["Performance"]}
           figure={
-            digest?.metrics.cagr != null ? signed(digest.metrics.cagr) : "—"
+            digest?.metrics.cagr != null ? (
+              <Odometer value={signed(digest.metrics.cagr)} />
+            ) : (
+              "—"
+            )
           }
           figureLabel="CAGR"
           notes={[
@@ -423,18 +483,14 @@ export function Observatory({
             sampleNote,
           ]}
         >
-          <p>
-            Daily closes compound into one path. On the spine, each candle is a
-            month of the sample portfolio&apos;s wealth: open, high, low and
-            close of the same $10,000.
-          </p>
+          <Reveal text="Daily closes compound into one path. On the spine, each candle is a month of the sample portfolio’s wealth: open, high, low and close of the same $10,000. Run a finger along it." />
         </Chapter>
 
         <Chapter
           id="relationship"
           n="03"
           title={["Relationship"]}
-          figure={pairs[0] ? pairs[0].c.toFixed(2) : "—"}
+          figure={pairs[0] ? <Odometer value={pairs[0].c.toFixed(2)} /> : "—"}
           figureLabel={pairs[0] ? `ρ ${pairs[0].a}–${pairs[0].b}` : "ρ"}
           notes={[
             pairs.length ? `Pairs / ${pairs.length}` : null,
@@ -444,23 +500,13 @@ export function Observatory({
             sampleNote,
           ]}
         >
-          <p>
-            Every pair of holdings has a correlation. Point at a node: a ripple
-            leaves it and reaches each other holding with a strength equal to
-            how closely the two have moved together.
-          </p>
+          <Reveal text="Every pair of holdings has a correlation. Point at a node: a ripple leaves it and reaches each other holding with a strength equal to how closely the two have moved together." />
         </Chapter>
 
         <Chapter
           id="risk"
           n="04"
           title={["Risk", "Contribution"]}
-          figure={topRisk?.risk != null ? pct(topRisk.risk) : "—"}
-          figureLabel={
-            topRisk
-              ? `${topRisk.ticker} · ${pct(topRisk.weight)} of capital`
-              : undefined
-          }
           notes={[
             digest ? `Obs / ${digest.observations.toLocaleString()}` : null,
             digest ? `Window / ${dot(digest.start)}—${dot(digest.end)}` : null,
@@ -468,11 +514,16 @@ export function Observatory({
             sampleNote,
           ]}
         >
-          <p>
-            Weight is not risk. Behind each node sits a shadow: its share of
-            portfolio volatility. Here the shadow separates from the capital it
-            came from, and the difference is the point.
-          </p>
+          <Reveal text="Weight is not risk. Behind each node sits a shadow: its share of portfolio volatility. Drag any allocation and watch the shadows answer; the difference is the point." />
+          {mix && mixResult && baseline && (
+            <RiskMixer
+              mix={mix}
+              result={mixResult}
+              baseline={baseline}
+              onChange={setMix}
+              onUse={applyMix}
+            />
+          )}
         </Chapter>
 
         <Chapter
@@ -480,7 +531,11 @@ export function Observatory({
           n="05"
           title={["Stress"]}
           figure={
-            sampleEvent?.portfolio != null ? signed(sampleEvent.portfolio) : "—"
+            sampleEvent?.portfolio != null ? (
+              <Odometer value={signed(sampleEvent.portfolio)} />
+            ) : (
+              "—"
+            )
           }
           figureLabel={
             sampleEvent
@@ -494,11 +549,7 @@ export function Observatory({
             sampleNote,
           ]}
         >
-          <p>
-            The same portfolio, moved through another historical environment.
-            Target weights reset at each event&apos;s start; each node takes the
-            color of its own return through the slice.
-          </p>
+          <Reveal text="The same portfolio, moved through another historical environment. Target weights reset at each event’s start; each node takes the color of its own return through the slice." />
           {digest && digest.stress.length > 0 && (
             <div
               className="ch-events"
@@ -532,12 +583,7 @@ export function Observatory({
             "Equal Risk Contribution",
           ]}
         >
-          <p>
-            The current geometry stays on the table as an outline. In the
-            Constructor, the same nodes migrate to each method&apos;s weights
-            under long-only bounds and a Ledoit–Wolf covariance. Mathematical
-            outputs, not recommendations.
-          </p>
+          <Reveal text="The current geometry stays on the table as an outline. In the Constructor, the same nodes migrate to each method’s weights under long-only bounds and a Ledoit–Wolf covariance. Mathematical outputs, not recommendations." />
         </Chapter>
 
         <div className="obs-builder" data-chapter="builder">
@@ -590,6 +636,9 @@ export function Observatory({
                     : null
               }
               fill={0.16}
+              layoutMass={
+                chapter === "risk" ? (baseline ?? undefined) : undefined
+              }
               label={`${usesSample ? "Sample" : "Draft"} portfolio constellation. ${nodes
                 .map((x) => `${x.ticker} ${pct(x.weight)}`)
                 .join(", ")}. Node area is capital weight.`}

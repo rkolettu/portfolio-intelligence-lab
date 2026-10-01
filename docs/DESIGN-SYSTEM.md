@@ -84,3 +84,27 @@ benchmark `#c2552a`, proposed `#287252`. The correlation heatmap diverges blue �
 around a warm neutral `#ebe6dd`, darkening away from zero, with cell ink chosen for
 ≥ 4.5:1 contrast. Constellation pucks are paper discs with ink rims; the grain layer
 is ink noise at low opacity.
+
+### Play layer (2026-10-01)
+
+Drawn from Wise (an instrument you can use immediately), Stripe (pulses on grid
+lines, words that ink in), Mercury (tactile cards with depth), Column (reactive dot
+fields) and Ramp (rolling figures), kept in the paper/ink/blue system:
+
+- **Risk Mixer** (landing chapter 04): sliders per holding that always sum to 100%.
+  σ and each risk share are recomputed live with the engine's unmodified
+  `riskContributions` on the cached sample's stored annual covariance; the stage's
+  pucks and shadows follow, positions anchored to the sample. "Load this mix into
+  the builder" turns play into a real analysis. Labelled exploratory.
+- **Grab and throw**: any constellation node can be dragged (mouse/pen) through the
+  others, which collide and are shoved, then springs home with its release velocity.
+  A press without movement is still a click; touch keeps scrolling.
+- **Odometers**: chapter figures and σ roll digit by digit.
+- **Surfaces**: a cursor spotlight on panels, tilt + glare on feature cards, magnetic
+  primary buttons; one rAF-throttled document listener, mouse only.
+- **Atmosphere**: a dot field behind the hero that swells and tints under the cursor
+  (draws only on pointer movement), chapter copy that inks in word by word, a light
+  streak along a chapter's rule as it activates, and a slow pulse along the stage
+  baseline.
+
+Everything above is off under `prefers-reduced-motion`.

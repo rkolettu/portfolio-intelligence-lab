@@ -11,6 +11,7 @@ import { MethodologyHost } from "@/components/workspace/MethodologyHost";
 import { SiteHeader, SkipLink } from "@/components/layout/SiteHeader";
 import { MethodologyButton } from "@/components/methodology/MethodologyDrawer";
 import { marketDate } from "@/lib/utils/dates";
+import { Interactions } from "@/components/observatory/Interactions";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
@@ -54,6 +55,7 @@ export default function RootLayout({
           </main>
           <MethodologyHost />
         </WorkspaceProvider>
+        <Interactions />
         <Analytics />
       </body>
     </html>

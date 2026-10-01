@@ -20,17 +20,26 @@ export const WorkspaceSpine = memo(function WorkspaceSpine({
   const candles = useMemo(
     () =>
       monthlyCandles(
-        result.performance.growth.map((p) => ({ date: p.date, value: p.wealth })),
+        result.performance.growth.map((p) => ({
+          date: p.date,
+          value: p.wealth,
+        })),
       ),
     [result],
   );
   const relative = useMemo(() => {
     if (!result.benchmark.ok) return [];
     const pc = monthlyCandles(
-      result.benchmark.value.points.map((p) => ({ date: p.date, value: p.portfolioWealth })),
+      result.benchmark.value.points.map((p) => ({
+        date: p.date,
+        value: p.portfolioWealth,
+      })),
     );
     const bc = monthlyCandles(
-      result.benchmark.value.points.map((p) => ({ date: p.date, value: p.benchmarkWealth })),
+      result.benchmark.value.points.map((p) => ({
+        date: p.date,
+        value: p.benchmarkWealth,
+      })),
     );
     return pc.slice(1).map((c, i) => ({
       key: c.key,
@@ -44,7 +53,11 @@ export const WorkspaceSpine = memo(function WorkspaceSpine({
   let label: string;
   switch (route) {
     case "benchmark":
-      data = { kind: "relative", marks: relative, benchmark: result.config.benchmark };
+      data = {
+        kind: "relative",
+        marks: relative,
+        benchmark: result.config.benchmark,
+      };
       label = `Spine / monthly change · portfolio vs ${result.config.benchmark}`;
       break;
     case "risk":
@@ -90,7 +103,10 @@ export const WorkspaceSpine = memo(function WorkspaceSpine({
     case "constructor":
       data = {
         kind: "allocation",
-        current: result.config.holdings.map((h) => ({ ticker: h.ticker, weight: h.weight })),
+        current: result.config.holdings.map((h) => ({
+          ticker: h.ticker,
+          weight: h.weight,
+        })),
       };
       label = "Spine / current allocation";
       break;
