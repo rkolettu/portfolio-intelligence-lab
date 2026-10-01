@@ -244,15 +244,17 @@ export function Landing() {
                 <label htmlFor="custom-benchmark">
                   Custom benchmark ticker
                 </label>
-                <input
+                <TickerCombobox
                   id="custom-benchmark"
+                  ariaLabel="Custom benchmark ticker"
                   value={draft.benchmark}
-                  aria-invalid={failedBenchmark || undefined}
-                  onChange={(e) =>
+                  invalid={failedBenchmark}
+                  includeCash={false}
+                  onChange={(value) =>
                     edit({
                       type: "field",
                       field: "benchmark",
-                      value: e.target.value,
+                      value,
                     })
                   }
                 />
