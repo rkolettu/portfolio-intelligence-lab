@@ -76,6 +76,7 @@ export function Landing() {
         }}
         benchmark={draft.benchmark || "—"}
         pending={pending}
+        onUseMix={(holdings) => edit({ type: "replace", draft: { ...draft, holdings } })}
         onAnalyze={() => analyzeSample()}
         onBuild={() => focusField("ticker-0")}
       >

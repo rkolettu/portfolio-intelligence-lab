@@ -19,6 +19,8 @@ export type SampleDigest = {
     riskless: boolean;
   }[];
   correlation: { tickers: string[]; matrix: (number | null)[][] } | null;
+  /** The stored annualized sample covariance (risky holdings, portfolio order). */
+  covariance: { tickers: string[]; annual: number[][] } | null;
   candles: Candle[];
   metrics: {
     cagr: number | null;
@@ -62,6 +64,9 @@ export function toDigest(
     })),
     correlation: r.correlation.available
       ? { tickers: r.correlation.tickers, matrix: r.correlation.matrix }
+      : null,
+    covariance: r.covariance.available
+      ? { tickers: r.covariance.tickers, annual: r.covariance.annual }
       : null,
     candles: monthlyCandles(
       a.performance.growth.map((p) => ({ date: p.date, value: p.wealth })),

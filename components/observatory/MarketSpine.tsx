@@ -18,23 +18,40 @@ export type SpineData =
       /** Rolling windows drawn as brackets ending at the last observation. */
       windows?: { sessions: number; total: number; active: boolean }[];
     }
-  | { kind: "relative"; marks: { key: string; p: number; b: number }[]; benchmark: string }
-  | { kind: "capital-risk"; rows: { ticker: string; weight: number; risk: number | null }[] }
+  | {
+      kind: "relative";
+      marks: { key: string; p: number; b: number }[];
+      benchmark: string;
+    }
+  | {
+      kind: "capital-risk";
+      rows: { ticker: string; weight: number; risk: number | null }[];
+    }
   | { kind: "spectrum"; pairs: { a: string; b: string; c: number }[] }
   | {
       kind: "events";
-      events: { id: string; name: string; start: string; end: string; value?: number | null }[];
+      events: {
+        id: string;
+        name: string;
+        start: string;
+        end: string;
+        value?: number | null;
+      }[];
       selected: string | null;
       /** The analyzed period, drawn as a bracket for orientation. */
       bracket?: [string, string] | null;
       today: string;
     }
-  | { kind: "allocation"; current: Weighted[]; proposed?: Weighted[] | null; method?: string };
+  | {
+      kind: "allocation";
+      current: Weighted[];
+      proposed?: Weighted[] | null;
+      method?: string;
+    };
 
 const fmtMonth = (key: string) => key.replace("-", ".");
 const signed = (v: number) => `${v >= 0 ? "+" : "−"}${pct(Math.abs(v))}`;
-const money = (v: number) =>
-  `$${Math.round(v).toLocaleString("en-US")}`;
+const money = (v: number) => `$${Math.round(v).toLocaleString("en-US")}`;
 
 function segments(list: Weighted[]) {
   const live = list.filter((h) => h.weight > 0);
@@ -48,7 +65,10 @@ function segments(list: Weighted[]) {
 }
 
 /** Count of scannable positions and the readout for one of them. */
-function scanModel(d: SpineData): { count: number; read: (i: number) => ReactNode } {
+function scanModel(d: SpineData): {
+  count: number;
+  read: (i: number) => ReactNode;
+} {
   switch (d.kind) {
     case "calendar":
       return {
@@ -67,7 +87,10 @@ function scanModel(d: SpineData): { count: number; read: (i: number) => ReactNod
           return (
             <>
               <b>{fmtMonth(c.key)}</b> {money(c.c)}{" "}
-              <em data-sign={c.c >= c.o ? "pos" : "neg"}>{signed(c.c / c.o - 1)}</em> month
+              <em data-sign={c.c >= c.o ? "pos" : "neg"}>
+                {signed(c.c / c.o - 1)}
+              </em>{" "}
+              month
             </>
           );
         },
@@ -79,8 +102,10 @@ function scanModel(d: SpineData): { count: number; read: (i: number) => ReactNod
           const m = d.marks[i];
           return (
             <>
-              <b>{fmtMonth(m.key)}</b> portfolio <em data-sign={m.p >= 0 ? "pos" : "neg"}>{signed(m.p)}</em> ·{" "}
-              {d.benchmark} <em data-sign={m.b >= 0 ? "pos" : "neg"}>{signed(m.b)}</em>
+              <b>{fmtMonth(m.key)}</b> portfolio{" "}
+              <em data-sign={m.p >= 0 ? "pos" : "neg"}>{signed(m.p)}</em> ·{" "}
+              {d.benchmark}{" "}
+              <em data-sign={m.b >= 0 ? "pos" : "neg"}>{signed(m.b)}</em>
             </>
           );
         },
@@ -235,9 +260,12 @@ function Marks({ data, active }: { data: SpineData; active: number | null }) {
               key={s.ticker}
               className="sp-seg"
               data-cash={s.ticker === "CASH" ? "" : undefined}
-              style={i(k, { left: `${s.left * 100}%`, width: `${s.width * 100}%` })}
+              style={i(k, {
+                left: `${s.left * 100}%`,
+                width: `${s.width * 100}%`,
+              })}
             >
-              {s.width >= 0.03 && <em>{s.ticker}</em>}
+              {s.width >= 0.055 && <em>{s.ticker}</em>}
             </span>
           ))}
           {data.months.map((m, k) => (
@@ -282,7 +310,9 @@ function Marks({ data, active }: { data: SpineData; active: number | null }) {
               key={w.sessions}
               className="sp-window"
               data-on={w.active ? "" : undefined}
-              style={{ width: `${Math.min(100, (w.sessions / w.total) * 100)}%` }}
+              style={{
+                width: `${Math.min(100, (w.sessions / w.total) * 100)}%`,
+              }}
             >
               <em>{w.sessions}</em>
             </span>
@@ -313,7 +343,10 @@ function Marks({ data, active }: { data: SpineData; active: number | null }) {
     case "capital-risk": {
       const cap = segments(data.rows);
       const risk = segments(
-        data.rows.map((r) => ({ ticker: r.ticker, weight: Math.max(0, r.risk ?? 0) })),
+        data.rows.map((r) => ({
+          ticker: r.ticker,
+          weight: Math.max(0, r.risk ?? 0),
+        })),
       );
       return (
         <>
@@ -322,18 +355,24 @@ function Marks({ data, active }: { data: SpineData; active: number | null }) {
               key={`c-${s.ticker}`}
               className="sp-seg"
               data-cash={s.ticker === "CASH" ? "" : undefined}
-              style={i(k, { left: `${s.left * 100}%`, width: `${s.width * 100}%` })}
+              style={i(k, {
+                left: `${s.left * 100}%`,
+                width: `${s.width * 100}%`,
+              })}
             >
-              <em>{s.ticker}</em>
+              {s.width >= 0.055 && <em>{s.ticker}</em>}
             </span>
           ))}
           {risk.map((s, k) => (
             <span
               key={`r-${s.ticker}`}
               className="sp-seg sp-seg-risk"
-              style={i(k + 2, { left: `${s.left * 100}%`, width: `${s.width * 100}%` })}
+              style={i(k + 2, {
+                left: `${s.left * 100}%`,
+                width: `${s.width * 100}%`,
+              })}
             >
-              {s.width >= 0.06 && <em>{pct(s.width, 1)}</em>}
+              {s.width >= 0.08 && <em>{pct(s.width, 1)}</em>}
             </span>
           ))}
         </>
@@ -372,9 +411,12 @@ function Marks({ data, active }: { data: SpineData; active: number | null }) {
               className="sp-seg"
               data-ghost={next ? "" : undefined}
               data-cash={s.ticker === "CASH" ? "" : undefined}
-              style={i(k, { left: `${s.left * 100}%`, width: `${s.width * 100}%` })}
+              style={i(k, {
+                left: `${s.left * 100}%`,
+                width: `${s.width * 100}%`,
+              })}
             >
-              <em>{s.ticker}</em>
+              {s.width >= 0.055 && <em>{s.ticker}</em>}
             </span>
           ))}
           {next?.map((s, k) => (
@@ -399,9 +441,16 @@ function Marks({ data, active }: { data: SpineData; active: number | null }) {
 
 /** Event slices on a historical axis. Selecting an event compresses the axis
  * toward it: other slices slide out of frame, the selected one widens. */
-function EventMarks({ data }: { data: Extract<SpineData, { kind: "events" }> }) {
+function EventMarks({
+  data,
+}: {
+  data: Extract<SpineData, { kind: "events" }>;
+}) {
   const all = data.events;
-  const lo = Math.min(...all.map((e) => dayMs(e.start)), data.bracket ? dayMs(data.bracket[0]) : Infinity);
+  const lo = Math.min(
+    ...all.map((e) => dayMs(e.start)),
+    data.bracket ? dayMs(data.bracket[0]) : Infinity,
+  );
   const hi = Math.max(dayMs(data.today), ...all.map((e) => dayMs(e.end)));
   const sel = all.find((e) => e.id === data.selected);
   let d0 = lo;
@@ -415,13 +464,17 @@ function EventMarks({ data }: { data: Extract<SpineData, { kind: "events" }> }) 
   }
   const at = (t: number) => ((t - d0) / (d1 - d0)) * 100;
   const years: number[] = [];
-  for (let y = new Date(lo).getUTCFullYear(); y <= new Date(hi).getUTCFullYear() + 1; y++)
+  for (
+    let y = new Date(lo).getUTCFullYear();
+    y <= new Date(hi).getUTCFullYear() + 1;
+    y++
+  )
     years.push(y);
   const months: number[] = [];
   if (sel) {
     const s = new Date(d0);
     const cur = Date.UTC(s.getUTCFullYear(), s.getUTCMonth() + 1, 1);
-    for (let t = cur; t < d1; ) {
+    for (let t = cur; t < d1;) {
       months.push(t);
       const dt = new Date(t);
       t = Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth() + 1, 1);
@@ -468,7 +521,9 @@ function EventMarks({ data }: { data: Extract<SpineData, { kind: "events" }> }) 
         >
           <em>
             {e.name}
-            {e.value != null && <b data-sign={e.value >= 0 ? "pos" : "neg"}> {signed(e.value)}</b>}
+            {e.value != null && (
+              <b data-sign={e.value >= 0 ? "pos" : "neg"}> {signed(e.value)}</b>
+            )}
           </em>
         </span>
       ))}

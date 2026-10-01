@@ -12,10 +12,7 @@ import {
 } from "react";
 import Link from "next/link";
 import type { BacktestResult } from "@/lib/types/analytics";
-import {
-  focusHandlers,
-  useHoldingFocus,
-} from "@/components/ui/HoldingFocus";
+import { focusHandlers, useHoldingFocus } from "@/components/ui/HoldingFocus";
 import { monthlyCandles, pct, prefersReducedMotion } from "./geometry";
 
 type Open = (ticker: string, anchor: Element, viaKeyboard?: boolean) => void;
@@ -79,11 +76,22 @@ function useRoll(value: number, ms = 520) {
   return shown;
 }
 
-function Roll({ value, format }: { value: number; format: (v: number) => string }) {
+function Roll({
+  value,
+  format,
+}: {
+  value: number;
+  format: (v: number) => string;
+}) {
   return <>{format(useRoll(value))}</>;
 }
 
-type State = { ticker: string; rect: DOMRect; anchor: Element; keyboard: boolean } | null;
+type State = {
+  ticker: string;
+  rect: DOMRect;
+  anchor: Element;
+  keyboard: boolean;
+} | null;
 
 /** The Security Dossier: a compact floating instrument panel for one holding,
  * reading only values the analysis already holds. What appears depends on what
@@ -98,7 +106,11 @@ export function DossierProvider({
   const [state, setState] = useState<State>(null);
   const { setFocus } = useHoldingFocus();
   const panel = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState<{ x: number; y: number; below: boolean } | null>(null);
+  const [pos, setPos] = useState<{
+    x: number;
+    y: number;
+    below: boolean;
+  } | null>(null);
 
   const open = useCallback<Open>((ticker, anchor, keyboard = false) => {
     setState((s) =>
@@ -197,7 +209,9 @@ function DossierBody({
   const r = result.riskAnalytics;
   const h = r.holdings.find((x) => x.ticker === ticker);
   const weight =
-    h?.weight ?? result.config.holdings.find((x) => x.ticker === ticker)?.weight ?? 0;
+    h?.weight ??
+    result.config.holdings.find((x) => x.ticker === ticker)?.weight ??
+    0;
   const risk = h && h.percentage.available ? h.percentage.value : null;
   const series = result.snapshot.prices.find((p) => p.ticker === ticker);
   const candles = useMemo(() => {
@@ -216,7 +230,11 @@ function DossierBody({
     if (i >= 0)
       r.correlation.tickers.forEach((t, j) => {
         const c = r.correlation.available ? r.correlation.matrix[i][j] : null;
-        if (j !== i && c != null && (!partner || Math.abs(c) > Math.abs(partner.c)))
+        if (
+          j !== i &&
+          c != null &&
+          (!partner || Math.abs(c) > Math.abs(partner.c))
+        )
           partner = { t, c };
       });
   }
@@ -238,7 +256,12 @@ function DossierBody({
               ? `${series.instrument} · ${series.exchange}`
               : "Holding"}
         </span>
-        <button type="button" className="ds-close" aria-label="Close dossier" onClick={onClose}>
+        <button
+          type="button"
+          className="ds-close"
+          aria-label="Close dossier"
+          onClick={onClose}
+        >
           ×
         </button>
       </div>
@@ -252,7 +275,13 @@ function DossierBody({
         {!riskless && (
           <div data-tone="risk">
             <dt>Risk</dt>
-            <dd>{risk === null ? "N/A" : <Roll value={risk} format={(v) => pct(v)} />}</dd>
+            <dd>
+              {risk === null ? (
+                "N/A"
+              ) : (
+                <Roll value={risk} format={(v) => pct(v)} />
+              )}
+            </dd>
           </div>
         )}
         {delta !== null && !riskless && (
@@ -296,7 +325,11 @@ function DossierBody({
               const x = i * cw + cw / 2;
               const up = c.c >= c.o;
               return (
-                <g key={c.key} data-sign={up ? "pos" : "neg"} style={{ animationDelay: `${i * 8}ms` }}>
+                <g
+                  key={c.key}
+                  data-sign={up ? "pos" : "neg"}
+                  style={{ animationDelay: `${i * 8}ms` }}
+                >
                   <line x1={x} x2={x} y1={y(c.h)} y2={y(c.l)} />
                   <rect
                     x={x - Math.max(0.6, cw * 0.3)}
@@ -311,16 +344,19 @@ function DossierBody({
           <figcaption>
             <span>{candles[0].start.slice(0, 7).replace("-", ".")}</span>
             <span>
-              Adj. close ${candles[0].o.toFixed(2)} → ${candles[candles.length - 1].c.toFixed(2)}
+              Adj. close ${candles[0].o.toFixed(2)} → $
+              {candles[candles.length - 1].c.toFixed(2)}
             </span>
-            <span>{candles[candles.length - 1].end.slice(0, 7).replace("-", ".")}</span>
+            <span>
+              {candles[candles.length - 1].end.slice(0, 7).replace("-", ".")}
+            </span>
           </figcaption>
         </figure>
       )}
       {riskless && (
         <p className="ds-note">
-          Earns the Historical Risk-Free rate (3-month Treasury). Modeled as locally
-          riskless and kept outside the covariance matrix.
+          Earns the Historical Risk-Free rate (3-month Treasury). Modeled as
+          locally riskless and kept outside the covariance matrix.
         </p>
       )}
       <div className="ds-links">

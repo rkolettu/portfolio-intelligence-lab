@@ -62,6 +62,9 @@ type Props = {
   /** External single-ticker activation (e.g. the hero builder row in focus). */
   activeTicker?: string | null;
   onActive?: (ticker: string | null) => void;
+  /** Layout order by these masses instead of current weight, so nodes keep
+   * their places while weights change continuously (the Risk Mixer). */
+  layoutMass?: Record<string, number>;
 };
 
 type Body = {
@@ -107,6 +110,7 @@ export function Constellation({
   annotate = true,
   activeTicker = null,
   onActive,
+  layoutMass,
 }: Props) {
   const holdingFocus = useHoldingFocus();
   const { focus, setFocus } = holdingFocus;
@@ -135,12 +139,33 @@ export function Constellation({
   const els = useRef<Map<string, SVGGElement>>(new Map());
   const edgeEls = useRef<SVGGElement>(null);
   const ring = useRef<SVGCircleElement>(null);
-  const impulses = useRef<{ at: number; ticker: string; vx: number; vy: number }[]>([]);
-  const rippleAt = useRef<{ t: number; x: number; y: number; r0: number } | null>(null);
+  const impulses = useRef<
+    { at: number; ticker: string; vx: number; vy: number }[]
+  >([]);
+  const rippleAt = useRef<{
+    t: number;
+    x: number;
+    y: number;
+    r0: number;
+  } | null>(null);
   const frame = useRef(0);
   const visible = useRef(true);
   const reduced = useRef(false);
   const kick = useRef<() => void>(() => {});
+  // Grab-and-throw: the dragged node follows the pointer, shoves the others,
+  // and springs home with the velocity it was released at.
+  const drag = useRef<{
+    ticker: string;
+    x: number;
+    y: number;
+    vx: number;
+    vy: number;
+    t: number;
+    sx: number;
+    sy: number;
+    moved: boolean;
+  } | null>(null);
+  const dragged = useRef(false);
   const [hover, setHover] = useState<string | null>(null);
   const uid = useId().replace(/:/g, "");
 
@@ -152,14 +177,20 @@ export function Constellation({
     Math.sqrt((fill * width * height) / Math.PI),
     Math.min(width, height) * 0.62,
   );
-  const rad = useCallback((w: number | null | undefined) => (w && w > 0 ? R * Math.sqrt(w) : 0), [R]);
+  const rad = useCallback(
+    (w: number | null | undefined) => (w && w > 0 ? R * Math.sqrt(w) : 0),
+    [R],
+  );
   const layoutKey = live
-    .map((n) => `${n.ticker}:${n.weight.toFixed(4)}:${(n.risk ?? 0).toFixed(3)}:${(n.ghost ?? 0).toFixed(3)}`)
+    .map(
+      (n) =>
+        `${n.ticker}:${n.weight.toFixed(4)}:${(n.risk ?? 0).toFixed(3)}:${(n.ghost ?? 0).toFixed(3)}`,
+    )
     .join();
   const placed = useMemo(() => {
     const input = live.map((n) => ({
       ticker: n.ticker,
-      mass: n.weight,
+      mass: layoutMass?.[n.ticker] ?? n.weight,
       reserve:
         Math.max(
           rad(n.weight),
@@ -176,7 +207,7 @@ export function Constellation({
     );
     // Layout depends on the portfolio's identity and reserved sizes only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [layoutKey, reserve, width, height, rad]);
+  }, [layoutKey, reserve, width, height, rad, layoutMass]);
 
   const corr = useCallback(
     (a: string, b: string) => {
@@ -261,6 +292,35 @@ export function Constellation({
         } else moving = true;
       }
       const amp = drift && !reduced.current ? 1.8 : 0;
+      const d = drag.current;
+      if (d) moving = true;
+      // Soft collisions: nothing passes through anything, most visibly while a
+      // node is dragged or thrown through the system.
+      const list = [...bodies.current.values()];
+      for (let i = 0; i < list.length; i++)
+        for (let j = i + 1; j < list.length; j++) {
+          const a = list[i];
+          const c = list[j];
+          const dx = c.x - a.x;
+          const dy = c.y - a.y;
+          const dist = Math.hypot(dx, dy) || 0.01;
+          const min = Math.max(0, a.r) + Math.max(0, c.r) + 3;
+          if (dist >= min) continue;
+          const push = (min - dist) / dist;
+          const aFixed = d?.ticker === a.ticker;
+          const cFixed = d?.ticker === c.ticker;
+          const ka = aFixed ? 0 : cFixed ? 1 : 0.5;
+          const kc = cFixed ? 0 : aFixed ? 1 : 0.5;
+          a.x -= dx * push * ka;
+          a.y -= dy * push * ka;
+          c.x += dx * push * kc;
+          c.y += dy * push * kc;
+          a.vx -= dx * push * ka * 9;
+          a.vy -= dy * push * ka * 9;
+          c.vx += dx * push * kc * 9;
+          c.vy += dy * push * kc * 9;
+          moving = true;
+        }
       for (const b of bodies.current.values()) {
         const t = (b as Body & { target?: number[] }).target ?? [0, 0, 0, 0];
         const dx = amp * Math.sin(now * b.freq * 6.283 + b.phase * 6.283);
@@ -272,6 +332,15 @@ export function Constellation({
           b.rr = t[1];
           b.gr = t[2];
           b.off = t[3];
+        } else if (d && d.ticker === b.ticker) {
+          b.x = d.x;
+          b.y = d.y;
+          b.vx = d.vx;
+          b.vy = d.vy;
+          [b.r, b.vr] = spring(b.r, b.vr, t[0], dt, 140, 20);
+          [b.rr, b.vrr] = spring(b.rr, b.vrr, t[1], dt, 110, 17);
+          [b.gr, b.vgr] = spring(b.gr, b.vgr, t[2], dt, 60, 16);
+          [b.off, b.voff] = spring(b.off, b.voff, t[3], dt, 90, 15);
         } else {
           [b.x, b.vx] = spring(b.x, b.vx, b.tx + dx, dt, 120, 14);
           [b.y, b.vy] = spring(b.y, b.vy, b.ty + dy, dt, 120, 14);
@@ -281,15 +350,23 @@ export function Constellation({
           [b.off, b.voff] = spring(b.off, b.voff, t[3], dt, 90, 15);
         }
         if (
-          Math.abs(b.vx) + Math.abs(b.vy) + Math.abs(b.vr) + Math.abs(b.vrr) +
-            Math.abs(b.voff) + Math.abs(b.vgr) > 0.02 ||
+          Math.abs(b.vx) +
+            Math.abs(b.vy) +
+            Math.abs(b.vr) +
+            Math.abs(b.vrr) +
+            Math.abs(b.voff) +
+            Math.abs(b.vgr) >
+            0.02 ||
           Math.abs(b.r - t[0]) > 0.05 ||
           Math.abs(b.rr - t[1]) > 0.05
         )
           moving = true;
         const el = els.current.get(b.ticker);
         if (!el) continue;
-        el.setAttribute("transform", `translate(${b.x.toFixed(2)} ${b.y.toFixed(2)})`);
+        el.setAttribute(
+          "transform",
+          `translate(${b.x.toFixed(2)} ${b.y.toFixed(2)})`,
+        );
         const cap = el.querySelector<SVGCircleElement>(".cs-cap");
         const hit = el.querySelector<SVGCircleElement>(".cs-hit");
         const sh = el.querySelector<SVGCircleElement>(".cs-risk");
@@ -312,16 +389,18 @@ export function Constellation({
         lab?.setAttribute("data-inside", inside ? "1" : "0");
       }
       // Edges follow their endpoints.
-      edgeEls.current?.querySelectorAll<SVGLineElement>("line").forEach((line) => {
-        const a = bodies.current.get(line.dataset.a!);
-        const b = bodies.current.get(line.dataset.b!);
-        if (!a || !b) return;
-        const ang = Math.atan2(b.y - a.y, b.x - a.x);
-        line.setAttribute("x1", (a.x + Math.cos(ang) * (a.r + 3)).toFixed(2));
-        line.setAttribute("y1", (a.y + Math.sin(ang) * (a.r + 3)).toFixed(2));
-        line.setAttribute("x2", (b.x - Math.cos(ang) * (b.r + 3)).toFixed(2));
-        line.setAttribute("y2", (b.y - Math.sin(ang) * (b.r + 3)).toFixed(2));
-      });
+      edgeEls.current
+        ?.querySelectorAll<SVGLineElement>("line")
+        .forEach((line) => {
+          const a = bodies.current.get(line.dataset.a!);
+          const b = bodies.current.get(line.dataset.b!);
+          if (!a || !b) return;
+          const ang = Math.atan2(b.y - a.y, b.x - a.x);
+          line.setAttribute("x1", (a.x + Math.cos(ang) * (a.r + 3)).toFixed(2));
+          line.setAttribute("y1", (a.y + Math.sin(ang) * (a.r + 3)).toFixed(2));
+          line.setAttribute("x2", (b.x - Math.cos(ang) * (b.r + 3)).toFixed(2));
+          line.setAttribute("y2", (b.y - Math.sin(ang) * (b.r + 3)).toFixed(2));
+        });
       const rp = rippleAt.current;
       if (rp && ring.current) {
         const k = (now - rp.t) / 1100;
@@ -420,6 +499,17 @@ export function Constellation({
   }, [active, onActive]);
   useEffect(() => kick.current(), [edges]);
 
+  const [dragTicker, setDragTicker] = useState<string | null>(null);
+  const toLocal = (e: ReactPointerEvent) => {
+    const el = svg.current;
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    if (!r.width || !r.height) return null;
+    return {
+      x: ((e.clientX - r.left) / r.width) * width,
+      y: ((e.clientY - r.top) / r.height) * height,
+    };
+  };
   const handlePointerLeave = (e: ReactPointerEvent) => {
     if (e.pointerType === "mouse") setHover(null);
     if (linked && isMouse(e)) setFocus(null);
@@ -431,7 +521,12 @@ export function Constellation({
       ref={box}
       className={`constellation${className ? ` ${className}` : ""}`}
       data-ready={size ? "" : undefined}
-      style={{ "--puck": `url(#${uid}-puck)`, "--hatch": `url(#${uid}-hatch)` } as CSSProperties}
+      style={
+        {
+          "--puck": `url(#${uid}-puck)`,
+          "--hatch": `url(#${uid}-hatch)`,
+        } as CSSProperties
+      }
       data-mode={mode}
       data-active={active ? "" : undefined}
       onPointerLeave={handlePointerLeave}
@@ -449,7 +544,13 @@ export function Constellation({
             <stop offset="0.7" stopColor="#f7f4ee" />
             <stop offset="1" stopColor="#ebe6dc" />
           </radialGradient>
-          <pattern id={`${uid}-hatch`} width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+          <pattern
+            id={`${uid}-hatch`}
+            width="5"
+            height="5"
+            patternUnits="userSpaceOnUse"
+            patternTransform="rotate(45)"
+          >
             <rect width="5" height="5" fill="#f4f1ea" />
             <path d="M0 0v5" stroke="rgba(23,23,23,.3)" strokeWidth="1" />
           </pattern>
@@ -474,7 +575,13 @@ export function Constellation({
             />
           </g>
         </g>
-        <circle ref={ring} className="cs-ripple" r="0" opacity="0" aria-hidden />
+        <circle
+          ref={ring}
+          className="cs-ripple"
+          r="0"
+          opacity="0"
+          aria-hidden
+        />
         <g ref={edgeEls} className="cs-edges" aria-hidden>
           {edges.map((e, i) => (
             <line
@@ -509,21 +616,93 @@ export function Constellation({
                 data-cash={n.riskless ? "" : undefined}
                 data-on={on ? "" : undefined}
                 data-dim={dim ? "" : undefined}
-                data-tone={n.tone == null ? undefined : n.tone >= 0 ? "pos" : "neg"}
+                data-tone={
+                  n.tone == null ? undefined : n.tone >= 0 ? "pos" : "neg"
+                }
                 style={
                   n.tone == null
                     ? undefined
-                    : ({ "--t": Math.min(1, Math.abs(n.tone) / 0.4).toFixed(3) } as CSSProperties)
+                    : ({
+                        "--t": Math.min(1, Math.abs(n.tone) / 0.4).toFixed(3),
+                      } as CSSProperties)
                 }
                 {...handlers}
                 onPointerEnter={(e) => {
                   if (e.pointerType === "mouse") setHover(n.ticker);
-                  (handlers as { onPointerEnter?: (e: ReactPointerEvent) => void }).onPointerEnter?.(e);
+                  (
+                    handlers as {
+                      onPointerEnter?: (e: ReactPointerEvent) => void;
+                    }
+                  ).onPointerEnter?.(e);
                 }}
-                onClick={(e) => onSelect?.(n.ticker, e.currentTarget)}
+                data-drag={dragTicker === n.ticker ? "" : undefined}
+                onPointerDown={(e) => {
+                  // Mouse and pen grab; touch keeps the page scrollable.
+                  if (e.pointerType === "touch" || e.button !== 0) return;
+                  const b = bodies.current.get(n.ticker);
+                  const p = toLocal(e);
+                  if (!b || !p) return;
+                  e.currentTarget.setPointerCapture(e.pointerId);
+                  drag.current = {
+                    ticker: n.ticker,
+                    x: b.x,
+                    y: b.y,
+                    vx: 0,
+                    vy: 0,
+                    t: performance.now(),
+                    sx: p.x - b.x,
+                    sy: p.y - b.y,
+                    moved: false,
+                  };
+                  dragged.current = false;
+                  kick.current();
+                }}
+                onPointerMove={(e) => {
+                  const d = drag.current;
+                  if (!d || d.ticker !== n.ticker) return;
+                  const p = toLocal(e);
+                  if (!p) return;
+                  const now = performance.now();
+                  const nx = p.x - d.sx;
+                  const ny = p.y - d.sy;
+                  const dt = Math.max(8, now - d.t) / 1000;
+                  if (!d.moved && Math.hypot(nx - d.x, ny - d.y) > 4) {
+                    d.moved = true;
+                    setDragTicker(n.ticker);
+                  }
+                  d.vx = d.vx * 0.5 + ((nx - d.x) / dt) * 0.5;
+                  d.vy = d.vy * 0.5 + ((ny - d.y) / dt) * 0.5;
+                  d.x = nx;
+                  d.y = ny;
+                  d.t = now;
+                  kick.current();
+                }}
+                onPointerUp={() => {
+                  const d = drag.current;
+                  if (!d || d.ticker !== n.ticker) return;
+                  const b = bodies.current.get(n.ticker);
+                  if (b) {
+                    const cap = 1400;
+                    b.vx = Math.max(-cap, Math.min(cap, d.vx));
+                    b.vy = Math.max(-cap, Math.min(cap, d.vy));
+                  }
+                  dragged.current = d.moved;
+                  drag.current = null;
+                  setDragTicker(null);
+                  kick.current();
+                }}
+                onClick={(e) => {
+                  if (dragged.current) {
+                    dragged.current = false;
+                    return;
+                  }
+                  onSelect?.(n.ticker, e.currentTarget);
+                }}
               >
                 <circle className="cs-ghost" r="0" />
-                {!n.riskless && n.risk != null && <circle className="cs-risk" r="0" />}
+                {!n.riskless && n.risk != null && (
+                  <circle className="cs-risk" r="0" />
+                )}
                 <circle className="cs-cap" r="0" />
                 <circle className="cs-hit" r="14" />
                 <g className="cs-label">
@@ -531,7 +710,9 @@ export function Constellation({
                     {n.ticker}
                   </text>
                   <text className="cs-weight" dy="0.34em">
-                    {n.tone != null ? `${n.tone >= 0 ? "+" : "−"}${pct(Math.abs(n.tone), 1)}` : pct(n.weight)}
+                    {n.tone != null
+                      ? `${n.tone >= 0 ? "+" : "−"}${pct(Math.abs(n.tone), 1)}`
+                      : pct(n.weight)}
                   </text>
                 </g>
               </g>
