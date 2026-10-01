@@ -15,11 +15,11 @@ const CASH: Security = ["CASH", "Cash · Historical Risk-Free (3-month Treasury)
 
 /** Ranked matches: ticker exact, ticker prefix, a name word starting with the
  * query, then any name substring; ties keep the directory's (size) order. */
-function search(list: Security[], raw: string, limit = 7) {
+function search(list: Security[], raw: string, limit = 7, includeCash = true) {
   const q = raw.trim().toUpperCase();
   if (!q) return [];
   const scored: { s: Security; r: number; i: number }[] = [];
-  const all = [CASH, ...list];
+  const all = includeCash ? [CASH, ...list] : list;
   for (let i = 0; i < all.length; i++) {
     const s = all[i];
     const name = s[1].toUpperCase();
@@ -36,26 +36,37 @@ function search(list: Security[], raw: string, limit = 7) {
     .map((x) => x.s);
 }
 
-/** The builder's ticker field as a combobox: type a ticker or a company / fund
- * name and pick from suggestions. Free entry still works for anything not in the
- * directory; the value is validated exactly as before. */
+/** Ticker/company autocomplete used by both portfolio holdings and the custom
+ * benchmark field. Free entry still works for anything not in the directory;
+ * validation remains unchanged. */
 export function TickerCombobox({
   index,
   value,
   invalid,
   onChange,
+  id,
+  ariaLabel,
+  includeCash = true,
 }: {
-  index: number;
+  index?: number;
   value: string;
   invalid?: boolean;
   onChange: (value: string) => void;
+  id?: string;
+  ariaLabel?: string;
+  includeCash?: boolean;
 }) {
   const listId = useId();
   const [list, setList] = useState<Security[] | null>(null);
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
   const input = useRef<HTMLInputElement>(null);
-  const matches = useMemo(() => (list ? search(list, value) : []), [list, value]);
+  const inputId = id ?? `ticker-${index ?? 0}`;
+  const label = ariaLabel ?? `Ticker ${(index ?? 0) + 1}`;
+  const matches = useMemo(
+    () => (list ? search(list, value, 7, includeCash) : []),
+    [list, value, includeCash],
+  );
   // Nothing to suggest when the field already holds exactly the only match.
   const redundant = matches.length === 1 && matches[0][0] === value.trim().toUpperCase();
   const shown = open && matches.length > 0 && !redundant;
@@ -73,8 +84,8 @@ export function TickerCombobox({
     <div className="ticker-combo">
       <input
         ref={input}
-        id={`ticker-${index}`}
-        aria-label={`Ticker ${index + 1}`}
+        id={inputId}
+        aria-label={label}
         aria-invalid={invalid || undefined}
         role="combobox"
         aria-autocomplete="list"
@@ -116,7 +127,7 @@ export function TickerCombobox({
         className="ticker-list"
         id={listId}
         role="listbox"
-        aria-label={`Suggestions for ticker ${index + 1}`}
+        aria-label={`Suggestions for ${label.toLowerCase()}`}
         hidden={!shown}
       >
         {shown &&
