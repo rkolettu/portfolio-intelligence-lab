@@ -15,6 +15,7 @@ import { hedgeResult } from "../fixtures/hedge";
 // a person would, through the workspace navigation (client-side, no reload).
 type Page = import("@playwright/test").Page;
 const ROUTE_LABEL = {
+  portfolio: "Your Portfolio",
   overview: "Overview",
   performance: "Performance",
   benchmark: "Benchmark",
@@ -105,7 +106,8 @@ test("sample workflow, independent quote failure, methodology, and edited-draft 
   });
   await page.goto("/");
   await page.getByRole("button", { name: "Analyze Sample Portfolio" }).click();
-  await expect(page).toHaveURL(/\/analysis\/overview$/);
+  await expect(page).toHaveURL(/\/analysis\/portfolio$/);
+  await openPage(page, "overview");
   await expect(
     page.getByRole("heading", { name: "Methodology & data lineage." }),
   ).toBeVisible();
@@ -256,9 +258,11 @@ async function showLongResult(page: import("@playwright/test").Page) {
   );
   await page.goto("/");
   await page.getByRole("button", { name: "Analyze Sample Portfolio" }).click();
+  await expect(page).toHaveURL(/\/analysis\/portfolio$/);
   await expect(
-    page.getByRole("heading", { name: "Performance overview." }),
+    page.getByRole("heading", { name: "What you actually own." }),
   ).toBeVisible();
+  await openPage(page, "overview");
 }
 
 test("performance overview, growth chart and drawdown lab render real metrics", async ({
@@ -634,7 +638,7 @@ async function showConstructionResult(page: import("@playwright/test").Page) {
   );
   await page.goto("/");
   await page.getByRole("button", { name: "Analyze portfolio" }).click();
-  await expect(page).toHaveURL(/\/analysis\/overview$/);
+  await expect(page).toHaveURL(/\/analysis\/portfolio$/);
   await openPage(page, "constructor");
   await expect(
     page.getByRole("heading", {
@@ -815,7 +819,7 @@ test("remove the failed holding from the error, then the analysis succeeds", asy
   await page.getByLabel("Weight 1", { exact: true }).fill("50");
   await page.getByRole("button", { name: "Analyze portfolio" }).click();
   await expect(
-    page.getByRole("heading", { name: "Performance overview." }),
+    page.getByRole("heading", { name: "What you actually own." }),
   ).toBeVisible();
   expect(requests).toBe(2);
 });
@@ -912,7 +916,7 @@ test("identical growth paths retain separate readable endpoint labels and mobile
   await page.route("**/api/analysis", route => route.fulfill({ json: { ok: true, value: simulation } }));
   await page.goto("/");
   await page.getByRole("button", { name: "Analyze Sample Portfolio" }).click();
-  await expect(page).toHaveURL(/\/analysis\/overview$/);
+  await expect(page).toHaveURL(/\/analysis\/portfolio$/);
   await openPage(page, "performance");
   const chart = page.locator('section:has(#performance-title) .chart-frame');
   await chart.scrollIntoViewIfNeeded();
@@ -964,9 +968,9 @@ test("keyboard-only sample, chart and methodology workflow keeps focus inside th
     }
   }
   expect(submitted).toBe(true);
-  await expect(page.getByRole("heading", { name: "Performance overview." })).toBeVisible();
-  // After Analyze opens the overview, focus moves to its heading (not lost to <body>).
-  await expect(page.getByRole("heading", { name: "Performance overview." })).toBeFocused();
+  await expect(page.getByRole("heading", { name: "What you actually own." })).toBeVisible();
+  // After Analyze opens Your Portfolio, focus moves to its heading (not lost to <body>).
+  await expect(page.getByRole("heading", { name: "What you actually own." })).toBeFocused();
   // Keyboard route navigation: the workspace links are reachable and switch pages.
   for (let i = 0; i < 20; i++) {
     await page.keyboard.press("Shift+Tab");
@@ -1039,6 +1043,7 @@ test("capital vs risk morphs between views and hover focus is shared across anal
 
 // Phase 9: a multi-page workspace on real routes.
 const PAGE_HEADINGS = {
+  portfolio: "What you actually own.",
   overview: "Performance overview.",
   performance: "Growth of wealth.",
   benchmark: "Relative to SPY.",
@@ -1048,7 +1053,7 @@ const PAGE_HEADINGS = {
   constructor: "Mathematical alternative allocations.",
 } as const;
 
-test("Analyze opens the overview; every route renders; back, forward and reload keep the page", async ({
+test("Analyze lands on Your Portfolio; every route renders; back, forward and reload keep the page", async ({
   page,
 }) => {
   let analyses = 0;
@@ -1101,7 +1106,7 @@ test("a deep link without an active analysis guides to the builder or runs the s
   await fresh.getByRole("link", { name: /Build or analyze a portfolio/ }).click();
   await expect(fresh.getByLabel("Ticker 1", { exact: true })).toBeVisible();
   await fresh.goto("/analysis");
-  await expect(fresh).toHaveURL(/\/analysis\/overview$/);
+  await expect(fresh).toHaveURL(/\/analysis\/portfolio$/);
 });
 
 test("a Stress Lab failure stays on its page; other routes keep working", async ({ page }) => {
@@ -1382,14 +1387,14 @@ test("the wake stage appears only when the market-data service is slow to answer
   await page.goto("/");
   await page.getByRole("button", { name: "Analyze Sample Portfolio" }).click();
   await expect(page.getByText("Waking market-data service…")).toBeVisible();
-  await expect(page).toHaveURL(/\/analysis\/overview$/);
+  await expect(page).toHaveURL(/\/analysis\/portfolio$/);
   slow = false;
   await openBuilder(page);
   let sawWake = false;
   const watcher = page.waitForSelector("text=Waking market-data service…", { timeout: 2000 })
     .then(() => (sawWake = true), () => {});
   await page.getByRole("button", { name: "Analyze portfolio" }).click();
-  await expect(page).toHaveURL(/\/analysis\/overview$/);
+  await expect(page).toHaveURL(/\/analysis\/portfolio$/);
   await watcher;
   expect(sawWake).toBe(false); // a prompt answer never shows the wake step
 });
@@ -1407,9 +1412,9 @@ test("service outage: the sample offers a clearly labelled cached copy; custom p
   // Nothing switches silently: the builder stays until the visitor chooses.
   await expect(page).toHaveURL(/\/$/);
   await offer.click();
-  await expect(page).toHaveURL(/\/analysis\/overview$/);
+  await expect(page).toHaveURL(/\/analysis\/portfolio$/);
   await expect(page.locator(".portfolio-bar")).toContainText(/Cached sample · Last refreshed/);
-  await expect(page.getByRole("heading", { name: "Performance overview." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "What you actually own." })).toBeVisible();
   // Stress Lab events come with the cached copy; the Constructor explains why it is off.
   await openPage(page, "stress");
   await expect(page.locator(".stress-select")).toBeVisible();
@@ -1443,7 +1448,7 @@ test("the landing page wakes the service without blocking; a long wake offers th
   await expect(offer).toBeVisible();
   await expect(page).toHaveURL(/\/$/); // never substituted automatically
   await offer.click();
-  await expect(page).toHaveURL(/\/analysis\/overview$/);
+  await expect(page).toHaveURL(/\/analysis\/portfolio$/);
   await expect(page.locator(".portfolio-bar")).toContainText(/Cached sample · Last refreshed/);
   // A custom portfolio waking just as long is never offered the sample.
   await openBuilder(page);

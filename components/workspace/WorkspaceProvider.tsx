@@ -407,7 +407,7 @@ export function WorkspaceProvider({
           writeLastAnalysis({ kind: "live", config });
           if (options.navigate) {
             setStage("opening");
-            router.push("/analysis/overview");
+            router.push("/analysis/portfolio");
           }
         } else {
           setError(response.error);
@@ -460,7 +460,7 @@ export function WorkspaceProvider({
         setCurve(null);
         setHorizon(null);
         writeLastAnalysis({ kind: "cached-sample" });
-        if (options.navigate) router.push("/analysis/overview");
+        if (options.navigate) router.push("/analysis/portfolio");
       } catch {
         if (sequence.current === id)
           setError({

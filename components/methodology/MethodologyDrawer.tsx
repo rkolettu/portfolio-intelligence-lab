@@ -255,6 +255,47 @@ export function MethodologyDrawer({
             riskless in risk decomposition and never uses one of the 20 risky
             slots.
           </p>
+          <div className="key-idea">
+            <strong>ⓘ The key idea</strong>
+            <p>
+              A broad ETF owns companies from many sectors. Instead of pretending
+              the whole fund is Technology or Financials, Portfolio Lab splits
+              its portfolio weight across sectors using a stored exposure profile.
+            </p>
+          </div>
+          <p>
+            Individual stocks in the local security directory map directly to one
+            of the standard 11 equity sectors. Common broad ETFs use rounded,
+            locally stored sector look-through snapshots; a sector ETF can be
+            explicitly associated with its sector. Unknown securities remain
+            Unclassified. Classified exposure is never rescaled to 100%, so the
+            coverage figure and unclassified weight remain visible.
+          </p>
+          <p>
+            Sector proxy comparisons use the mapped Select Sector ETF (XLC, XLY,
+            XLP, XLE, XLF, XLV, XLI, XLB, XLRE, XLK or XLU). Required proxies are
+            deduplicated and loaded through the same cached historical provider,
+            adjusted-close convention, and exact effective endpoints as the
+            analysis. A proxy return is labeled Sector proxy; it is not the
+            actual return of every company in that sector. Broad ETFs are shown
+            as a decomposition and are never compared with one arbitrary sector.
+          </p>
+          <div className="key-idea">
+            <strong>ⓘ The key idea</strong>
+            <p>
+              The Style Map answers where the equity sleeve sits by company size
+              and value/blend/growth character. ETF weights are split across nine
+              cells from stored profiles; conservatively classified stocks enter
+              one cell. CASH, bonds and other assets stay outside the equity grid.
+            </p>
+          </div>
+          <p>
+            Portfolio Lab&rsquo;s 3×3 Style Map is its own transparent
+            classification and is not the Morningstar Style Box. ETF sector and
+            style profiles retain a vintage and source description. They are
+            rounded static approximations—not live constituent holdings—and
+            unknown holdings are left unclassified rather than guessed.
+          </p>
         </Topic>
         <Topic id="performance" title="Performance">
           <ul>

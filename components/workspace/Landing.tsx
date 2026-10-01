@@ -23,7 +23,7 @@ const focusField = (id: string) => {
 };
 
 /** Landing page: compact hero and the portfolio builder. Analyze runs the analysis
- * and opens /analysis/overview; the report itself lives on the analysis routes. */
+ * and opens /analysis/portfolio; the report itself lives on the analysis routes. */
 export function Landing() {
   const {
     today,
@@ -490,7 +490,7 @@ export function Landing() {
                 ? "An analysis of your previous allocation is open. Your edits have not been analyzed yet."
                 : "Your analysis is ready."}
           </p>
-          <Link className="secondary" href="/analysis/overview">
+          <Link className="secondary" href="/analysis/portfolio">
             Open analysis <span aria-hidden>→</span>
           </Link>
         </div>

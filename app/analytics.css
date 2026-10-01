@@ -4,6 +4,427 @@
    Depends on the tokens in globals.css.
    ========================================================================== */
 
+/* ---------- Your Portfolio: exposure x-ray ---------- */
+.portfolio-xray {
+  --xray-blue: var(--accent);
+}
+.portfolio-xray .section-heading:first-child {
+  margin-top: 34px;
+}
+.xray-facts {
+  display: grid;
+  grid-template-columns: 0.7fr 1.3fr;
+  border-block: 1px solid var(--border);
+}
+.xray-lead {
+  display: grid;
+  align-content: center;
+  padding: 28px 0;
+  border-right: 1px solid var(--border);
+}
+.xray-lead span,
+.xray-facts dt,
+.coverage-line,
+.style-summary,
+.profile-provenance {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.xray-lead strong {
+  font-size: clamp(58px, 8vw, 106px);
+  font-weight: 500;
+  line-height: 0.9;
+  letter-spacing: -0.07em;
+  color: var(--text);
+}
+.xray-lead em {
+  font-style: normal;
+  color: var(--muted);
+}
+.xray-facts dl {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  margin: 0;
+}
+.xray-facts dl div {
+  display: grid;
+  align-content: center;
+  gap: 7px;
+  min-height: 92px;
+  padding: 16px 20px;
+  border-right: 1px solid var(--hairline);
+  border-bottom: 1px solid var(--hairline);
+}
+.xray-facts dd {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 500;
+}
+.allocation-field {
+  display: flex;
+  height: 154px;
+  gap: 3px;
+  margin-top: 18px;
+}
+.allocation-field button {
+  position: relative;
+  display: flex;
+  flex: max(calc(var(--weight) * 100), 3) 1 0;
+  min-width: 32px;
+  padding: 12px 9px;
+  border: 0;
+  border-top: 1px solid var(--border-strong);
+  background: color-mix(
+    in srgb,
+    var(--accent) calc(6% + var(--weight) * 32%),
+    var(--surface)
+  );
+  color: var(--text);
+  overflow: hidden;
+}
+.allocation-field button i {
+  position: absolute;
+  inset: auto 8px 34px;
+  height: 1px;
+  background: var(--accent-line);
+}
+.allocation-field button strong {
+  margin: auto 0 0 auto;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 500;
+}
+.allocation-field button[data-focus="dim"] {
+  opacity: 0.25;
+}
+.allocation-field button[data-focus="on"] {
+  background: color-mix(in srgb, var(--accent) 28%, var(--surface));
+  transform: translateY(-4px);
+}
+.coverage-line,
+.style-summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 28px;
+  padding: 10px 0;
+  border-block: 1px solid var(--border);
+}
+.coverage-line strong,
+.style-summary strong {
+  color: var(--text);
+  font-weight: 500;
+}
+.sector-field {
+  margin-top: 18px;
+}
+.sector-field > button {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(230px, 1.3fr) 100px 120px;
+  width: 100%;
+  min-height: 52px;
+  align-items: center;
+  gap: 16px;
+  padding: 0 12px 0 0;
+  border: 0;
+  border-bottom: 1px solid var(--hairline);
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+.sector-field > button > i {
+  position: absolute;
+  inset: 8px auto 8px 0;
+  z-index: -1;
+  width: max(2px, calc(var(--sector-weight) * 100%));
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border-left: 2px solid color-mix(in srgb, var(--accent) 50%, transparent);
+  transition:
+    width 500ms var(--ease),
+    background 200ms var(--ease);
+}
+.sector-field > button span {
+  display: grid;
+  padding-left: 12px;
+}
+.sector-field > button strong {
+  font-size: 12px;
+  font-weight: 500;
+}
+.sector-field > button small,
+.sector-field > button em {
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 9px;
+  font-style: normal;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.sector-field > button b {
+  font-size: 18px;
+  font-weight: 500;
+  text-align: right;
+}
+.sector-field > button[aria-pressed="true"] {
+  background: var(--accent-soft);
+}
+.sector-field > button[aria-pressed="true"] > i {
+  background: color-mix(in srgb, var(--accent) 25%, transparent);
+}
+.lens-detail {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  gap: 32px;
+  margin-top: 22px;
+  padding: 24px;
+  border: 1px solid var(--border);
+  background: var(--inset);
+}
+.lens-detail > div:first-child {
+  display: grid;
+  align-content: start;
+}
+.lens-detail h3 {
+  font-size: 20px;
+}
+.lens-detail > div:first-child > strong {
+  margin-top: 8px;
+  font-size: 42px;
+  line-height: 1;
+  letter-spacing: -0.05em;
+}
+.lens-detail > div:first-child > span {
+  margin-top: 14px;
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 9px;
+  text-transform: uppercase;
+}
+.exposure-drilldown {
+  display: grid;
+  align-content: start;
+}
+.exposure-drilldown button {
+  display: grid;
+  grid-template-columns: 80px repeat(3, 1fr);
+  gap: 14px;
+  align-items: center;
+  min-height: 52px;
+  padding: 7px 0;
+  border: 0;
+  border-bottom: 1px solid var(--hairline);
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+.exposure-drilldown button > span {
+  display: grid;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.exposure-drilldown small {
+  color: var(--faint);
+  font-size: 8px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.exposure-drilldown button[data-focus="dim"] {
+  opacity: 0.28;
+}
+.security-proxy-compare {
+  grid-column: 2;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 20px;
+}
+.security-proxy-compare > div {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 5px 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.security-proxy-compare > div > strong {
+  grid-column: 1 / -1;
+}
+.security-proxy-compare span {
+  display: contents;
+  color: var(--muted);
+  font-size: 10px;
+}
+.style-summary {
+  justify-content: space-between;
+}
+.style-axis {
+  display: grid;
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.style-axis-top {
+  grid-template-columns: repeat(3, 1fr);
+  margin: 18px 0 7px 68px;
+  text-align: center;
+}
+.style-layout {
+  display: grid;
+  grid-template-columns: 54px 1fr;
+  gap: 14px;
+}
+.style-axis-side {
+  grid-template-rows: repeat(3, 1fr);
+  align-items: center;
+}
+.style-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  min-height: 470px;
+  border: 1px solid var(--border);
+}
+.style-grid button {
+  display: grid;
+  align-content: space-between;
+  padding: 20px;
+  border: 0;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  background: color-mix(
+    in srgb,
+    var(--accent) calc(3% + var(--cell-weight) * 75%),
+    var(--surface)
+  );
+  color: var(--text);
+  text-align: left;
+}
+.style-grid button:nth-child(3n) {
+  border-right: 0;
+}
+.style-grid button:nth-last-child(-n + 3) {
+  border-bottom: 0;
+}
+.style-grid button span {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.style-grid button strong {
+  font-size: clamp(20px, 3vw, 38px);
+  font-weight: 500;
+  letter-spacing: -0.05em;
+}
+.style-grid button[aria-pressed="true"] {
+  outline: 1px solid var(--accent);
+  outline-offset: -2px;
+  background: color-mix(
+    in srgb,
+    var(--accent) calc(10% + var(--cell-weight) * 85%),
+    var(--surface)
+  );
+}
+.style-detail {
+  margin-left: 68px;
+}
+.profile-provenance {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 24px;
+  margin: 18px 0 0 68px;
+  padding-top: 12px;
+  border-top: 1px solid var(--hairline);
+}
+.profile-provenance p {
+  flex-basis: 100%;
+  margin: 0;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.profile-provenance .text-action {
+  margin-left: auto;
+  font: inherit;
+}
+
+@media (max-width: 800px) {
+  .xray-facts {
+    grid-template-columns: 1fr;
+  }
+  .xray-lead {
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .xray-facts dl {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .allocation-field {
+    overflow-x: auto;
+  }
+  .allocation-field button {
+    flex-basis: max(70px, calc(var(--weight) * 390px));
+  }
+  .sector-field > button {
+    grid-template-columns: 1fr auto;
+    padding-right: 6px;
+  }
+  .sector-field > button em {
+    display: none;
+  }
+  .lens-detail {
+    grid-template-columns: 1fr;
+    padding: 18px;
+  }
+  .security-proxy-compare {
+    grid-column: 1;
+    grid-template-columns: 1fr;
+  }
+  .exposure-drilldown button {
+    grid-template-columns: 55px repeat(3, 1fr);
+    gap: 7px;
+  }
+  .style-layout {
+    grid-template-columns: 36px 1fr;
+    gap: 8px;
+  }
+  .style-axis-top,
+  .style-detail,
+  .profile-provenance {
+    margin-left: 44px;
+  }
+  .style-grid {
+    min-height: 390px;
+  }
+  .style-grid button {
+    padding: 10px;
+  }
+}
+@media (max-width: 420px) {
+  .xray-facts dl {
+    grid-template-columns: 1fr 1fr;
+  }
+  .xray-facts dl div {
+    padding: 12px;
+  }
+  .exposure-drilldown button {
+    grid-template-columns: 52px 1fr 1fr;
+  }
+  .exposure-drilldown button span:nth-of-type(2) {
+    display: none;
+  }
+  .style-grid {
+    min-height: 330px;
+  }
+  .style-grid button span {
+    font-size: 7px;
+  }
+}
+
+
 /* ---------- Section headings: numbering, motif, dotted texture ---------- */
 .section-heading {
   position: relative;

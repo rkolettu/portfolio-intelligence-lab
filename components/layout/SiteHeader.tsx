@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useWorkspace } from "@/components/workspace/WorkspaceProvider";
 
 export const ANALYSIS_ROUTES: { href: string; label: string }[] = [
+  { href: "/analysis/portfolio", label: "Your Portfolio" },
   { href: "/analysis/overview", label: "Overview" },
   { href: "/analysis/performance", label: "Performance" },
   { href: "/analysis/benchmark", label: "Benchmark" },
