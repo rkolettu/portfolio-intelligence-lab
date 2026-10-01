@@ -13,6 +13,10 @@ import type {
 import type { TreasuryProvider } from "@/lib/treasury-data/types";
 import { YahooProvider } from "@/lib/market-data/providers/yahoo";
 import { FredProvider } from "@/lib/treasury-data/historical";
+import {
+  FallbackTreasuryProvider,
+  TreasuryGovProvider,
+} from "@/lib/treasury-data/treasuryGov";
 import { DataCache } from "./cache";
 import { PROVIDER_POLICY } from "@/config/providers";
 import {
@@ -57,7 +61,10 @@ export const services: DataServices = {
     : PROVIDER_POLICY.yahooEnabled
       ? yahoo
       : deployedQuoteProvider && assertQualified(deployedQuoteProvider),
-  treasury: new FredProvider(),
+  treasury: new FallbackTreasuryProvider(
+    new FredProvider(),
+    new TreasuryGovProvider(),
+  ),
   cache: new DataCache(),
 };
 export async function analyze(
