@@ -12,6 +12,7 @@ import { StatusNotice } from "@/components/ui/StatusNotice";
 import { Segmented } from "@/components/ui/Segmented";
 import { useSlot } from "@/components/workspace/WorkspaceProvider";
 import { StressEventDetail } from "./StressEventDetail";
+import { MarketSpine } from "@/components/observatory/MarketSpine";
 
 type Load =
   | { state: "loading" }
@@ -44,51 +45,6 @@ const loaded = (r: Result<StressAnalytics>): Load =>
 
 const tone = (m: { available: boolean; value?: number }) =>
   m.available && m.value! !== 0 ? (m.value! > 0 ? "is-pos" : "is-neg") : undefined;
-
-/** Event windows on one shared time axis: the selected event is the bright one. */
-function StressTimeline({
-  events,
-  selected,
-  today,
-}: {
-  events: { id: string; start: string; end: string }[];
-  selected: string;
-  today: string;
-}) {
-  if (!events.length) return null;
-  const t = (d: string) => Date.parse(`${d}T00:00:00Z`);
-  const lo = Math.min(...events.map((e) => t(e.start)));
-  const hi = Math.max(...events.map((e) => t(e.end)), t(today));
-  const at = (d: string) => ((t(d) - lo) / (hi - lo || 1)) * 100;
-  const firstYear = new Date(lo).getUTCFullYear();
-  const lastYear = new Date(hi).getUTCFullYear();
-  const step = lastYear - firstYear > 12 ? 5 : 2;
-  return (
-    <div className="stress-timeline" aria-hidden>
-      {Array.from(
-        { length: Math.floor((lastYear - firstYear) / step) + 1 },
-        (_, i) => firstYear + i * step,
-      ).map((y) => (
-        <span
-          key={y}
-          className="tl-tick"
-          style={{ left: `${at(`${y}-01-01`)}%` }}
-        />
-      ))}
-      {events.map((e) => (
-        <span
-          key={e.id}
-          className="tl-event"
-          data-on={e.id === selected ? "" : undefined}
-          style={{
-            left: `${at(e.start)}%`,
-            width: `max(4px, ${at(e.end) - at(e.start)}%)`,
-          }}
-        />
-      ))}
-    </div>
-  );
-}
 
 function Row({ e }: { e: StressTestResult }) {
   const cell = (
@@ -240,15 +196,25 @@ export function StressLab({
   const timeline = [
     ...events.map((e) => ({
       id: e.id,
+      name: SHORT[e.id] ?? e.name,
       start: e.startDate ?? e.requestedStartDate,
       end: e.endDate ?? e.requestedEndDate,
+      value:
+        e.status === "complete" && e.portfolioReturn.available
+          ? e.portfolioReturn.value
+          : null,
     })),
     ...(customEvent
       ? [
           {
             id: "custom",
+            name: "Custom",
             start: customEvent.startDate ?? customEvent.requestedStartDate,
             end: customEvent.endDate ?? customEvent.requestedEndDate,
+            value:
+              customEvent.status === "complete" && customEvent.portfolioReturn.available
+                ? customEvent.portfolioReturn.value
+                : null,
           },
         ]
       : []),
@@ -342,11 +308,25 @@ export function StressLab({
               value={selected}
               onChange={setSelected}
             />
-            <StressTimeline
-              events={timeline}
-              selected={selected}
-              today={today}
-            />
+            {timeline.length > 0 && (
+              <MarketSpine
+                className="stress-spine"
+                scan={false}
+                data={{
+                  kind: "events",
+                  events: timeline,
+                  selected: timeline.some((t) => t.id === selected) ? selected : null,
+                  bracket: [config.requestedStartDate, config.endDate],
+                  today,
+                }}
+                label="Spine / slice through history · portfolio return"
+                caption={
+                  event
+                    ? `${event.startDate ?? event.requestedStartDate} → ${event.endDate ?? event.requestedEndDate}`
+                    : undefined
+                }
+              />
+            )}
           </div>
           {selected !== "custom" && event && (
             <StressEventDetail event={event} benchmark={config.benchmark} />

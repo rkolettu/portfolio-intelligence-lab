@@ -43,11 +43,12 @@ function fromOklab([L, A, B]: Rgb): string {
   );
 }
 
-/** Reference diverging pair (dark mode): blue ↔ red around neutral #383835. */
+/** Diverging pair on paper: blue ↔ red around a light warm neutral; each arm
+ * darkens away from zero. */
 export const DIVERGING = {
-  negative: "#3987e5",
-  midpoint: "#383835",
-  positive: "#e66767",
+  negative: "#1d4ed8",
+  midpoint: "#ebe6dd",
+  positive: "#b8322c",
 } as const;
 
 /** Background color for a value in [−1, 1]; 0 is the neutral midpoint. */

@@ -13,6 +13,7 @@ import { ReturnContribution } from "@/components/risk/ReturnContribution";
 import { simulate } from "@/lib/backtest/engine";
 import {
   contrast,
+  DIVERGING,
   divergingColor,
   inkFor,
   toOklab,
@@ -90,13 +91,14 @@ const hedge = () => {
 };
 
 it("diverging scale: neutral midpoint at 0, monotonic OKLab lightness on each arm, readable ink", () => {
-  expect(divergingColor(0)).toBe("#383835");
+  expect(divergingColor(0)).toBe(DIVERGING.midpoint);
   for (const sign of [-1, 1]) {
     const L = Array.from(
       { length: 11 },
       (_, i) => toOklab(divergingColor((sign * i) / 10))[0],
     );
-    L.slice(1).forEach((x, i) => expect(x).toBeGreaterThan(L[i]));
+    // Paper theme: lightness falls monotonically away from the neutral midpoint.
+    L.slice(1).forEach((x, i) => expect(x).toBeLessThan(L[i]));
   }
   for (let v = -1; v <= 1.0001; v += 0.05) {
     const bg = divergingColor(v);

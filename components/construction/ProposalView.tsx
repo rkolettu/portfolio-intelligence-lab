@@ -1,5 +1,7 @@
 "use client";
 import type { ReactNode } from "react";
+import { TickerChip } from "@/components/observatory/Dossier";
+import { ConstructionField } from "./ConstructionField";
 import type { Metric } from "@/lib/types/analytics";
 import type {
   ConstructionAnalytics,
@@ -187,6 +189,7 @@ export function ProposalView({
       {!usable && diagnostics}
       {usable && (
         <>
+          <ConstructionField analytics={analytics} proposal={p} />
           <AllocationCompare
             key={p.method}
             rows={weightRows}
@@ -229,7 +232,7 @@ export function ProposalView({
                       {...focusHandlers(holdingFocus, [w.ticker])}
                     >
                       <td>
-                        {w.ticker}
+                        <TickerChip ticker={w.ticker} focusable={false} />
                         {w.ticker === "CASH" && (
                           <span className="cr-tag">fixed CASH</span>
                         )}

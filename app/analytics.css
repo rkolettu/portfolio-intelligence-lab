@@ -454,7 +454,7 @@
   height: 64px;
   background-image: radial-gradient(
     circle,
-    rgba(244, 241, 234, 0.1) 0.9px,
+    rgba(23, 23, 23, 0.1) 0.9px,
     transparent 1.2px
   );
   background-size: 12px 12px;
@@ -593,11 +593,11 @@
 }
 .kpi-delta[data-dir="down"] {
   color: var(--accent);
-  border-color: rgba(158, 185, 246, 0.4);
+  border-color: rgba(29, 78, 216, 0.4);
 }
 .kpi-delta[data-dir="up"] {
   color: var(--warning);
-  border-color: rgba(230, 188, 130, 0.4);
+  border-color: rgba(154, 91, 18, 0.4);
 }
 
 /* ---------- KPI strips: label / value / context / micro-visual ---------- */
@@ -801,11 +801,17 @@
   max-height: calc(100dvh - 32px);
   overflow-y: auto;
 }
-.info-tip:hover .tip,
 .info-tip:focus-within .tip,
 .info-tip[data-open] .tip {
   display: block;
   animation: tick-in 150ms var(--ease) both;
+}
+/* Touch browsers keep :hover at the last tap point; only real hover opens. */
+@media (hover: hover) {
+  .info-tip:hover .tip {
+    display: block;
+    animation: tick-in 150ms var(--ease) both;
+  }
 }
 .info-tip[data-dismissed] .tip {
   display: none !important;
@@ -895,7 +901,7 @@
   top: 0.5px;
   width: 3px;
   height: 6px;
-  border: solid #121211;
+  border: solid var(--bg);
   border-width: 0 1.6px 1.6px 0;
   transform: rotate(45deg);
 }
@@ -1101,7 +1107,7 @@
   background: var(--surface-hover);
   box-shadow:
     0 0 0 1px var(--border-strong) inset,
-    0 1px 2px rgba(0, 0, 0, 0.45);
+    0 1px 2px rgba(36, 31, 24, 0.099);
   pointer-events: none;
 }
 .segmented[data-thumb="settled"] .seg-thumb {
@@ -1206,7 +1212,7 @@
 .cr-insight em {
   align-self: center;
   padding: 0 8px;
-  border: 1px solid rgba(230, 188, 130, 0.45);
+  border: 1px solid rgba(154, 91, 18, 0.45);
   border-radius: 10px;
   color: var(--warning);
   font-family: var(--mono);
@@ -1235,7 +1241,7 @@
 }
 @media (hover: hover) {
   .cr-row:not(.cr-axis):hover {
-    background: rgba(244, 241, 234, 0.025);
+    background: rgba(23, 23, 23, 0.025);
   }
 }
 .cr-row[data-focusable] {
@@ -1246,7 +1252,7 @@
   opacity: 0.5;
 }
 .cr-row[data-focus="on"] {
-  background: rgba(158, 185, 246, 0.06);
+  background: rgba(29, 78, 216, 0.06);
 }
 .cr-ticker {
   display: flex;
@@ -1272,7 +1278,7 @@
 }
 .cr-tag-hedge {
   color: var(--accent);
-  border-color: rgba(158, 185, 246, 0.45);
+  border-color: rgba(29, 78, 216, 0.45);
 }
 .cr-track {
   position: relative;
@@ -1283,10 +1289,10 @@
   top: 0;
   bottom: 0;
   width: 1px;
-  background: rgba(244, 241, 234, 0.055);
+  background: rgba(23, 23, 23, 0.055);
 }
 .cr-zero {
-  background: rgba(244, 241, 234, 0.42);
+  background: rgba(23, 23, 23, 0.42);
 }
 .cr-bar {
   position: absolute;
@@ -1488,10 +1494,10 @@
   height: 14px;
 }
 .sh-gain {
-  background: rgba(143, 207, 169, 0.78);
+  background: rgba(40, 114, 82, 0.78);
 }
 .sh-loss {
-  background-color: rgba(240, 160, 143, 0.82);
+  background-color: rgba(164, 62, 57, 0.82);
 }
 .sh-axis .cr-tick:first-child {
   transform: none;
@@ -1648,7 +1654,7 @@
   transform: scale(1.14);
   box-shadow:
     0 0 0 1.5px var(--text),
-    0 8px 18px rgba(0, 0, 0, 0.55);
+    0 8px 18px rgba(36, 31, 24, 0.121);
 }
 .heat-diagonal {
   opacity: 0.55;
@@ -1727,19 +1733,23 @@
 /* ---------- Return contribution ---------- */
 .contribution-table td:nth-child(4),
 .contribution-table th:nth-child(4) {
-  width: 32%;
+  width: 38%;
 }
 .rc-bar-cell {
   position: relative;
   height: 36px;
 }
+/* The bars live in an inset track so they never touch the panel edge. */
+.rc-track {
+  position: absolute;
+  inset: 0 24px 0 28px;
+}
 .rc-axis {
   position: absolute;
   top: 8px;
   bottom: 8px;
-  left: 50%;
   width: 1px;
-  background: rgba(244, 241, 234, 0.42);
+  background: rgba(23, 23, 23, 0.42);
 }
 .rc-bar {
   position: absolute;
@@ -1771,6 +1781,12 @@ tbody tr[data-focus="on"] td:first-child {
 }
 .contribution-table tfoot td:last-child {
   font-size: 10px;
+  text-align: right;
+}
+.rc-note {
+  margin: 0;
+  padding: 2px 18px 16px;
+  white-space: normal;
 }
 
 /* ---------- Drawdown statistics ---------- */
@@ -1879,7 +1895,7 @@ tbody tr[data-focus="on"] td:first-child {
 .tl-event[data-on] {
   height: 15px;
   background: var(--warning);
-  box-shadow: 0 0 14px rgba(230, 188, 130, 0.35);
+  box-shadow: 0 0 14px rgba(154, 91, 18, 0.35);
 }
 .stress-detail {
   margin-top: 14px;
@@ -1907,7 +1923,7 @@ tbody tr[data-focus="on"] td:first-child {
   animation: tick-in 320ms var(--ease) both;
 }
 .stress-detail .chart-figure {
-  border-top-color: rgba(230, 188, 130, 0.45);
+  border-top-color: rgba(154, 91, 18, 0.45);
 }
 .stress-overview td.is-pos {
   color: var(--positive);
@@ -2037,7 +2053,7 @@ tbody tr[data-focus="on"] td:first-child {
   top: 1.5px;
   width: 4px;
   height: 8px;
-  border: solid #121211;
+  border: solid var(--bg);
   border-width: 0 1.8px 1.8px 0;
   transform: rotate(45deg);
 }
@@ -2046,7 +2062,7 @@ tbody tr[data-focus="on"] td:first-child {
   position: absolute;
   inset: 4px;
   border-radius: 50%;
-  background: #121211;
+  background: var(--bg);
 }
 .cash-choice {
   display: flex;
@@ -2086,7 +2102,7 @@ tbody tr[data-focus="on"] td:first-child {
   font-size: 12.5px;
   box-shadow:
     0 1px 0 rgba(255, 255, 255, 0.5) inset,
-    0 0 0 3px rgba(244, 241, 234, 0.08);
+    0 0 0 3px rgba(23, 23, 23, 0.08);
 }
 .cta-icon {
   width: 14px;
@@ -2191,7 +2207,7 @@ tbody tr[data-focus="on"] td:first-child {
   position: absolute;
   inset: 0 auto 0 0;
   border-radius: 2px;
-  background: rgba(244, 241, 234, 0.2);
+  background: rgba(23, 23, 23, 0.2);
   transition: width var(--dur-3) var(--ease);
 }
 .wm-cur::after {

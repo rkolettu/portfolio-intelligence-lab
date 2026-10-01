@@ -355,7 +355,7 @@ export function DrawdownLab({
                 <ReferenceArea
                   x1={episode.peakDate}
                   x2={episode.recoveryDate ?? lastDate}
-                  fill="#9eb9f6"
+                  fill="#1d4ed8"
                   fillOpacity={0.055}
                   stroke="none"
                 />
@@ -448,7 +448,7 @@ export function DrawdownLab({
                       ? {
                           value: `Max ${percent(episode.depth)}`,
                           position: "bottom",
-                          fill: "#f4f1ea",
+                          fill: "#171717",
                           fontSize: 11,
                         }
                       : undefined

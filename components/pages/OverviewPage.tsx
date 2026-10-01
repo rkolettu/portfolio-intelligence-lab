@@ -18,6 +18,8 @@ import { CurrentMarket } from "@/components/portfolio/CurrentMarket";
 import { LineageSection } from "@/components/portfolio/LineageSection";
 import { useWorkspace } from "@/components/workspace/WorkspaceProvider";
 import { ResultTag, StaleResultNotice, withAnalysis } from "./shared";
+import { Constellation } from "@/components/observatory/Constellation";
+import { TickerChip, useDossier } from "@/components/observatory/Dossier";
 
 /** Short statements restating metrics the engine already computed; nothing here
  * derives a new statistic. Each links to the page that explains it. */
@@ -152,17 +154,18 @@ const OverviewBody = withAnalysis(function OverviewBody({ result, status }) {
             <h3 id="alloc-title" className="side-title">
               Analyzed allocation
             </h3>
+            <OverviewConstellation result={result} />
             <ul className="weight-list">
               {holdings.map((h, i) => (
                 <li key={h.ticker}>
-                  <span>{h.ticker}</span>
+                  <TickerChip ticker={h.ticker} />
                   <i
                     aria-hidden
                     style={{
                       width: `${(h.weight / largest) * 100}%`,
                       background:
                         h.ticker === "CASH"
-                          ? "#6d6a63"
+                          ? "#b7b0a4"
                           : allocationColor(i, holdings.length),
                     }}
                   />
@@ -243,6 +246,41 @@ const OverviewBody = withAnalysis(function OverviewBody({ result, status }) {
     </section>
   );
 });
+
+/** Capital as node area, risk share as the offset shadow, correlation on hover. */
+function OverviewConstellation({ result }: { result: BacktestResult }) {
+  const dossier = useDossier();
+  const r = result.riskAnalytics;
+  const pcr = new Map(
+    r.holdings.map((h) => [h.ticker, h.percentage.available ? h.percentage.value : null]),
+  );
+  return (
+    <div className="overview-object">
+      <Constellation
+        nodes={result.config.holdings
+          .filter((h) => h.weight > 0)
+          .map((h) => ({
+            ticker: h.ticker,
+            weight: h.weight,
+            risk: h.ticker === "CASH" ? null : Math.max(0, pcr.get(h.ticker) ?? 0),
+            riskless: h.ticker === "CASH",
+          }))}
+        width={420}
+        height={300}
+        fill={0.2}
+        correlation={
+          r.correlation.available
+            ? { tickers: r.correlation.tickers, matrix: r.correlation.matrix }
+            : null
+        }
+        linked
+        annotate={false}
+        onSelect={(t, el) => dossier?.(t, el)}
+        label="Portfolio constellation: node area is capital weight; the offset outline is each holding's share of risk."
+      />
+    </div>
+  );
+}
 
 /** Current market context and lineage read live workspace state (quotes arrive
  * independently), so they sit outside the memoized report body. */

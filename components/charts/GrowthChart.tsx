@@ -1,5 +1,5 @@
 "use client";
-import { useState, type CSSProperties } from "react";
+import { useMemo, useState, type CSSProperties } from "react";
 import {
   CartesianGrid,
   Line,
@@ -31,6 +31,7 @@ import {
   signedMoney,
 } from "@/lib/utils/format";
 import { ChartTooltip } from "./ChartTooltip";
+import { LensCursor } from "./Lens";
 import { activeDot, endLabel, ExtremumMark } from "./markers";
 import {
   CHART,
@@ -45,17 +46,32 @@ function GrowthTooltip({
   active,
   payload,
   label,
-}: TooltipContentProps<TooltipValueType, string | number>) {
+  drawdown,
+}: TooltipContentProps<TooltipValueType, string | number> & {
+  drawdown?: Map<string, number>;
+}) {
   if (!active || !payload?.length) return null;
   const [first, second] = payload;
+  const dd = drawdown?.get(String(label));
   return (
     <ChartTooltip
       date={shortDate(String(label))}
-      rows={payload.map((p) => ({
-        color: String(p.color),
-        label: String(p.name),
-        value: money(Number(p.value)),
-      }))}
+      rows={[
+        ...payload.map((p) => ({
+          color: String(p.color),
+          label: String(p.name),
+          value: money(Number(p.value)),
+        })),
+        ...(dd !== undefined
+          ? [
+              {
+                color: "transparent",
+                label: "Portfolio drawdown",
+                value: dd === 0 ? "At peak" : `${(dd * 100).toFixed(2)}%`,
+              },
+            ]
+          : []),
+      ]}
       foot={
         second && (
           <div className="tt-foot">
@@ -83,6 +99,10 @@ export function GrowthChart({
   const benchmarkOk = result.benchmark.ok;
   const [compare, setCompare] = useState(benchmarkOk);
   const withBenchmark = compare && benchmarkOk;
+  const drawdown = useMemo(
+    () => new Map(result.performance.drawdown.map((d) => [d.date, d.drawdown])),
+    [result.performance.drawdown],
+  );
   const full = growthData(result, withBenchmark);
   const data = downsample<GrowthDatum>(full, MAX_POINTS, (d) =>
     d.benchmark === undefined ? [d.portfolio] : [d.portfolio, d.benchmark],
@@ -221,12 +241,8 @@ export function GrowthChart({
               />
             )}
             <Tooltip
-              content={GrowthTooltip}
-              cursor={{
-                stroke: CHART.reference,
-                strokeWidth: 1,
-                strokeDasharray: "2 3",
-              }}
+              content={(props) => <GrowthTooltip {...props} drawdown={drawdown} />}
+              cursor={<LensCursor />}
               isAnimationActive={false}
             />
             <Line

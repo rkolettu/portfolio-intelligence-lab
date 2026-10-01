@@ -11,13 +11,16 @@ import {
 } from "@/components/ui/HoldingFocus";
 import { Segmented } from "@/components/ui/Segmented";
 import { useFlip } from "@/components/ui/useFlip";
+import { Constellation, type Correlation } from "@/components/observatory/Constellation";
+import { TickerChip, useDossier } from "@/components/observatory/Dossier";
 
-const CAPITAL = "#8d8880";
-const RISK = "#3987e5";
+/** Capital is warm paper, risk the family blue: the Risk Shadow pair. */
+const CAPITAL = "#b3aa9c";
+const RISK = "#1d4ed8";
 
 type View = "both" | "capital" | "risk";
 const VIEWS: { value: View; label: string }[] = [
-  { value: "both", label: "Overlay" },
+  { value: "both", label: "Shadow" },
   { value: "capital", label: "Capital" },
   { value: "risk", label: "Risk" },
 ];
@@ -27,8 +30,15 @@ const VIEWS: { value: View; label: string }[] = [
  * arithmetic here is the difference between two displayed values (risk − capital).
  * Switching the view morphs one bar between the two values while a dashed outline
  * keeps the other in place, so the gap reads as a movement, not two charts. */
-export function CapitalVsRisk({ holdings }: { holdings: HoldingRisk[] }) {
+export function CapitalVsRisk({
+  holdings,
+  correlation = null,
+}: {
+  holdings: HoldingRisk[];
+  correlation?: Correlation;
+}) {
   const [view, setView] = useState<View>("both");
+  const dossier = useDossier();
   const holdingFocus = useHoldingFocus();
   const { focus, setFocus } = holdingFocus;
   const rows = useFlip<HTMLDivElement>(holdings.map((h) => h.ticker).join());
@@ -122,6 +132,7 @@ export function CapitalVsRisk({ holdings }: { holdings: HoldingRisk[] }) {
           onChange={setView}
         />
       </div>
+      <div className="cr-body">
       <div
         className="cr-rows"
         role="list"
@@ -149,7 +160,7 @@ export function CapitalVsRisk({ holdings }: { holdings: HoldingRisk[] }) {
               {...focusHandlers(holdingFocus, [h.ticker])}
             >
               <span className="cr-ticker">
-                {h.ticker}
+                <TickerChip ticker={h.ticker} focusable={false} />
                 {h.riskless && <span className="cr-tag">riskless</span>}
                 {risk !== null && risk < 0 && (
                   <span className="cr-tag cr-tag-hedge">hedge</span>
@@ -199,10 +210,10 @@ export function CapitalVsRisk({ holdings }: { holdings: HoldingRisk[] }) {
                         ...bar(ghost),
                         borderColor:
                           view === "risk"
-                            ? "rgba(244,241,234,0.55)"
-                            : "rgba(96,160,255,0.75)",
+                            ? "rgba(23,23,23,0.5)"
+                            : "rgba(29,78,216,0.75)",
                         ["--ghost" as string]:
-                          view === "risk" ? "#f4f1ea" : "#7db2ff",
+                          view === "risk" ? "#171717" : "#1d4ed8",
                       } as CSSProperties
                     }
                   />
@@ -250,6 +261,35 @@ export function CapitalVsRisk({ holdings }: { holdings: HoldingRisk[] }) {
             <span>Δ</span>
           </span>
         </div>
+      </div>
+      <div className="cr-object" aria-hidden={false}>
+        <Constellation
+          nodes={holdings.map((h) => ({
+            ticker: h.ticker,
+            weight: h.weight,
+            risk: h.percentage.available ? Math.max(0, h.percentage.value) : null,
+            riskless: h.riskless,
+          }))}
+          width={520}
+          height={420}
+          fill={0.16}
+          mode={view === "risk" ? "risk" : "capital"}
+          correlation={correlation}
+          linked
+          annotate={false}
+          onSelect={(t, el) => dossier?.(t, el)}
+          label={`Constellation of capital and risk. ${view === "risk" ? "Risk contribution is solid, capital outlined." : "Capital is solid, risk contribution is the offset outline."}`}
+        />
+        <p className="cr-object-key" aria-hidden>
+          <span>
+            <i data-k="cap" /> Capital
+          </span>
+          <span>
+            <i data-k="risk" /> Risk share
+          </span>
+          <span>Offset ∝ |risk − capital|</span>
+        </p>
+      </div>
       </div>
     </figure>
   );

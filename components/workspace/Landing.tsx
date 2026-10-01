@@ -1,17 +1,19 @@
 "use client";
 import { useEffect, type CSSProperties } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { samplePortfolio } from "@/config/samplePortfolio";
 import { toDraft } from "@/lib/state/portfolioReducer";
 import { fixed } from "@/lib/utils/format";
 import { errorState } from "@/lib/ui/quality";
-import { Hero } from "@/components/hero/Hero";
+import { Observatory } from "@/components/observatory/Observatory";
 import {
   AllocationStrip,
   allocationColor,
 } from "@/components/ui/AllocationStrip";
 import { StatusNotice } from "@/components/ui/StatusNotice";
 import { AnalysisProgress } from "./AnalysisProgress";
+import { TickerCombobox } from "./TickerCombobox";
 import { useWorkspace } from "./WorkspaceProvider";
 import type { Period } from "@/lib/types/portfolio";
 
@@ -65,14 +67,19 @@ export function Landing() {
   const balanced = Math.abs(gap) <= 0.0001;
   return (
     <>
-      <Hero
-        holdings={draft.holdings.map((h) => ({
-          ticker: h.ticker.trim().toUpperCase(),
-          weight: Number.isFinite(Number(h.weight)) ? Number(h.weight) : 0,
-        }))}
+      <Observatory
+        draft={stripHoldings}
+        period={{
+          start: draft.requestedStartDate,
+          end: draft.endDate,
+          label: draft.period,
+        }}
+        benchmark={draft.benchmark || "—"}
+        pending={pending}
+        onUseMix={(holdings) => edit({ type: "replace", draft: { ...draft, holdings } })}
         onAnalyze={() => analyzeSample()}
         onBuild={() => focusField("ticker-0")}
-      />
+      >
       {notice && (
         <StatusNotice tone="info" role="status">
           {notice}
@@ -110,21 +117,12 @@ export function Landing() {
                 <label className="sr-only" htmlFor={`ticker-${i}`}>
                   Ticker {i + 1}
                 </label>
-                <input
-                  id={`ticker-${i}`}
-                  aria-label={`Ticker ${i + 1}`}
-                  aria-invalid={i === failedIndex || undefined}
+                <TickerCombobox
+                  index={i}
                   value={h.ticker}
-                  maxLength={12}
-                  autoComplete="off"
-                  spellCheck={false}
-                  onChange={(e) =>
-                    edit({
-                      type: "holding",
-                      index: i,
-                      field: "ticker",
-                      value: e.target.value,
-                    })
+                  invalid={i === failedIndex}
+                  onChange={(value) =>
+                    edit({ type: "holding", index: i, field: "ticker", value })
                   }
                 />
                 <label className="sr-only" htmlFor={`weight-${i}`}>
@@ -246,15 +244,17 @@ export function Landing() {
                 <label htmlFor="custom-benchmark">
                   Custom benchmark ticker
                 </label>
-                <input
+                <TickerCombobox
                   id="custom-benchmark"
+                  ariaLabel="Custom benchmark ticker"
                   value={draft.benchmark}
-                  aria-invalid={failedBenchmark || undefined}
-                  onChange={(e) =>
+                  invalid={failedBenchmark}
+                  includeCash={false}
+                  onChange={(value) =>
                     edit({
                       type: "field",
                       field: "benchmark",
-                      value: e.target.value,
+                      value,
                     })
                   }
                 />
@@ -382,7 +382,12 @@ export function Landing() {
           </div>
         </div>
       </form>
-      {pending && stage && (
+      {pending &&
+        stage &&
+        typeof document !== "undefined" &&
+        // Portaled above every stacking context (the stage's pucks included).
+        createPortal(
+        <div className="engine-dock">
         <AnalysisProgress
           stage={stage}
           woke={woke}
@@ -397,7 +402,9 @@ export function Landing() {
               : undefined
           }
         />
-      )}
+        </div>,
+          document.body,
+        )}
       {error && (
         <StatusNotice
           tone={errorState(error.code).tone}
@@ -495,6 +502,7 @@ export function Landing() {
           </Link>
         </div>
       )}
+      </Observatory>
     </>
   );
 }
