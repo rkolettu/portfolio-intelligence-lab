@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { BacktestResult } from "@/lib/types/analytics";
 import { count, timestamp } from "@/lib/utils/format";
 
@@ -41,9 +41,25 @@ function Topic({
   title: string;
   children: ReactNode;
 }) {
+  const [gistOpen, setGistOpen] = useState(true);
   return (
-    <section className="method-topic" aria-labelledby={`method-${id}`}>
-      <h3 id={`method-${id}`}>{title}</h3>
+    <section
+      className="method-topic"
+      aria-labelledby={`method-${id}`}
+      data-gist-open={gistOpen ? "true" : "false"}
+    >
+      <div className="method-topic-head">
+        <h3 id={`method-${id}`}>{title}</h3>
+        <button
+          type="button"
+          className="method-gist-toggle"
+          aria-expanded={gistOpen}
+          onClick={() => setGistOpen((open) => !open)}
+        >
+          <span className="method-gist-toggle-icon" aria-hidden="true">i</span>
+          {gistOpen ? "Hide gist" : "Show gist"}
+        </button>
+      </div>
       {children}
     </section>
   );
@@ -64,8 +80,11 @@ function Facts({ rows }: { rows: [string, ReactNode][] }) {
 
 function PlainEnglish({ children }: { children: ReactNode }) {
   return (
-    <aside className="method-plain" aria-label="Plain English explanation">
-      <span className="method-plain-label">Plain English</span>
+    <aside className="method-plain" aria-label="Quick explanation">
+      <span className="method-plain-label">
+        <span className="method-plain-icon" aria-hidden="true">i</span>
+        The gist
+      </span>
       <p>{children}</p>
     </aside>
   );
@@ -132,6 +151,53 @@ export function MethodologyDrawer({
       }}
     >
       <style>{`
+        .method-topic-head {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+        }
+        .method-topic-head h3 {
+          margin-bottom: 0;
+        }
+        .method-gist-toggle {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          min-height: 28px;
+          padding: 4px 8px;
+          border: 1px solid var(--border);
+          border-radius: 999px;
+          background: transparent;
+          color: var(--muted);
+          font-family: var(--mono);
+          font-size: 9px;
+          font-weight: 600;
+          letter-spacing: 0.06em;
+          text-transform: uppercase;
+          white-space: nowrap;
+        }
+        .method-gist-toggle:hover {
+          border-color: var(--accent-line);
+          color: var(--accent);
+          background: var(--accent-soft);
+        }
+        .method-gist-toggle-icon,
+        .method-plain-icon {
+          display: inline-grid;
+          place-items: center;
+          width: 13px;
+          height: 13px;
+          flex: 0 0 13px;
+          border: 1px solid currentColor;
+          border-radius: 50%;
+          font-family: inherit;
+          font-size: 8px;
+          font-weight: 700;
+          letter-spacing: 0;
+          line-height: 1;
+          text-transform: none;
+        }
         .method-plain {
           margin: 8px 0 16px;
           padding: 10px 12px 11px;
@@ -140,8 +206,13 @@ export function MethodologyDrawer({
           border-radius: 4px;
           background: rgba(29, 78, 216, 0.045);
         }
+        .method-topic[data-gist-open="false"] .method-plain {
+          display: none;
+        }
         .method-plain-label {
-          display: block;
+          display: flex;
+          align-items: center;
+          gap: 6px;
           margin-bottom: 4px;
           color: var(--accent);
           font-family: var(--mono);
