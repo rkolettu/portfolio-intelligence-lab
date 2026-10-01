@@ -57,7 +57,7 @@ function Topic({
           onClick={() => setGistOpen((open) => !open)}
         >
           <span className="method-gist-toggle-icon" aria-hidden="true">i</span>
-          {gistOpen ? "Hide gist" : "Show gist"}
+          {gistOpen ? "Hide key idea" : "Show key idea"}
         </button>
       </div>
       {children}
@@ -80,10 +80,10 @@ function Facts({ rows }: { rows: [string, ReactNode][] }) {
 
 function PlainEnglish({ children }: { children: ReactNode }) {
   return (
-    <aside className="method-plain" aria-label="Quick explanation">
+    <aside className="method-plain" aria-label="Key idea explanation">
       <span className="method-plain-label">
         <span className="method-plain-icon" aria-hidden="true">i</span>
-        The gist
+        The Key Idea
       </span>
       <p>{children}</p>
     </aside>
