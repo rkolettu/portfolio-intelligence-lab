@@ -1377,12 +1377,6 @@ body {
     border-color 0.5s var(--ease);
 }
 
-/* ---------- Overview object ---------- */
-.overview-object {
-  height: 230px;
-  margin: 0 -6px 12px;
-  border-bottom: 1px solid var(--hairline);
-}
 
 /* ---------- Construction field ---------- */
 .construct-field {
@@ -2182,7 +2176,6 @@ body {
   color: var(--faint);
 }
 /* Workspace constellations keep their ripples inside their panels. */
-.overview-object,
 .cr-object,
 .cf-object {
   overflow: hidden;
