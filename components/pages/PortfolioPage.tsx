@@ -4,6 +4,7 @@ import {
   ETF_EXPOSURE_PROFILES,
   SECTORS,
   SECTOR_PROXIES,
+  ETF_PROFILE_DATE,
   STOCK_CLASSIFICATION_DATE,
   STYLE_CELLS,
   type Sector,
@@ -104,8 +105,8 @@ function UnclassifiedList({
       </p>
       <small>
         {what === "sector"
-          ? `Not in the stored stock snapshot (${STOCK_CLASSIFICATION_DATE}) or the ETF look-through profiles.`
-          : `No style cell in the stored snapshot (${STOCK_CLASSIFICATION_DATE}); sector-only funds and stocks without valuation data stay outside the grid.`}
+          ? `Not in the stored stock snapshot (${STOCK_CLASSIFICATION_DATE}) or ETF profiles; leveraged and inverse funds are never looked through.`
+          : `No style cell in the stored snapshots (${STOCK_CLASSIFICATION_DATE}); funds without a style category and stocks without valuation data stay outside the grid.`}
       </small>
     </div>
   );
@@ -263,7 +264,7 @@ const PortfolioBody = withAnalysis(function PortfolioBody({ result, status }) {
         eyebrow="Sector Lens"
         id="sector-lens-title"
         title="One portfolio. Eleven economic systems."
-        subtitle="Stocks map directly. Broad ETFs are split using rounded, static look-through profiles."
+        subtitle="Stocks map directly. ETFs are split using stored look-through profiles."
         glyph="benchmark"
       />
       <div className="coverage-line">
@@ -444,7 +445,7 @@ const PortfolioBody = withAnalysis(function PortfolioBody({ result, status }) {
         />
       </div>
       <div className="profile-provenance">
-        <span>ETF profiles / 2026-06</span>
+        <span>ETF profiles / {ETF_PROFILE_DATE}</span>
         <span>Stock snapshot / {STOCK_CLASSIFICATION_DATE}</span>
         <span>Classified / {unsignedPercent(exposure.styleCoverage)}</span>
         <button
