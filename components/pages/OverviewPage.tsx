@@ -13,13 +13,11 @@ import { GrowthChart } from "@/components/charts/GrowthChart";
 import { SectionHeading } from "@/components/ui/SectionHeading";
 import { StatusNotice, Unavailable } from "@/components/ui/StatusNotice";
 import { BetaMarker, PairTraces } from "@/components/ui/motifs";
-import { allocationColor } from "@/components/ui/AllocationStrip";
 import { CurrentMarket } from "@/components/portfolio/CurrentMarket";
 import { LineageSection } from "@/components/portfolio/LineageSection";
 import { useWorkspace } from "@/components/workspace/WorkspaceProvider";
 import { ResultTag, StaleResultNotice, withAnalysis } from "./shared";
-import { Constellation } from "@/components/observatory/Constellation";
-import { TickerChip, useDossier } from "@/components/observatory/Dossier";
+import { TickerChip } from "@/components/observatory/Dossier";
 
 /** Short statements restating metrics the engine already computed; nothing here
  * derives a new statistic. Each links to the page that explains it. */
@@ -87,8 +85,6 @@ const OverviewBody = withAnalysis(function OverviewBody({ result, status }) {
       }
     : undefined;
   const b = result.benchmarkAnalytics;
-  const holdings = result.config.holdings.filter((h) => h.weight > 0);
-  const largest = Math.max(...holdings.map((h) => h.weight));
   return (
     <section className="results" aria-labelledby="overview-title">
       <SectionHeading
@@ -102,7 +98,9 @@ const OverviewBody = withAnalysis(function OverviewBody({ result, status }) {
       />
       <StaleResultNotice status={status} />
       {result.config.cashPolicy === "zero_explicit" &&
-        result.config.holdings.some((h) => h.ticker === "CASH" && h.weight > 0) && (
+        result.config.holdings.some(
+          (h) => h.ticker === "CASH" && h.weight > 0,
+        ) && (
           <StatusNotice
             tone="warning"
             role="note"
@@ -147,49 +145,27 @@ const OverviewBody = withAnalysis(function OverviewBody({ result, status }) {
         performance={result.performance}
         rollingVolatility={rollingVolatility}
       />
+      <GrowthChart
+        key={result.metadata.snapshotHash}
+        result={result}
+        height={280}
+      />
       <div className="overview-grid">
-        <GrowthChart key={result.metadata.snapshotHash} result={result} height={250} />
-        <div className="overview-side">
-          <div className="side-panel" aria-labelledby="alloc-title">
-            <h3 id="alloc-title" className="side-title">
-              Analyzed allocation
-            </h3>
-            <OverviewConstellation result={result} />
-            <ul className="weight-list">
-              {holdings.map((h, i) => (
-                <li key={h.ticker}>
-                  <TickerChip ticker={h.ticker} />
-                  <i
-                    aria-hidden
-                    style={{
-                      width: `${(h.weight / largest) * 100}%`,
-                      background:
-                        h.ticker === "CASH"
-                          ? "#b7b0a4"
-                          : allocationColor(i, holdings.length),
-                    }}
-                  />
-                  <strong>{unsignedPercent(h.weight)}</strong>
-                </li>
-              ))}
-            </ul>
-            <p className="hint">Monthly rebalancing, gross of costs.</p>
-          </div>
-          <div className="side-panel" aria-labelledby="insight-title">
-            <h3 id="insight-title" className="side-title">
-              Key observations
-            </h3>
-            <ul className="insights">
-              {insights(result).map((i) => (
-                <li key={i.label}>
-                  <p>{i.text}</p>
-                  <Link href={i.href}>
-                    {i.label} <span aria-hidden>→</span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </div>
+        <OverviewAllocation result={result} />
+        <div className="side-panel" aria-labelledby="insight-title">
+          <h3 id="insight-title" className="side-title">
+            Key observations
+          </h3>
+          <ul className="insights">
+            {insights(result).map((i) => (
+              <li key={i.label}>
+                <p>{i.text}</p>
+                <Link href={i.href}>
+                  {i.label} <span aria-hidden>→</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
         </div>
       </div>
       <h3 className="group-title">
@@ -223,7 +199,8 @@ const OverviewBody = withAnalysis(function OverviewBody({ result, status }) {
               label: "Correlation",
               metric: b.relative.correlation,
               format: decimal,
-              formula: "How closely daily portfolio and benchmark returns move together.",
+              formula:
+                "How closely daily portfolio and benchmark returns move together.",
               footnote: () => "Daily returns",
               viz: traces ? (
                 <PairTraces a={traces.portfolio} b={traces.benchmark} />
@@ -233,7 +210,8 @@ const OverviewBody = withAnalysis(function OverviewBody({ result, status }) {
               label: "Tracking error",
               metric: b.relative.trackingError,
               format: unsignedPercent,
-              formula: "How much the portfolio's return deviates from the benchmark's, annualized.",
+              formula:
+                "How much the portfolio's return deviates from the benchmark's, annualized.",
               footnote: () => "Annualized",
             },
           ]}
@@ -247,37 +225,74 @@ const OverviewBody = withAnalysis(function OverviewBody({ result, status }) {
   );
 });
 
-/** Capital as node area, risk share as the offset shadow, correlation on hover. */
-function OverviewConstellation({ result }: { result: BacktestResult }) {
-  const dossier = useDossier();
-  const r = result.riskAnalytics;
+/** Each holding's share of capital beside its share of risk (percentage risk
+ * contribution, already computed by the engine). Both bars share one 0–100% scale
+ * so the gap between them reads directly; colors match Capital vs Risk. */
+function OverviewAllocation({ result }: { result: BacktestResult }) {
   const pcr = new Map(
-    r.holdings.map((h) => [h.ticker, h.percentage.available ? h.percentage.value : null]),
+    result.riskAnalytics.holdings.map((h) => [
+      h.ticker,
+      h.percentage.available ? h.percentage.value : null,
+    ]),
   );
+  const holdings = result.config.holdings.filter((h) => h.weight > 0);
+  const rows = holdings.map((h) => ({
+    ticker: h.ticker,
+    weight: h.weight,
+    risk: h.ticker === "CASH" ? null : (pcr.get(h.ticker) ?? null),
+  }));
+  const scale = Math.max(
+    ...rows.map((r) => Math.max(r.weight, r.risk ?? 0)),
+    0.0001,
+  );
+  const width = (v: number) => `${(Math.max(0, v) / scale) * 100}%`;
   return (
-    <div className="overview-object">
-      <Constellation
-        nodes={result.config.holdings
-          .filter((h) => h.weight > 0)
-          .map((h) => ({
-            ticker: h.ticker,
-            weight: h.weight,
-            risk: h.ticker === "CASH" ? null : Math.max(0, pcr.get(h.ticker) ?? 0),
-            riskless: h.ticker === "CASH",
-          }))}
-        width={420}
-        height={300}
-        fill={0.2}
-        correlation={
-          r.correlation.available
-            ? { tickers: r.correlation.tickers, matrix: r.correlation.matrix }
-            : null
-        }
-        linked
-        annotate={false}
-        onSelect={(t, el) => dossier?.(t, el)}
-        label="Portfolio constellation: node area is capital weight; the offset outline is each holding's share of risk."
-      />
+    <div className="side-panel" aria-labelledby="alloc-title">
+      <h3 id="alloc-title" className="side-title">
+        Capital vs risk
+      </h3>
+      <p className="alloc-legend" aria-hidden>
+        <span data-kind="capital">Capital weight</span>
+        <span data-kind="risk">Share of risk</span>
+      </p>
+      <table className="alloc-table">
+        <caption className="sr-only">
+          Analyzed allocation: capital weight and percentage risk contribution
+          per holding
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col">Holding</th>
+            <th scope="col">
+              <span className="sr-only">Bars</span>
+            </th>
+            <th scope="col">Capital</th>
+            <th scope="col">Risk</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.ticker}>
+              <th scope="row">
+                <TickerChip ticker={r.ticker} />
+              </th>
+              <td className="alloc-bars" aria-hidden>
+                <i data-kind="capital" style={{ width: width(r.weight) }} />
+                <i
+                  data-kind="risk"
+                  style={{ width: r.risk === null ? 0 : width(r.risk) }}
+                />
+              </td>
+              <td>{unsignedPercent(r.weight)}</td>
+              <td>{r.risk === null ? "—" : unsignedPercent(r.risk)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="hint">
+        Monthly rebalancing, gross of costs. Risk share is each holding&apos;s
+        contribution to target-weight volatility; CASH carries none.
+      </p>
     </div>
   );
 }
@@ -285,8 +300,16 @@ function OverviewConstellation({ result }: { result: BacktestResult }) {
 /** Current market context and lineage read live workspace state (quotes arrive
  * independently), so they sit outside the memoized report body. */
 function OverviewContext() {
-  const { result, status, quotes, quotesReceived, curve, horizon, pending, source } =
-    useWorkspace();
+  const {
+    result,
+    status,
+    quotes,
+    quotesReceived,
+    curve,
+    horizon,
+    pending,
+    source,
+  } = useWorkspace();
   return (
     <>
       {source.kind === "cached-sample" ? (

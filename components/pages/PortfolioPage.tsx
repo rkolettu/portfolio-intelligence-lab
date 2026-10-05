@@ -4,6 +4,8 @@ import {
   ETF_EXPOSURE_PROFILES,
   SECTORS,
   SECTOR_PROXIES,
+  ETF_PROFILE_DATE,
+  STOCK_CLASSIFICATION_DATE,
   STYLE_CELLS,
   type Sector,
   type StyleCell,
@@ -12,6 +14,7 @@ import {
   analyzeExposure,
   requiredSectorProxies,
   type Contribution,
+  type UnclassifiedHolding,
 } from "@/lib/analytics/exposure";
 import { percent, unsignedPercent } from "@/lib/utils/format";
 import {
@@ -79,6 +82,36 @@ function ContributionRows({
   );
 }
 
+/** Holdings the stored snapshots cannot place, named with their weights so a gap
+ * in the bars is visible rather than silent. */
+function UnclassifiedList({
+  holdings,
+  what,
+}: {
+  holdings: UnclassifiedHolding[];
+  what: "sector" | "style";
+}) {
+  if (!holdings.length) return null;
+  return (
+    <div className="unclassified-list">
+      <p>
+        Not classified by {what}:{" "}
+        {holdings.map((h, i) => (
+          <span key={h.ticker}>
+            {i > 0 && ", "}
+            <strong>{h.ticker}</strong> {unsignedPercent(h.weight)}
+          </span>
+        ))}
+      </p>
+      <small>
+        {what === "sector"
+          ? `Not in the stored stock snapshot (${STOCK_CLASSIFICATION_DATE}) or ETF profiles; leveraged and inverse funds are never looked through.`
+          : `No style cell in the stored snapshots (${STOCK_CLASSIFICATION_DATE}); funds without a style category and stocks without valuation data stay outside the grid.`}
+      </small>
+    </div>
+  );
+}
+
 const PortfolioBody = withAnalysis(function PortfolioBody({ result, status }) {
   const exposure = useMemo(
     () => analyzeExposure(result.config.holdings),
@@ -104,6 +137,26 @@ const PortfolioBody = withAnalysis(function PortfolioBody({ result, status }) {
   );
   const largestSector = SECTORS.reduce((a, b) =>
     exposure.sectors[a] > exposure.sectors[b] ? a : b,
+  );
+  // Sectors tied for largest are all named rather than picking one arbitrarily.
+  const topSectors = SECTORS.filter(
+    (s) =>
+      exposure.sectors[s] > 0 &&
+      Math.abs(exposure.sectors[s] - exposure.sectors[largestSector]) < 1e-9,
+  );
+  const missingSector = exposure.unclassified.filter(
+    (h) => h.missing !== "style",
+  );
+  const missingStyle = exposure.unclassified.filter(
+    (h) => h.missing !== "sector",
+  );
+  const unclassifiedSectorWeight = missingSector.reduce(
+    (s, h) => s + h.weight,
+    0,
+  );
+  const unclassifiedStyleWeight = missingStyle.reduce(
+    (s, h) => s + h.weight,
+    0,
   );
   const neededProxies = useMemo(
     () => requiredSectorProxies(exposure),
@@ -172,8 +225,9 @@ const PortfolioBody = withAnalysis(function PortfolioBody({ result, status }) {
           <div>
             <dt>Largest sector</dt>
             <dd>
-              {largestSector} ·{" "}
-              {unsignedPercent(exposure.sectors[largestSector])}
+              {topSectors.length
+                ? `${topSectors.join(" / ")} · ${unsignedPercent(exposure.sectors[largestSector])}`
+                : "None classified"}
             </dd>
           </div>
           <div>
@@ -210,17 +264,34 @@ const PortfolioBody = withAnalysis(function PortfolioBody({ result, status }) {
         eyebrow="Sector Lens"
         id="sector-lens-title"
         title="One portfolio. Eleven economic systems."
-        subtitle="Stocks map directly. Broad ETFs are split using rounded, static look-through profiles."
+        subtitle="Stocks map directly. ETFs are split using stored look-through profiles."
         glyph="benchmark"
       />
       <div className="coverage-line">
         <span>Sector classification</span>
         <strong>{unsignedPercent(exposure.sectorCoverage)} of portfolio</strong>
+        {exposure.fixedIncome > 0 && (
+          <span>
+            Fixed income{" "}
+            <strong>{unsignedPercent(exposure.fixedIncome)}</strong>
+          </span>
+        )}
+        {exposure.other > 0 && (
+          <span>
+            Other assets <strong>{unsignedPercent(exposure.other)}</strong>
+          </span>
+        )}
+        {exposure.cash > 0 && (
+          <span>
+            Cash <strong>{unsignedPercent(exposure.cash)}</strong>
+          </span>
+        )}
         <span>
-          {unsignedPercent(Math.max(0, exposure.unclassifiedSector))}{" "}
-          unclassified / non-equity
+          Unclassified{" "}
+          <strong>{unsignedPercent(unclassifiedSectorWeight)}</strong>
         </span>
       </div>
+      <UnclassifiedList holdings={missingSector} what="sector" />
       <div className="sector-field">
         {SECTORS.map((s) => {
           const value = exposure.sectors[s];
@@ -326,10 +397,14 @@ const PortfolioBody = withAnalysis(function PortfolioBody({ result, status }) {
           Cash <strong>{unsignedPercent(exposure.cash)}</strong>
         </span>
         <span>
-          Other / unclassified{" "}
-          <strong>{unsignedPercent(exposure.unclassifiedStyle)}</strong>
+          Other assets <strong>{unsignedPercent(exposure.other)}</strong>
+        </span>
+        <span>
+          Unclassified{" "}
+          <strong>{unsignedPercent(unclassifiedStyleWeight)}</strong>
         </span>
       </div>
+      <UnclassifiedList holdings={missingStyle} what="style" />
       <div className="style-axis style-axis-top">
         <span>Value</span>
         <span>Blend</span>
@@ -370,7 +445,8 @@ const PortfolioBody = withAnalysis(function PortfolioBody({ result, status }) {
         />
       </div>
       <div className="profile-provenance">
-        <span>Profile vintage / 2026-06</span>
+        <span>ETF profiles / {ETF_PROFILE_DATE}</span>
+        <span>Stock snapshot / {STOCK_CLASSIFICATION_DATE}</span>
         <span>Classified / {unsignedPercent(exposure.styleCoverage)}</span>
         <button
           type="button"

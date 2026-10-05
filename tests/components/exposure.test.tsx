@@ -76,10 +76,10 @@ it("supports sector and style drilldowns by click and touch", async () => {
   expect(
     screen.getByText("Selected sector").parentElement?.textContent,
   ).toContain("Technology");
-  fireEvent.pointerUp(screen.getByRole("button", { name: /Large Growth/ }), {
+  fireEvent.pointerUp(screen.getByRole("button", { name: /^Large Growth/ }), {
     pointerType: "touch",
   });
-  fireEvent.click(screen.getByRole("button", { name: /Large Growth/ }));
+  fireEvent.click(screen.getByRole("button", { name: /^Large Growth/ }));
   expect(
     screen.getByText("Selected cell").parentElement?.textContent,
   ).toContain("Large Growth");
