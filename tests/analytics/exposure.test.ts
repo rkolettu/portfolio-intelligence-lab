@@ -67,6 +67,59 @@ describe("portfolio exposure", () => {
     expect(x.unclassifiedStyle).toBe(0.4);
     expect(x.styleCoverage).toBe(0);
   });
+  it("classifies class shares by their dash ticker (BRK-B)", () => {
+    const x = analyzeExposure([{ ticker: "BRK-B", weight: 0.1 }]);
+    expect(x.sectors.Financials).toBe(0.1);
+    expect(x.unclassified).toEqual([]);
+  });
+  it("classifies a diversified single-stock portfolio from the stored snapshot", () => {
+    const stocks = [
+      ["JPM", 8],
+      ["DLTR", 2],
+      ["DUK", 4],
+      ["CCL", 2],
+      ["LLY", 8],
+      ["AZN", 4],
+      ["CRWD", 4],
+      ["NKE", 4],
+      ["VZ", 4],
+      ["MRK", 4],
+      ["AMD", 4],
+      ["CAT", 4],
+      ["META", 2],
+      ["RBLX", 5],
+      ["NET", 4],
+      ["TGT", 5],
+      ["BLK", 4],
+      ["BRK-B", 4],
+      ["AAL", 4],
+    ] as const;
+    const x = analyzeExposure([
+      { ticker: "CASH", weight: 0.05 },
+      { ticker: "AGG", weight: 0.15 },
+      ...stocks.map(([ticker, w]) => ({ ticker, weight: w / 100 })),
+    ]);
+    expect(x.sectorCoverage).toBeCloseTo(0.8);
+    expect(x.styleCoverage).toBeCloseTo(0.8);
+    expect(x.fixedIncome).toBeCloseTo(0.15);
+    expect(x.cash).toBeCloseTo(0.05);
+    expect(x.unclassified).toEqual([]);
+    expect(x.sectors.Technology).toBeCloseTo(0.12);
+  });
+  it("names unclassified holdings with what is missing, largest first", () => {
+    const x = analyzeExposure([
+      { ticker: "MYSTERY", weight: 0.1 },
+      { ticker: "XLK", weight: 0.3 },
+      { ticker: "TLT", weight: 0.2 },
+      { ticker: "SLV", weight: 0.05 },
+    ]);
+    expect(x.unclassified).toEqual([
+      { ticker: "XLK", weight: 0.3, missing: "style" },
+      { ticker: "MYSTERY", weight: 0.1, missing: "both" },
+    ]);
+    expect(x.fixedIncome).toBe(0.2);
+    expect(x.other).toBe(0.05);
+  });
   it("maps all eleven sectors to the required proxies", () => {
     expect(Object.keys(SECTOR_PROXIES)).toHaveLength(11);
     expect(SECTOR_PROXIES.Technology).toBe("XLK");

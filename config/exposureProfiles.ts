@@ -1,3 +1,5 @@
+import stockSnapshot from "./stockClassifications.json";
+
 /**
  * Rounded, static classification snapshots used for transparent look-through.
  * They are deliberately local: these are not live constituent files and are
@@ -113,18 +115,70 @@ export const ETF_EXPOSURE_PROFILES: Record<string, ExposureProfile> =
       broad("VXUS", world, [25, 35, 22, 4, 4, 3, 2, 3, 2]),
       broad("VEA", world, [32, 38, 20, 3, 3, 2, 1, 1, 0]),
       broad("VWO", world, [19, 31, 31, 4, 5, 5, 1, 2, 2]),
-      ...(["BND", "AGG"] as const).map((ticker) => ({
+      ...(
+        [
+          ["BND", "broad investment-grade bonds"],
+          ["AGG", "broad investment-grade bonds"],
+          ["BNDX", "international investment-grade bonds"],
+          ["BSV", "short-term investment-grade bonds"],
+          ["TLT", "long-term U.S. Treasuries"],
+          ["IEF", "intermediate U.S. Treasuries"],
+          ["SHY", "short-term U.S. Treasuries"],
+          ["GOVT", "U.S. Treasuries"],
+          ["VGSH", "short-term U.S. Treasuries"],
+          ["VGIT", "intermediate U.S. Treasuries"],
+          ["VGLT", "long-term U.S. Treasuries"],
+          ["EDV", "extended-duration U.S. Treasuries"],
+          ["BIL", "U.S. Treasury bills"],
+          ["SGOV", "U.S. Treasury bills"],
+          ["TIP", "U.S. inflation-protected Treasuries"],
+          ["LQD", "investment-grade corporate bonds"],
+          ["VCIT", "intermediate investment-grade corporate bonds"],
+          ["HYG", "high-yield corporate bonds"],
+          ["JNK", "high-yield corporate bonds"],
+          ["MUB", "U.S. municipal bonds"],
+        ] as const
+      ).map(([ticker, mandate]) => ({
         ticker,
         profileDate: "2026-06",
-        sourceDescription: "Fund mandate: broad investment-grade bonds",
+        sourceDescription: `Fund mandate: ${mandate}`,
         assetClass: "fixed-income" as const,
       })),
-      {
-        ticker: "GLD",
+      ...(
+        [
+          ["GLD", "physically backed gold"],
+          ["IAU", "physically backed gold"],
+          ["SLV", "physically backed silver"],
+          ["DBC", "diversified commodity futures"],
+          ["PDBC", "diversified commodity futures"],
+          ["USO", "crude oil futures"],
+          ["IBIT", "spot bitcoin"],
+        ] as const
+      ).map(([ticker, mandate]) => ({
+        ticker,
         profileDate: "2026-06",
-        sourceDescription: "Fund mandate: physically backed gold",
+        sourceDescription: `Fund mandate: ${mandate}`,
         assetClass: "other" as const,
-      },
+      })),
+      ...(
+        [
+          ["VNQ", "Real Estate"],
+          ["VGT", "Technology"],
+          ["SMH", "Technology"],
+          ["SOXX", "Technology"],
+          ["KRE", "Financials"],
+          ["XBI", "Health Care"],
+          ["IBB", "Health Care"],
+          ["ITA", "Industrials"],
+        ] as const
+      ).map(([ticker, sector]) => ({
+        ticker,
+        profileDate: "2026-06",
+        sourceDescription: `Fund mandate: single-sector ${sector} equity`,
+        assetClass: "equity" as const,
+        sectorSpecific: sector,
+        sectorWeights: { [sector]: 1 },
+      })),
       ...SECTORS.map((sector) => ({
         ticker: SECTOR_PROXIES[sector],
         profileDate: "2026-06",
@@ -136,31 +190,22 @@ export const ETF_EXPOSURE_PROFILES: Record<string, ExposureProfile> =
     ].map((p) => [p.ticker, p]),
   );
 
-/** Conservative local stock metadata. Unknown tickers remain unclassified. */
+/** Stored sector and style snapshot for every stock in the ticker directory,
+ * built by scripts/build-stock-classifications.mjs. Sectors are Morningstar's
+ * (via Yahoo Finance) mapped onto the eleven above; style is Portfolio Lab's own
+ * rule: size by market cap (Large ≥ $20B, Mid ≥ $3B), value/growth by the
+ * average rank of earnings yield and book-to-price within each size group.
+ * Tickers outside the snapshot remain unclassified. */
+export const STOCK_CLASSIFICATION_DATE: string = stockSnapshot.asOf;
+
 export const STOCK_CLASSIFICATIONS: Record<
   string,
-  { sector: Sector; style: StyleCell }
-> = {
-  AAPL: { sector: "Technology", style: "Large Growth" },
-  MSFT: { sector: "Technology", style: "Large Growth" },
-  NVDA: { sector: "Technology", style: "Large Growth" },
-  AVGO: { sector: "Technology", style: "Large Growth" },
-  GOOGL: { sector: "Communication Services", style: "Large Growth" },
-  GOOG: { sector: "Communication Services", style: "Large Growth" },
-  META: { sector: "Communication Services", style: "Large Growth" },
-  AMZN: { sector: "Consumer Discretionary", style: "Large Growth" },
-  TSLA: { sector: "Consumer Discretionary", style: "Large Growth" },
-  JPM: { sector: "Financials", style: "Large Value" },
-  BRK_B: { sector: "Financials", style: "Large Value" },
-  JNJ: { sector: "Health Care", style: "Large Value" },
-  LLY: { sector: "Health Care", style: "Large Growth" },
-  XOM: { sector: "Energy", style: "Large Value" },
-  CVX: { sector: "Energy", style: "Large Value" },
-  WMT: { sector: "Consumer Staples", style: "Large Blend" },
-  PG: { sector: "Consumer Staples", style: "Large Value" },
-  CAT: { sector: "Industrials", style: "Large Value" },
-  BA: { sector: "Industrials", style: "Large Blend" },
-  LIN: { sector: "Materials", style: "Large Blend" },
-  AMT: { sector: "Real Estate", style: "Large Blend" },
-  NEE: { sector: "Utilities", style: "Large Blend" },
-};
+  { sector: Sector; style: StyleCell | null }
+> = Object.fromEntries(
+  Object.entries(stockSnapshot.stocks as Record<string, number[]>).map(
+    ([ticker, [sector, style]]) => [
+      ticker,
+      { sector: SECTORS[sector], style: STYLE_CELLS[style] ?? null },
+    ],
+  ),
+);

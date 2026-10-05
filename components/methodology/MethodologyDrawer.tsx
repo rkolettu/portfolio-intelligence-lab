@@ -386,6 +386,20 @@ export function MethodologyDrawer({
           <PlainEnglish>
             Cash is modeled as earning the historical 3-month Treasury rate. If that Treasury history is unavailable, the app will not invent a cash return unless you explicitly choose zero-return cash.
           </PlainEnglish>
+          <p>
+            Exposure classification uses stored snapshots, never the return or
+            risk engines. Stocks take a sector (Morningstar&apos;s, via Yahoo
+            Finance, mapped onto eleven sectors) and a style cell: size by
+            market cap (Large ≥ $20B, Mid ≥ $3B, otherwise Small), value or
+            growth by the average rank of earnings yield (trailing and forward)
+            and book-to-price within that size group, in thirds. Broad ETFs are
+            split by rounded fact-sheet profiles; bond, commodity and
+            single-sector funds by mandate. Anything outside the snapshots is
+            listed as unclassified and never renormalized away.
+          </p>
+          <PlainEnglish>
+            Sectors and the value/growth grid come from a saved snapshot, not live data. A stock counts as &ldquo;value&rdquo; when it is cheap on earnings and book value compared with companies of a similar size. Holdings the snapshot does not cover are named on the page instead of being quietly dropped.
+          </PlainEnglish>
         </Topic>
         <Topic id="performance" title="Performance">
           <ul>

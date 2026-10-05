@@ -16,6 +16,13 @@ export type Contribution = {
   contribution: number;
   kind: "stock" | "etf";
 };
+/** A holding the stored snapshots cannot place: no sector, no style cell, or
+ * neither. Bonds, CASH and other non-equity assets are reported separately. */
+export type UnclassifiedHolding = {
+  ticker: string;
+  weight: number;
+  missing: "sector" | "style" | "both";
+};
 export type ExposureAnalysis = {
   sectors: Record<Sector, number>;
   sectorContributions: Record<Sector, Contribution[]>;
@@ -28,6 +35,8 @@ export type ExposureAnalysis = {
   cash: number;
   fixedIncome: number;
   other: number;
+  /** Equity (or unknown) holdings left out of the sector bars or style grid. */
+  unclassified: UnclassifiedHolding[];
 };
 
 export function analyzeExposure(
@@ -52,6 +61,7 @@ export function analyzeExposure(
     other = 0,
     unclassifiedSector = 0,
     unclassifiedStyle = 0;
+  const unclassified: UnclassifiedHolding[] = [];
   for (const holding of holdings.filter((h) => h.weight > 0)) {
     const ticker = holding.ticker.toUpperCase();
     if (ticker === "CASH") {
@@ -70,7 +80,15 @@ export function analyzeExposure(
       unclassifiedStyle += holding.weight;
       continue;
     }
-    const stock = STOCK_CLASSIFICATIONS[ticker];
+    const stock = etf ? undefined : STOCK_CLASSIFICATIONS[ticker];
+    const noSector = !etf?.sectorWeights && !stock;
+    const noStyle = !etf?.styleWeights && !stock?.style;
+    if (noSector || noStyle)
+      unclassified.push({
+        ticker,
+        weight: holding.weight,
+        missing: noSector && noStyle ? "both" : noSector ? "sector" : "style",
+      });
     if (etf?.sectorWeights) {
       let classified = 0;
       for (const sector of SECTORS) {
@@ -121,7 +139,7 @@ export function analyzeExposure(
           });
       }
       unclassifiedStyle += Math.max(0, holding.weight - classified);
-    } else if (stock) {
+    } else if (stock?.style) {
       styles[stock.style] += holding.weight;
       styleContributions[stock.style].push({
         ticker,
@@ -146,6 +164,7 @@ export function analyzeExposure(
     cash,
     fixedIncome,
     other,
+    unclassified: unclassified.sort((a, b) => b.weight - a.weight),
   };
 }
 

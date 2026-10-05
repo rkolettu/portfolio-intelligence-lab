@@ -259,6 +259,26 @@
 .style-summary {
   justify-content: space-between;
 }
+.unclassified-list {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border: 1px dashed var(--border);
+  border-radius: var(--r-2, 6px);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.unclassified-list p {
+  margin: 0 0 2px;
+}
+.unclassified-list strong {
+  color: var(--text);
+  font-weight: 600;
+}
+.unclassified-list small {
+  color: var(--faint);
+  font-size: 11px;
+}
 .style-axis {
   display: grid;
   color: var(--faint);
