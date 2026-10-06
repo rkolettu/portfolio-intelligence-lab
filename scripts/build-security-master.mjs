@@ -7,8 +7,12 @@
 //
 // Universe
 //   - every common stock listed on NYSE, Nasdaq and NYSE American (Nasdaq's
-//     screener), including foreign companies' U.S.-listed ADRs. OTC listings are
-//     left out: the history providers accept exchange-listed securities only;
+//     screener), including foreign companies' U.S.-listed ADRs;
+//   - companies traded over the counter (OTCQX, OTCQB, Pink, OTC ID) with a
+//     market cap of at least $2B, mostly foreign issuers such as Nestlé and
+//     Roche: one line per company (the ADR preferred), and only when no more
+//     than 10% of the last year's sessions had zero volume, the same limit the
+//     history providers enforce, so the directory never offers a stale series;
 //   - the largest U.S.-listed ETFs by net assets (Yahoo Finance screener).
 // Data: Yahoo Finance quotes (sector, market cap, EPS, P/E, book value) and fund
 // profiles (stock/bond mix, sector weights, Morningstar category).
@@ -82,6 +86,9 @@ const FUND_SECTOR = {
 const LARGE = 20e9;
 const MID = 3e9;
 const ETF_COUNT = Number(process.argv[2] ?? 500);
+const OTC_MIN_CAP = 2e9;
+const OTC_EXCHANGES = ["OQX", "OQB", "PNK", "OID"];
+const STALE_SHARE = 0.1;
 const VALID = /^[A-Z][A-Z0-9]{0,9}(?:-[A-Z])?$/;
 const UA = "Mozilla/5.0 (portfolio-lab security master)";
 
@@ -149,6 +156,66 @@ const listedCap = new Map(
 );
 console.log(`${listed.size} exchange-listed symbols`);
 
+const otc = [];
+for (let offset = 0; ; offset += 250) {
+  const page = await screen({
+    offset,
+    size: 250,
+    sortField: "intradaymarketcap",
+    sortType: "DESC",
+    quoteType: "EQUITY",
+    query: {
+      operator: "or",
+      operands: OTC_EXCHANGES.map((x) => ({
+        operator: "eq",
+        operands: ["exchange", x],
+      })),
+    },
+  });
+  const rows = page.quotes ?? [];
+  otc.push(...rows.filter((q) => (q.marketCap ?? 0) >= OTC_MIN_CAP));
+  if (!rows.length || (rows.at(-1).marketCap ?? 0) < OTC_MIN_CAP) break;
+  await sleep(400);
+}
+// One line per company: prefer the ADR (…Y) over ordinary shares (…F).
+const byName = new Map();
+for (const q of otc) {
+  if (!VALID.test(q.symbol) || listed.has(q.symbol)) continue;
+  const key = (q.longName ?? q.shortName ?? q.symbol)
+    .toUpperCase()
+    .slice(0, 24);
+  const prev = byName.get(key);
+  if (!prev || (q.symbol.endsWith("Y") && !prev.symbol.endsWith("Y")))
+    byName.set(key, q);
+}
+/** True when the last year of daily bars is valid and mostly traded. */
+async function liquid(symbol) {
+  const j = await yahoo(`/v8/finance/chart/${symbol}`, {
+    range: "1y",
+    interval: "1d",
+  });
+  const r = j?.chart?.result?.[0];
+  const volume = r?.indicators?.quote?.[0]?.volume ?? [];
+  const adj = r?.indicators?.adjclose?.[0]?.adjclose ?? [];
+  if (!volume.length || adj.some((v) => v !== null && !(v > 0))) return false;
+  return volume.filter((v) => v === 0).length <= STALE_SHARE * volume.length;
+}
+const otcSymbols = [];
+const otcQueue = [...byName.values()].map((q) => q.symbol);
+let checked = 0;
+await Promise.all(
+  Array.from({ length: 4 }, async () => {
+    while (otcQueue.length) {
+      const symbol = otcQueue.shift();
+      if (await liquid(symbol)) otcSymbols.push(symbol);
+      process.stdout.write(`\rOTC liquidity ${++checked}/${byName.size}`);
+      await sleep(200);
+    }
+  }),
+);
+process.stdout.write("\n");
+console.log(`${otcSymbols.length} liquid OTC companies ≥ $2B`);
+
 const etfs = [];
 for (let offset = 0; etfs.length < ETF_COUNT; offset += 250) {
   const page = await screen({
@@ -168,7 +235,7 @@ console.log(`${etfs.length} ETFs`);
 
 // ---------- Stocks ----------
 const stockRows = [];
-const candidates = [...listed];
+const candidates = [...listed, ...otcSymbols];
 for (let i = 0; i < candidates.length; i += 50) {
   const batch = candidates.slice(i, i + 50);
   const j = await yahoo("/v7/finance/quote", {
@@ -216,6 +283,29 @@ for (let i = 0; i < candidates.length; i += 50) {
   await sleep(300);
 }
 process.stdout.write("\n");
+
+// A company with an exchange listing keeps only that line: its OTC ordinary
+// shares (Toyota's TOYOF beside TM) would duplicate it with worse data.
+const companyKey = (name) =>
+  name
+    .toUpperCase()
+    .replace(/[^A-Z0-9 ]/g, "")
+    .replace(
+      /\b(INC|CORP|CORPORATION|CO|LTD|LIMITED|PLC|AG|SA|NV|SE|HOLDINGS?|GROUP|THE|ADR)\b/g,
+      "",
+    )
+    .replace(/\s+/g, " ")
+    .trim();
+const otcSet = new Set(otcSymbols);
+const listedCompanies = new Set(
+  stockRows.filter((r) => !otcSet.has(r.ticker)).map((r) => companyKey(r.name)),
+);
+for (let i = stockRows.length - 1; i >= 0; i--)
+  if (
+    otcSet.has(stockRows[i].ticker) &&
+    listedCompanies.has(companyKey(stockRows[i].name))
+  )
+    stockRows.splice(i, 1);
 
 const sizeOf = (cap) => (cap >= LARGE ? "Large" : cap >= MID ? "Mid" : "Small");
 // Sorted measures per size group: a stock (or fund) is scored by where its

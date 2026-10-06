@@ -413,17 +413,19 @@ export function MethodologyDrawer({
             Exposure classification uses stored snapshots, never the return or
             risk engines. The stock snapshot covers every common stock listed on
             NYSE, Nasdaq and NYSE American, including foreign companies&apos;
-            U.S.-listed ADRs. Stocks take a sector (Morningstar&apos;s, via
-            Yahoo Finance, mapped onto eleven sectors) and a style cell: size by
-            market cap (Large ≥ $20B, Mid ≥ $3B, otherwise Small), value or
-            growth by the average rank of earnings yield (trailing and forward)
-            and book-to-price within that size group, in thirds. The largest
-            U.S.-listed ETFs are looked through from stored fund profiles:
-            sector weights scaled by the fund&apos;s stock share, its bond share
-            counted as fixed income, and style from its Morningstar category or,
-            failing that, its median market cap and valuation. Leveraged,
-            inverse and trading funds, and anything outside the snapshots, are
-            listed as unclassified and never renormalized away.
+            U.S.-listed ADRs, and liquid OTC-traded companies of at least $2B
+            such as Nestlé and Roche. Stocks take a sector (Morningstar&apos;s,
+            via Yahoo Finance, mapped onto eleven sectors) and a style cell:
+            size by market cap (Large ≥ $20B, Mid ≥ $3B, otherwise Small), value
+            or growth by the average rank of earnings yield (trailing and
+            forward) and book-to-price within that size group, in thirds. The
+            largest U.S.-listed ETFs are looked through from stored fund
+            profiles: sector weights scaled by the fund&apos;s stock share, its
+            bond share counted as fixed income, and style from its Morningstar
+            category or, failing that, its earnings yield and book-to-price
+            sized by its top holdings. Leveraged, inverse and trading funds, and
+            anything outside the snapshots, are listed as unclassified and never
+            renormalized away.
           </p>
           <PlainEnglish>
             Sectors and the value/growth grid come from a saved snapshot, not
@@ -431,6 +433,19 @@ export function MethodologyDrawer({
             earnings and book value compared with companies of a similar size.
             Holdings the snapshot does not cover are named on the page instead
             of being quietly dropped.
+          </PlainEnglish>
+          <p>
+            Holdings may be listed on NYSE, Nasdaq, NYSE American, NYSE Arca or
+            Cboe, or quoted over the counter (OTCQX, OTCQB, Pink, OTC ID). An
+            OTC security is refused for a period in which more than 10% of its
+            sessions, and more than five, had no trades, because the provider
+            repeats the last price on those days.
+          </p>
+          <PlainEnglish>
+            Some big foreign companies, like Nestlé and Roche, only trade in the
+            U.S. over the counter. They work here as long as they actually trade
+            most days; a thinly traded one is refused rather than shown with
+            stale prices that would make it look safer than it is.
           </PlainEnglish>
         </Topic>
         <Topic id="performance" title="Performance">

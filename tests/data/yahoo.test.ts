@@ -122,3 +122,60 @@ it("reports a span entirely before listing as insufficient history, not a provid
     detail: { code: "PROVIDER_ERROR" },
   });
 });
+
+/** n consecutive weekday bars from 2024-05-01, all at price 20. */
+function otcChart(exchangeName: string, volume: number[]) {
+  const timestamps: number[] = [];
+  for (
+    let d = Date.UTC(2024, 4, 1, 13, 30);
+    timestamps.length < volume.length;
+    d += 86_400_000
+  )
+    if (![0, 6].includes(new Date(d).getUTCDay())) timestamps.push(d / 1000);
+  const chart = structuredClone(raw);
+  Object.assign(chart.chart.result[0].meta, {
+    symbol: "NSRGY",
+    exchangeName,
+    instrumentType: "EQUITY",
+  });
+  chart.chart.result[0].timestamp = timestamps;
+  chart.chart.result[0].indicators = {
+    quote: [{ close: volume.map(() => 20), volume }] as never,
+    adjclose: [{ adjclose: volume.map(() => 20) }],
+  };
+  return chart;
+}
+const otcRequest = {
+  ticker: "NSRGY",
+  startDate: "2024-05-01",
+  endDate: "2024-06-28",
+  now: "2024-07-01T10:00:00Z",
+};
+it("accepts OTC tiers and tolerates a few sessions without trades", async () => {
+  for (const venue of ["OQX", "OQB", "PNK", "OID"]) {
+    const volume = Array.from({ length: 40 }, (_, i) =>
+      i % 15 === 0 ? 0 : 900,
+    );
+    const s = await new YahooProvider(async () =>
+      Response.json(otcChart(venue, volume)),
+    ).getHistoricalPrices(otcRequest);
+    expect(s.exchange).toBe(venue);
+    expect(s.observations).toHaveLength(40);
+  }
+});
+it("refuses an OTC history whose prices are mostly stale", async () => {
+  const volume = Array.from({ length: 40 }, (_, i) => (i % 2 ? 0 : 900));
+  await expect(
+    new YahooProvider(async () =>
+      Response.json(otcChart("PNK", volume)),
+    ).getHistoricalPrices(otcRequest),
+  ).rejects.toThrow("too thinly");
+});
+it("never applies the stale-price check to exchange-listed securities", async () => {
+  const chart = otcChart("NYQ", Array(40).fill(0));
+  chart.chart.result[0].meta.symbol = "NSRGY";
+  const s = await new YahooProvider(async () =>
+    Response.json(chart),
+  ).getHistoricalPrices(otcRequest);
+  expect(s.observations).toHaveLength(40);
+});

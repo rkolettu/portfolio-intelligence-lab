@@ -161,6 +161,15 @@ describe("portfolio exposure", () => {
     expect(x.sectors.Technology).toBe(0.5);
     expect(x.sectors["Health Care"]).toBe(0.5);
   });
+  it("classifies liquid OTC-traded foreign companies (Nestlé, Roche)", () => {
+    const x = analyzeExposure([
+      { ticker: "NSRGY", weight: 0.5 },
+      { ticker: "RHHBY", weight: 0.5 },
+    ]);
+    expect(x.sectors["Consumer Staples"]).toBe(0.5);
+    expect(x.sectors["Health Care"]).toBe(0.5);
+    expect(x.unclassified).toEqual([]);
+  });
   it("maps all eleven sectors to the required proxies", () => {
     expect(Object.keys(SECTOR_PROXIES)).toHaveLength(11);
     expect(SECTOR_PROXIES.Technology).toBe("XLK");
