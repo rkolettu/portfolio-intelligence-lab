@@ -34,7 +34,12 @@ const chartSchema = z.object({
               .array(z.object({ adjclose: z.array(z.number().nullable()) }))
               .optional(),
             quote: z
-              .array(z.object({ close: z.array(z.number().nullable()) }))
+              .array(
+                z.object({
+                  close: z.array(z.number().nullable()),
+                  volume: z.array(z.number().nullable()).optional(),
+                }),
+              )
               .optional(),
           }),
         }),
@@ -42,6 +47,17 @@ const chartSchema = z.object({
       .nullable(),
   }),
 });
+const EXCHANGES = ["PCX", "NMS", "NGM", "NCM", "NYQ", "ASE", "BTS", "BATS"];
+/** OTC Markets tiers as Yahoo names them: OTCQX, OTCQB, Pink and OTC ID. Large
+ * foreign issuers (Nestlé, Roche, Tencent) trade in the U.S. only here. */
+export const OTC_EXCHANGES = ["OQX", "OQB", "PNK", "OID"];
+/** An OTC history is refused when more than this share of its sessions (and
+ * more than STALE_MIN_SESSIONS) had no trades: Yahoo repeats the last price on
+ * those days, which would understate volatility and correlation. Matches the
+ * market-data service. */
+const STALE_SHARE = 0.1;
+const STALE_MIN_SESSIONS = 5;
+
 export function parseYahoo(payload: unknown, ticker: string) {
   const parsed = chartSchema.safeParse(payload);
   if (!parsed.success)
@@ -56,13 +72,11 @@ export function parseYahoo(payload: unknown, ticker: string) {
     result.meta.currency !== "USD" ||
     result.meta.exchangeTimezoneName !== "America/New_York" ||
     !["EQUITY", "ETF"].includes(result.meta.instrumentType) ||
-    !["PCX", "NMS", "NGM", "NCM", "NYQ", "ASE", "BTS", "BATS"].includes(
-      result.meta.exchangeName,
-    )
+    ![...EXCHANGES, ...OTC_EXCHANGES].includes(result.meta.exchangeName)
   )
     fail(
       "UNSUPPORTED_ASSET",
-      `${ticker} is outside the supported USD U.S.-listed equity/ETF universe.`,
+      `${ticker} is outside the supported USD U.S.-traded equity/ETF universe.`,
       { ticker },
     );
   return result;
@@ -128,15 +142,27 @@ export class YahooProvider implements HistoricalProvider, QuoteProvider {
         { ticker },
       );
     const today = marketDate(now);
+    const volume = OTC_EXCHANGES.includes(data.meta.exchangeName)
+      ? data.indicators.quote?.[0]?.volume
+      : undefined;
+    let untraded = 0;
     const observations = normalizePrices(
       timestamps.flatMap((ts, i) => {
         const date = marketDate(new Date(ts * 1000).toISOString());
         // Yahoo daily bars may be partial today. Only prior-market-day bars are eligible.
         if (date >= today || date > endDate) return [];
         if (adjusted[i] === null) return []; // Coverage checks must reject missing scheduled observations.
+        if (date >= startDate && volume?.[i] === 0) untraded++;
         return [{ date, adjustedClose: adjusted[i]! }];
       }),
     );
+    const inWindow = observations.filter((o) => o.date >= startDate).length;
+    if (untraded > Math.max(STALE_MIN_SESSIONS, STALE_SHARE * inWindow))
+      fail(
+        "UNSUPPORTED_ASSET",
+        `${ticker} trades over the counter too thinly for daily analysis: ${untraded} of ${inWindow} sessions in this period had no trades, so its prices are stale.`,
+        { ticker },
+      );
     const fetchedAt =
       responseDate && Number.isFinite(Date.parse(responseDate))
         ? new Date(responseDate).toISOString()

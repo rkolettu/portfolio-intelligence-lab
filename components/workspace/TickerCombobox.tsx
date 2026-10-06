@@ -13,16 +13,20 @@ const loadDirectory = () =>
 
 const CASH: Security = ["CASH", "Cash · Historical Risk-Free (3-month Treasury)", "E"];
 
+/** Upper case without accents, so "nestle" finds "Nestlé" and "hermes" "Hermès". */
+const fold = (text: string) =>
+  text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
+
 /** Ranked matches: ticker exact, ticker prefix, a name word starting with the
  * query, then any name substring; ties keep the directory's (size) order. */
 function search(list: Security[], raw: string, limit = 7, includeCash = true) {
-  const q = raw.trim().toUpperCase();
+  const q = fold(raw.trim());
   if (!q) return [];
   const scored: { s: Security; r: number; i: number }[] = [];
   const all = includeCash ? [CASH, ...list] : list;
   for (let i = 0; i < all.length; i++) {
     const s = all[i];
-    const name = s[1].toUpperCase();
+    const name = fold(s[1]);
     let r = -1;
     if (s[0] === q) r = 0;
     else if (s[0].startsWith(q)) r = 1 + s[0].length / 100;
