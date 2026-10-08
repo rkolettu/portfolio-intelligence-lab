@@ -605,7 +605,7 @@ substitute the CapIQ value.**
     - build passes.
 
 ## TASK 6 — Black–Litterman posterior
-- **STATUS:** COMPLETE (2026-10-08). Awaiting the owner's approval before Task 7.
+- **STATUS:** COMPLETE (approved by the owner 2026-10-08).
 - **PURPOSE:** A certified posterior μ_BL = Π + τΣPᵀ(PτΣPᵀ + Ω)⁻¹(Q − PΠ) from the
   Task 4 prior, the Task 3 Σ and the Task 5 P, Q, Ω. No Expected Return Gap,
   portfolio metric or frontier.
@@ -662,28 +662,64 @@ substitute the CapIQ value.**
     - build passes.
 
 ## TASK 7 — Forward expected-return table and portfolio forward metrics
-- **STATUS:** NOT STARTED.
-- **PURPOSE:**
-  - Per security, the table shows: Ticker, Forward Model Beta, CAPM Prior (= CAPM
-    Required Return), Active View, View Source, Confidence, BL Expected Return and
-    Expected Return Gap.
-  - For a portfolio, it computes:
-    - E[R_p];
-    - β_p;
-    - CAPM Required Return;
-    - the Gap;
-    - model σ_p;
-    - Forward Model Sharpe.
-  - It also derives a deterministic result hash (Q19).
-- **DEPENDENCIES:** Task 6.
-- **FILES:** `lib/forward/expectedReturns.ts` (new).
-- **TESTS:**
-  - the gap is 0 for every row when there are no views;
-  - Gap_p = Σw·gap_i;
-  - all-CASH → Forward Model Sharpe unavailable;
-  - the closed forms;
-  - hash stability.
-- **RESULT:** —
+- **STATUS:** COMPLETE (2026-10-08). Awaiting the owner's approval before Task 8.
+- **RESULT:**
+  - **Q33:** `lib/utils/sha256.ts` (`sha256Hex`), a synchronous, browser-safe
+    SHA-256 over UTF-8 bytes (TextEncoder; no node:crypto or Buffer). It equals
+    Node's `crypto` on:
+    - the FIPS vectors;
+    - every byte length 0–300, including 55/56/63/64/65/119/120/127/128/129;
+    - multi-byte strings at those boundaries;
+    - Unicode, emoji and lone surrogates;
+    - 1 MB strings;
+    - JSON and forward payloads;
+    - 500 seeded random strings.
+
+    It is in `tests/utils/sha256.test.ts` (9 tests). `snapshotHash` is unchanged.
+  - **`lib/forward/expectedReturns.ts`:**
+    - **`portfolioForwardMetrics(context, weights)`:**
+      - validates weights: finite, ≥ 0, no duplicates, in the universe or CASH,
+        total 1 within the existing 1e-6 (rejected outside, never rescaled), and
+        the existing once-only normalization of an accepted residual, recorded;
+      - computes E[R_p] = Σwμ + w_cash Rf, β_p = Σwβ, the required return
+        `capmRequiredReturn(Rf, β_p, MRP)` and the gap;
+      - computes σ_p = √(w_riskyᵀΣw_risky) on the Task 3 Σ, with risky weights
+        unscaled, via the existing `portfolioVariance` roundoff rule;
+      - computes Forward Model Sharpe only when σ_p > 0, otherwise unavailable
+        ("No risky assets" / "Zero portfolio volatility");
+      - adds Expected Return Contributions w_i μ_i.
+    - **`buildForwardExpectedReturns`:**
+      - cross-checks the risk-model hash, canonical order and one shared prior;
+      - builds one `ExpectedReturnRow` per security: β, CAPM Prior (one field),
+        the preserved Task 5 status/source/basis/return/confidence/reason, BL and
+        Expected Return Gap;
+      - adds the CASH row when listed;
+      - adds the not-applicable and invalid views;
+      - computes the portfolio metrics;
+      - computes `resultHash` over the canonical economic payload, which includes
+        the risk-model hash.
+  - **Types:**
+    - `ForwardMetric`, now with a typed reason;
+    - `ExpectedReturnRow`, `CashExpectedReturnRow`, `ExpectedReturnContribution`;
+    - `PortfolioForwardMetrics`, `PortfolioForwardOutcome`;
+    - `ForwardExpectedReturnsResult`, `ForwardExpectedReturnsOutcome`.
+  - **Tests:** 25 in `tests/forward/expectedReturns.test.ts`:
+    - the table: CAPM reuse; positive, negative and zero gaps; exact zero gaps
+      with no views; preserved metadata; the Street basis; the CASH row;
+    - the portfolio: E, β, required and gap; the weighted-gap identity across
+      views and MRP ∈ {0.05, −0.1, 0, 0.2}; the no-view gap; unscaled w′Σw;
+      Sharpe; all-CASH (three ways); zero-volatility hedge; single asset;
+      negative MRP, beta and gap; contributions;
+    - weight validation: outside the tolerance, exact vs normalized, negative,
+      NaN, duplicate, unmodeled, inconsistent context;
+    - the hash: format; order, timestamp, CASH-0 and inactive-view invariance;
+      seven economic changes each change it; identical across universe order;
+    - the import boundary.
+  - **Checks:**
+    - unit tests 680 / 680;
+    - typecheck clean;
+    - lint clean on all V2 code (only the pre-existing InfoTip error remains);
+    - build passes.
 
 ## TASK 8 — Efficient-frontier solver (deterministic active-set QP)
 - **STATUS:** NOT STARTED.

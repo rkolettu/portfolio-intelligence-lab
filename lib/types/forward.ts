@@ -387,48 +387,126 @@ export type BlackLittermanPosteriorOutcome =
       invalid: { ticker: string; capmPrior: number; blackLittermanExpectedReturn: number }[];
     };
 
-/** A forward statistic that can be undefined (e.g. Sharpe at zero volatility). */
+/** A forward statistic that can be undefined. The reason is required when it is
+ * unavailable, so no metric is ever filled with 0, NaN or Infinity. */
 export type ForwardMetric =
-  { available: true; value: number } | { available: false; reason: string };
+  | { available: true; value: number }
+  | { available: false; reason: "No risky assets" | "Zero portfolio volatility" };
 
-/** One row of the shared forward expected-return table. */
+/** One risky security in the shared forward expected-return table. */
 export type ExpectedReturnRow = {
   ticker: string;
-  /** Forward Model Beta vs the market proxy. */
-  modelBeta: number;
-  /** Rf + β × MRP; the CAPM Required Return. */
+  /** Forward Model Beta vs the market proxy (Task 3). */
+  forwardModelBeta: number;
+  /** Rf + β × MRP from capmRequiredReturn: the CAPM Prior, which is the same value
+   * the SML later calls the CAPM Required Return. One field, one computation. */
   capmPrior: number;
-  /** The source the user selected. */
+  /** Task 5 classification, preserved (never reduced to view / no view). */
+  viewStatus: ViewStatus;
   requestedSource: ViewSource;
-  /** The source that entered the model ("none" when a requested view is unavailable). */
-  viewSource: ViewSource;
-  /** Q_k when a view entered the model, otherwise null. */
-  activeView: number | null;
-  /** Confidence of the view that entered the model, otherwise null. */
+  viewSource: "manual" | "street" | null;
+  viewBasis: ViewReturnBasis | null;
+  /** The configured view return (decimal), when there is one. */
+  viewReturn: number | null;
+  /** Fraction in [0, 1], when a view is configured. */
   confidence: number | null;
-  blExpectedReturn: number;
-  /** BL Expected Return − CAPM Required Return. Never called alpha. */
+  /** Why the security stays at its CAPM prior, when a view is configured. */
+  viewReason: string | null;
+  blackLittermanExpectedReturn: number;
+  /** BL Expected Return − CAPM Prior. Never alpha, mispricing or a valuation call. */
   expectedReturnGap: number;
-  /** Why a requested view did not enter the model. */
-  viewNote: string | null;
 };
 
-/** Forward metrics of one allocation (CASH earns Rf and carries zero model risk). */
+/** CASH in the expected-return table: β 0, Rf throughout, gap 0, no view possible. */
+export type CashExpectedReturnRow = {
+  ticker: "CASH";
+  forwardModelBeta: 0;
+  capmPrior: number;
+  viewStatus: "NO_VIEW";
+  blackLittermanExpectedReturn: number;
+  expectedReturnGap: 0;
+};
+
+/** w_i × μ_i: the forward one-period expected-return contribution (linear model). Not
+ * realized or historical attribution. */
+export type ExpectedReturnContribution = {
+  ticker: string;
+  weight: number;
+  expectedReturn: number;
+  contribution: number;
+};
+
+/** Forward metrics of one allocation on the certified forward model. CASH earns Rf
+ * and carries zero model variance; risky weights are never rescaled. */
 export type PortfolioForwardMetrics = {
+  /** The weights used: risky in canonical order, then CASH. */
+  weights: { tickers: string[]; risky: number[]; cash: number };
+  /** The input total, and whether the existing once-only normalization was applied
+   * (|total − 1| within the portfolio tolerance but above floating-point noise). */
+  weightTotal: number;
+  normalized: boolean;
+  riskyWeight: number;
+  noRiskyAssets: boolean;
   /** 12M BL expected return: Σ w_i μ_BL,i + w_cash Rf. */
   expectedReturn: number;
-  /** √(wᵀΣw) on the forward Σ. */
-  modelVolatility: number;
-  /** (E[R_p] − Rf) / σ_p; unavailable at zero model volatility. */
-  forwardModelSharpe: ForwardMetric;
   /** Σ w_i β_i (CASH β = 0). */
-  modelBeta: number;
-  /** Rf + β_p × MRP. */
+  forwardModelBeta: number;
+  /** capmRequiredReturn(Rf, β_p, MRP). */
   capmRequiredReturn: number;
-  /** expectedReturn − capmRequiredReturn. */
+  /** expectedReturn − capmRequiredReturn = Σ w_i gap_i. */
   expectedReturnGap: number;
-  cashWeight: number;
+  /** w_riskyᵀ Σ w_risky under the existing roundoff rule. */
+  modelVariance: number;
+  modelVolatility: number;
+  /** (E[R_p] − Rf) / σ_p, only when σ_p > 0. */
+  forwardModelSharpe: ForwardMetric;
+  /** Risky securities in canonical order, then CASH when held. */
+  expectedReturnContributions: ExpectedReturnContribution[];
 };
+
+export type PortfolioForwardOutcome =
+  | { available: true; metrics: PortfolioForwardMetrics }
+  | {
+      available: false;
+      code: "invalid_inputs" | "invalid_weights" | "numerical_failure";
+      reason: string;
+      tickers: string[];
+    };
+
+/** The Task 7 forward result: the expected-return table, the portfolio's forward
+ * metrics and a deterministic, browser-safe result hash above the risk-model hash. */
+export type ForwardExpectedReturnsResult = {
+  methodologyVersion: string;
+  riskModelHash: string;
+  marketProxy: MarketProxy;
+  riskWindow: RiskWindow;
+  riskFreeRate: number;
+  riskFreeObservationDate: string;
+  marketRiskPremium: number;
+  expectedMarketReturn: number;
+  tau: number;
+  /** One row per risky security, canonical order. */
+  rows: ExpectedReturnRow[];
+  /** Present when the portfolio lists CASH. */
+  cash: CashExpectedReturnRow | null;
+  activeViewCount: number;
+  notApplicableViews: ViewClassification[];
+  invalidViews: ViewClassification[];
+  blackLittermanStatus: "prior_only" | "posterior";
+  certification: BlackLittermanSolveCertification;
+  portfolio: PortfolioForwardMetrics;
+  /** SHA-256 of the canonical economic payload (see the methodology). */
+  resultHash: string;
+};
+
+export type ForwardExpectedReturnsOutcome =
+  | { available: true; result: ForwardExpectedReturnsResult }
+  | {
+      available: false;
+      code: "invalid_inputs" | "invalid_weights" | "numerical_failure";
+      reason: string;
+      tickers: string[];
+    };
 
 /** Outcome of one deterministic solve (frontier point or tangency). */
 export type ForwardSolverStatus =

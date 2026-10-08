@@ -649,6 +649,77 @@ covariance, and P, Q and Ω the certified view inputs. None is re-estimated.
 - CASH stays at Rf, outside Σ and the solve.
 - The Expected Return Gap is computed later (Task 7).
 
+**Forward expected-return table** (one row per risky security, canonical order):
+- **Forward Model Beta.**
+- **CAPM Prior:** one field, from `capmRequiredReturn`. It is the same quantity the
+  SML will call the CAPM Required Return, so it is never computed twice.
+- **The Task 5 view classification:** status (`ACTIVE`, `NO_VIEW`, `ZERO_CONFIDENCE`,
+  `STREET_DATA_UNAVAILABLE`, …), source, basis, view return, confidence and the
+  reason a security stays at its prior. Out-of-universe and invalid views are
+  listed separately.
+- **BL Expected Return.**
+- **Expected Return Gap** = BL Expected Return − CAPM Prior. It can be positive,
+  zero or negative, and is never called alpha, mispricing, undervalued or
+  overvalued. With no active view, every gap is exactly 0.
+- **CASH** appears as a separate row when the portfolio lists it: β 0, CAPM Prior =
+  BL Expected Return = Rf, gap 0, and no view possible.
+- A Street price-return view keeps `price_return` (Dividends Excluded) and is never
+  converted.
+
+**Portfolio forward metrics** (one allocation; Stock Lab reuses the same function
+for the Scenario Baseline and the Proposed Portfolio):
+- **Weights:**
+  - each weight must be finite and nonnegative;
+  - no ticker may appear twice;
+  - every ticker must be in the modeled universe (or be CASH);
+  - weights must total 1 within the existing portfolio tolerance (1e-6). Anything
+    outside is rejected, never rescaled.
+  - Within the tolerance, the existing `parsePortfolio` rule applies: a total within
+    floating-point noise (≤ 1e-13) is used as entered; otherwise the accepted
+    residual is normalized once, explicitly, and recorded (`normalized`,
+    `weightTotal`).
+- **Expected return:** E[R_p] = Σ w_i μ_BL,i + w_cash Rf, in decimal 12-month
+  units. Nothing is compounded.
+- **Forward Model Beta:** β_p = Σ w_i β_i, with CASH 0, from the Task 3 betas. It is
+  never re-estimated from a return series.
+- **CAPM Required Return:** `capmRequiredReturn(Rf, β_p, MRP)`, the same function.
+- **Expected Return Gap:** E[R_p] − Required_p, which equals Σ w_i × gap_i (CASH
+  gap 0). A test proves this identity across views, MRPs and a normalized residual.
+- **Model volatility:** σ_p = √(w_riskyᵀ Σ w_risky) on the Task 3 Σ. Risky weights
+  are not rescaled: 50% risky and 50% CASH uses 0.5. CASH adds zero variance and
+  covariance.
+  - The existing `portfolioVariance` roundoff rule applies: |variance| ≤ 1e-12 ×
+    (Σ|wᵢ|σᵢ)² is zero, and a materially negative variance is a typed
+    `numerical_failure`.
+- **Forward Model Sharpe** = (E[R_p] − Rf) / σ_p, only when σ_p > 0. Otherwise it is
+  unavailable, with reason "No risky assets" (all risky weights zero) or "Zero
+  portfolio volatility" (e.g. a perfect hedge). It is never 0, NaN or Infinity.
+- **All-CASH** is a valid state: E = Rf, β 0, Required = Rf, gap 0, σ 0, Sharpe
+  unavailable ("No risky assets").
+- **100% in one security** reproduces that security's model values.
+- **Expected Return Contribution** = w_i × μ_i, a linear one-period decomposition of
+  E[R_p]. It is not realized or historical attribution.
+
+**Result hash.** The Task 7 result carries `resultHash`, a SHA-256 of a canonical
+economic payload. It sits above the risk-model hash and records it, rather than
+replacing it.
+- **What the payload contains**, in fixed key order and canonical ticker order:
+  - the methodology version, risk-model hash, proxy and window;
+  - the Rf value and observation date;
+  - the MRP and τ;
+  - the active views (ticker, source, basis, confidence, return);
+  - the CAPM prior and BL vectors;
+  - the portfolio's risky weights, CASH weight and forward metrics.
+- **What it leaves out:** retrieval timestamps, cache ages, labels, UI state, the
+  order things were created in, and views with no model effect.
+- **Implementation:** `sha256Hex` (`lib/utils/sha256.ts`), a synchronous,
+  browser-safe SHA-256 over the string's UTF-8 bytes (TextEncoder; no Node crypto,
+  no Buffer). It matches Node's `crypto` exactly in tests: FIPS vectors, every byte
+  length 0–300, multi-byte strings at the block boundaries, Unicode, emoji, lone
+  surrogates, 1 MB strings, JSON payloads and 500 random strings.
+- It identifies results for audit only. It is not used for security. The existing
+  server `snapshotHash` is unchanged.
+
 **Local assumption state.** One state holds the risk window, market proxy, MRP and
 per-ticker views. Portfolio Theory and Stock Lab share it.
 - It is stored only in this browser, under the versioned key
