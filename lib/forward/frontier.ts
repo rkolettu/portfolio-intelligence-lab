@@ -193,6 +193,94 @@ type Candidate =
 /** How a point is certified: the target-return KKT, or (top endpoint) Q39. */
 type Check = { kind: "target_return" } | { kind: "top_endpoint"; tieSet: number[] };
 
+/** The exact target-return solve behind every interior frontier point (Task 8),
+ * exported so other forward results can be checked against the same machinery.
+ * - Start: (1 − t)·w_GMV + t·e_k, k the first security holding exactly max μ, t
+ *   placing the start's return on the target, so the start is feasible.
+ * - Q36: μᵀw = r is passed as ((μ − r·1)/s)ᵀw = 0 with s = max|μ_i − r|.
+ * - Q38: the active-set QP with releases, the cycle guard and the
+ *   max(50, 2n²) cap.
+ * Requires r_GMV ≤ r ≤ max μ with r_GMV < max μ. The candidate is NOT certified
+ * here: certify it with certifyFrontierPoint. */
+export function solveTargetReturn(input: {
+  covariance: Matrix;
+  expectedReturns: readonly number[];
+  /** The GMV anchor (the existing minimumVariance). */
+  gmvWeights: readonly number[];
+  targetReturn: number;
+  /** 2·λmax(Σ), as minimumVariance computes it. */
+  normalization: number;
+}):
+  | { ok: true; weights: number[]; solver: FrontierSolveRecord }
+  | {
+      ok: false;
+      status: FrontierPoint["status"];
+      cause: FrontierFailureCause;
+      reason: string;
+      solver: FrontierSolveRecord;
+    } {
+  const { covariance: sigma, expectedReturns: mu, gmvWeights, targetReturn: target } = input;
+  const n = mu.length;
+  const cap = activeSetIterationCap(n);
+  const record = (
+    r: { iterations: number; joins: number; releases: number },
+    cycle = false,
+  ): FrontierSolveRecord => ({
+    method: "active_set",
+    iterations: r.iterations,
+    joins: r.joins,
+    releases: r.releases,
+    maxIterations: cap,
+    cycleDetected: cycle,
+  });
+  const rGmv = dot(gmvWeights, mu);
+  const maxMu = Math.max(...mu);
+  if (!(rGmv < maxMu) || !(target >= rGmv && target <= maxMu))
+    return {
+      ok: false,
+      status: "invalid_inputs",
+      cause: "invalid_inputs",
+      reason: `The target ${target} is outside the efficient branch [r_GMV, max μ] = [${rGmv}, ${maxMu}].`,
+      solver: record({ iterations: 0, joins: 0, releases: 0 }),
+    };
+  // The first security holding exactly max μ: mixing it with the GMV reaches every
+  // target exactly, so the start is feasible.
+  const k = mu.indexOf(maxMu);
+  const t = (target - rGmv) / (maxMu - rGmv);
+  const start = gmvWeights.map((w, i) => (1 - t) * w + (i === k ? t : 0));
+  // Q36: given Σw = 1, μᵀw = r is the same constraint as (μ − r·1)ᵀw = 0. The solve
+  // uses that row divided by s = max|μ_i − r|, which keeps it well conditioned when
+  // expected returns are nearly equal. Certification is in original coordinates:
+  // |μᵀw − r| ≤ 1e-10.
+  const offsets = mu.map((m) => m - target);
+  const scale = Math.max(...offsets.map(Math.abs));
+  if (!(Number.isFinite(scale) && scale > 0))
+    return {
+      ok: false,
+      status: "numerical_failure",
+      cause: "invalid_scale",
+      reason: `The return constraint has no positive, finite scale (max|μ_i − r| = ${scale}); the point is not solved.`,
+      solver: record({ iterations: 0, joins: 0, releases: 0 }),
+    };
+  const qp = activeSetQp({
+    covariance: sigma,
+    E: [mu.map(() => 1), offsets.map((d) => d / scale)],
+    f: [1, 0],
+    start,
+    optimalityTolerance: T.kkt * input.normalization,
+    maxIterations: cap,
+  });
+  return qp.ok
+    ? { ok: true, weights: qp.x, solver: record(qp) }
+    : {
+        ok: false,
+        status: qp.status,
+        cause: qp.cause,
+        reason: qp.reason,
+        solver: record(qp, qp.cause === "active_set_cycle"),
+      };
+}
+
 /** The certified efficient frontier for the risk model's Σ and the BL posterior. */
 export function buildEfficientFrontier(input: {
   riskModel: Pick<ForwardRiskModel, "tickers" | "covariance" | "hash">;
@@ -397,54 +485,23 @@ export function buildEfficientFrontier(input: {
   const points: FrontierPoint[] = [gmvPoint];
   if (!single) {
     const count = FORWARD_METHODOLOGY.frontierPoints;
-    // The first security holding exactly max μ: mixing it with the GMV reaches every
-    // target exactly, so each interior start is feasible.
-    const k = mu.indexOf(maxMu);
-    const cap = activeSetIterationCap(n);
     for (let index = 1; index < count - 1; index++) {
       const target = rGmv + (index / (count - 1)) * (maxMu - rGmv);
-      const t = (target - rGmv) / (maxMu - rGmv);
-      const start = gmvWeights.map((w, i) => (1 - t) * w + (i === k ? t : 0));
-      // Q36: given Σw = 1, μᵀw = r is the same constraint as (μ − r·1)ᵀw = 0. The
-      // solve uses that row divided by s = max|μ_i − r|, which keeps it well
-      // conditioned when expected returns are nearly equal. Certification below is in
-      // original coordinates: |μᵀw − r| ≤ 1e-10.
-      const offsets = mu.map((m) => m - target);
-      const scale = Math.max(...offsets.map(Math.abs));
-      const record = (r: { iterations: number; joins: number; releases: number }, cycle = false): FrontierSolveRecord => ({
-        method: "active_set",
-        iterations: r.iterations,
-        joins: r.joins,
-        releases: r.releases,
-        maxIterations: cap,
-        cycleDetected: cycle,
+      const solved = solveTargetReturn({
+        covariance: sigma,
+        expectedReturns: mu,
+        gmvWeights,
+        targetReturn: target,
+        normalization,
       });
-      let candidate: Candidate;
-      if (!(Number.isFinite(scale) && scale > 0))
-        candidate = {
-          failure: `The return constraint has no positive, finite scale (max|μ_i − r| = ${scale}); the point is not solved.`,
-          status: "numerical_failure",
-          cause: "invalid_scale",
-          solver: record({ iterations: 0, joins: 0, releases: 0 }),
-        };
-      else {
-        const qp = activeSetQp({
-          covariance: sigma,
-          E: [tickers.map(() => 1), offsets.map((d) => d / scale)],
-          f: [1, 0],
-          start,
-          optimalityTolerance: T.kkt * normalization,
-          maxIterations: cap,
-        });
-        candidate = qp.ok
-          ? { weights: qp.x, solver: record(qp) }
-          : {
-              failure: qp.reason,
-              status: qp.status,
-              cause: qp.cause,
-              solver: record(qp, qp.cause === "active_set_cycle"),
-            };
-      }
+      const candidate: Candidate = solved.ok
+        ? { weights: solved.weights, solver: solved.solver }
+        : {
+            failure: solved.reason,
+            status: solved.status,
+            cause: solved.cause,
+            solver: solved.solver,
+          };
       points.push(point(index, "interior", target, candidate, { kind: "target_return" }));
     }
     // Top endpoint (Q37/Q39): the minimum-variance portfolio of the near-tied top set

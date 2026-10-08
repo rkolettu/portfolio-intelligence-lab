@@ -878,7 +878,7 @@ substitute the CapIQ value.**
     - build passes.
 
 ## TASK 9 — Global Minimum Variance and Constructor consistency
-- **STATUS:** COMPLETE — awaiting the owner's approval.
+- **STATUS:** COMPLETE (approved by the owner 2026-10-08).
 - **PURPOSE:**
   - GMV is the existing `minimumVariance()` on the forward Σ (B = 1, bounds [0,1]).
   - The frontier's low end must agree with it.

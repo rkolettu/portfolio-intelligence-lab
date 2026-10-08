@@ -879,6 +879,88 @@ replacing it.
   risk window. The Constructor uses its own analysis-period covariance and may
   therefore produce a different Minimum Variance allocation."
 
+**Tangency Portfolio** (Task 10; the constrained risky Maximum Forward Model Sharpe
+portfolio, `buildTangencyPortfolio`):
+- **Problem:** maximize (aᵀw)/√(wᵀΣw), with a = μ_BL − Rf·1, subject to Σw = 1 and
+  w ≥ 0.
+  - μ_BL is the Task 6 posterior, Rf the CAPM prior's forward 1Y Treasury rate and
+    Σ the Task 3 Ledoit–Wolf covariance. All three must come from one risk model
+    (hash, proxy, window, and the same Rf as the posterior's CASH).
+  - CASH is not in the problem; it is combined with the tangency later, on the
+    Model CAL.
+  - The tangency is its own exact portfolio. It is never inserted into or
+    interpolated onto the 41-point frontier grid. Its chart coordinates are
+    (volatility, 12M BL expected return).
+- **Existence:** max aᵢ > 1e-12 (`positiveExcessReturnTolerance`), whatever the sign
+  of the MRP.
+  - A negative MRP with a view that lifts one security more than 1e-12 above Rf
+    has a tangency.
+  - Otherwise the result is `no_positive_excess_return`. No portfolio is
+    manufactured, and the least-negative-Sharpe portfolio is never reported in
+    its place.
+- **No filtering:** once a tangency exists, the whole risky universe stays in the
+  problem. A security at or below Rf, or with a negative expected return, can still
+  be held for diversification. Long-only is the only asset restriction.
+- **Reformulation:** with s = max aᵢ, solve min yᵀΣy subject to (a/s)ᵀy = 1 and
+  y ≥ 0.
+  - Scaling by s keeps the constraint well conditioned when excess returns are
+    tiny, and does not change the solution.
+  - Then w = y / Σᵢ yᵢ: each yᵢ divided by the sum of all y components, which must
+    be positive and finite.
+  - s is recorded as `excessReturnScale`, solver provenance rather than an
+    assumption.
+  - Identities: aᵀy = s, the portfolio excess return is s / 1ᵀy, and the Sharpe
+    ratio is s / √(yᵀΣy).
+- **Solver:** the Task 8 active-set QP with one equality row. No budget row is
+  added.
+  - **Start:** 100% in the security with the largest excess return (its scaled
+    coefficient is exactly 1; lowest index on an exact tie). The start is a
+    numerical detail: other feasible starts give the same tangency.
+  - **Releases are kept:** securities enter by release, and one can leave (join)
+    and re-enter.
+  - **Safety:** deterministic lowest-index ties, the active-set cycle guard and the
+    max(50, 2n²) cap. Iterations, joins, releases, the cap and the cycle flag are
+    recorded.
+  - **Single security:** 100% in it, with no QP.
+  - **No risky assets:** "No risky assets", with no solver.
+- **Certification of the scaled y-problem** (independent of the solver's
+  multipliers):
+  - |(a/s)ᵀy − 1| ≤ 1e-10 and max(0, −min y) ≤ 1e-10.
+  - KKT ≤ 1e-8, normalized by 2·λmax(Σ)·1ᵀy (`minimumVariance`'s L·B, with
+    B = 1ᵀy).
+    - The residual is the exact minimum, over the one multiplier, of the largest
+      stationarity or dual-feasibility violation.
+    - Because each (a/s)ᵢ ≤ 1, 1ᵀy ≥ 1. The solver releases only below
+      −1e-8·2λmax, so it is never looser than this check.
+- **Certification of the final portfolio:**
+  - |Σw − 1| ≤ 1e-10 and w ≥ 0;
+  - |aᵀy/s − 1| ≤ 1e-10;
+  - μ_BLᵀw − Rf > 0 and σ > 0;
+  - **Sharpe identity:** Sharpe(w) = (μ_BLᵀw − Rf)/√(wᵀΣw) must equal
+    s/√(yᵀΣy).
+    - Exactly, the difference is Sharpe_y·((a/s)ᵀy − 1) + Rf·(Σw − 1)/σ. Its bound
+      therefore uses the existing 1e-10 equality and budget tolerances, plus the
+      floating-point allowance (n + 2)·ε·(2|Sharpe_y| + (Σ|wᵢμᵢ| + |Rf|)/σ), in
+      the form approved for Q39.
+  - Every output (expected return, excess, variance, volatility, Forward Model
+    Sharpe) is recomputed from the final w.
+- **Verified by tests:**
+  - closed forms (two and three securities, w ∝ Σ⁻¹a when all are held);
+  - a brute-force maximum Sharpe over every support (weights to 1e-12);
+  - the exact target-return frontier solve at the tangency's return reproduces it
+    (or the top endpoint in the near-tie region);
+  - Sharpe ≥ every certified frontier point and every single security;
+  - the MRP and view cases, the 1e-12 threshold, ticker-order invariance, the hash,
+    a forced cycle and invalid inputs.
+- **Tangency hash:** `tangencyHash` is a SHA-256 of a canonical payload:
+  - the version, risk-model hash, proxy and window;
+  - Rf with its observation date;
+  - the canonical tickers, μ_BL and the weights.
+
+  `expectedReturnsHash` identifies the μ_BL lineage. Inputs are put in canonical
+  (sorted ticker) order first, so equivalent orderings give the same result and
+  hash. Timestamps, labels and display state are excluded.
+
 **Local assumption state.** One state holds the risk window, market proxy, MRP and
 per-ticker views. Portfolio Theory and Stock Lab share it.
 - It is stored only in this browser, under the versioned key

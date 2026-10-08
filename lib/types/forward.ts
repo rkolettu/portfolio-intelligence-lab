@@ -655,6 +655,106 @@ export type EfficientFrontierOutcome =
       reason: string;
     };
 
+/** Task 10: certification of the scaled y-problem min yᵀΣy s.t. (a/s)ᵀy = 1, y ≥ 0. */
+export type TangencyScaledCertification = {
+  /** |(a/s)ᵀy − 1| ≤ 1e-10 */
+  scaledEquality: number | null;
+  /** max(0, −min y) ≤ 1e-10 */
+  bound: number | null;
+  /** Smallest achievable stationarity / dual-feasibility violation over the one
+   * multiplier, over 2·λmax(Σ)·1ᵀy, ≤ 1e-8 */
+  kkt: number | null;
+  /** 2·λmax(Σ)·1ᵀy */
+  kktNormalization: number | null;
+};
+
+/** Task 10: certification of the final normalized portfolio, in original economics. */
+export type TangencyEconomicCertification = {
+  /** |Σw − 1| ≤ 1e-10 */
+  budget: number | null;
+  /** max(0, −min w) ≤ 1e-10 */
+  bound: number | null;
+  /** |aᵀy / s − 1| ≤ 1e-10 (a unscaled) */
+  scaleIdentity: number | null;
+  /** μ_BLᵀw − Rf > 0 */
+  positiveExcessReturn: boolean | null;
+  /** |Sharpe(w) − s/√(yᵀΣy)| */
+  sharpeIdentity: number | null;
+  /** The bound that discrepancy must meet, derived from the 1e-10 equality and
+   * budget tolerances plus the floating-point allowance (see the methodology). */
+  sharpeIdentityTolerance: number | null;
+};
+
+export type TangencySolveRecord = FrontierSolveRecord & {
+  /** s = max aᵢ: the excess-return scale of the constraint (solver provenance, not
+   * an economic assumption). */
+  excessReturnScale: number;
+  /** The start security (largest excess return, lowest index on an exact tie): a
+   * numerical implementation detail. */
+  startTicker: string;
+  /** 1ᵀy of the solved y. */
+  ySum: number | null;
+};
+
+/** The constrained risky tangency (Maximum Forward Model Sharpe) portfolio. */
+export type TangencyPortfolio = {
+  methodologyVersion: string;
+  riskModelHash: string;
+  marketProxy: MarketProxy;
+  riskWindow: RiskWindow;
+  riskFreeRate: number;
+  riskFreeObservationDate: string;
+  /** Canonical (sorted) risky universe; every vector below follows it. */
+  tickers: string[];
+  /** μ_BL the tangency used, and its lineage hash. */
+  expectedReturns: number[];
+  expectedReturnsHash: string;
+  /** Risky weights summing to 1 (CASH is combined later, on the Model CAL). */
+  weights: number[];
+  /** μ_BLᵀw (12M) — the chart's y-coordinate. */
+  expectedReturn: number;
+  /** μ_BLᵀw − Rf */
+  excessReturn: number;
+  variance: number;
+  /** √(wᵀΣw) — the chart's x-coordinate. */
+  volatility: number;
+  /** (μ_BLᵀw − Rf) / √(wᵀΣw), from the final w. */
+  forwardModelSharpe: number;
+  /** s / √(yᵀΣy): the y-space identity, an independent check. */
+  yIdentitySharpe: number;
+  binding: { lower: string[]; upper: string[] };
+  solver: TangencySolveRecord;
+  certification: {
+    scaled: TangencyScaledCertification;
+    economic: TangencyEconomicCertification;
+  };
+  tangencyHash: string;
+};
+
+export type TangencyOutcome =
+  | { available: true; tangency: TangencyPortfolio }
+  | {
+      available: false;
+      code:
+        | "invalid_inputs"
+        | "no_risky_assets"
+        | "no_positive_excess_return"
+        | "numerical_failure"
+        | "non_converged";
+      reason: string;
+      /** Typed solver/certification cause for numerical failures. */
+      cause: FrontierFailureCause | null;
+      riskModelHash: string | null;
+      riskFreeRate: number | null;
+      /** max(μ_BL − Rf) when known. */
+      maxExcessReturn: number | null;
+      solver: TangencySolveRecord | null;
+      certification: {
+        scaled: TangencyScaledCertification;
+        economic: TangencyEconomicCertification;
+      } | null;
+    };
+
 /** A straight line E = intercept + slope × x drawn through an anchor point. The
  * CAL and the Market CML Proxy are solid from x = 0 to the anchor and dashed beyond
  * it (borrowing at Rf, outside the lab's modeled allocation constraints). */

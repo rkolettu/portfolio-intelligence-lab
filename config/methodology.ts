@@ -247,6 +247,28 @@ export const FORWARD_METHODOLOGY = {
      * A numerical tie tolerance, not an economic assumption: each μ_i is kept. */
     topReturnTieTolerance: 1e-12,
   },
+  /** Task 10: the constrained risky tangency (Maximum Forward Model Sharpe) portfolio:
+   * maximize (aᵀw)/√(wᵀΣw), a = μ_BL − Rf·1, s.t. Σw = 1, w ≥ 0, risky assets only
+   * (no CASH). Solved as the homogeneous convex problem min yᵀΣy s.t. (a/s)ᵀy = 1,
+   * y ≥ 0 with s = max aᵢ, then w = y / 1ᵀy (each yᵢ divided by the sum of all y). */
+  tangency: {
+    problem:
+      "max (μ_BL − Rf·1)ᵀw / √(wᵀΣw) s.t. Σw = 1, w ≥ 0 over the whole risky universe",
+    reformulation:
+      "min yᵀΣy s.t. (a/s)ᵀy = 1, y ≥ 0, a = μ_BL − Rf·1, s = max aᵢ; w = y / Σᵢ yᵢ",
+    /** Tangency exists only when max aᵢ > this (whatever the sign of the MRP). */
+    positiveExcessReturnTolerance: 1e-12,
+    /** The Q34 tolerances where they apply: the scaled equality and the budget at the
+     * weight tolerance, bounds at the weight tolerance, KKT at the stationarity
+     * tolerance over 2·λmax(Σ)·1ᵀy (minimumVariance's L·B with B = 1ᵀy). */
+    tolerances: {
+      scaledEquality: CONSTRUCTION_METHODOLOGY.tolerances.weight,
+      budget: CONSTRUCTION_METHODOLOGY.tolerances.weight,
+      bound: CONSTRUCTION_METHODOLOGY.tolerances.weight,
+      kkt: CONSTRUCTION_METHODOLOGY.tolerances.stationarity,
+      binding: CONSTRUCTION_METHODOLOGY.tolerances.binding,
+    },
+  },
   /** Q38: the deterministic primal active-set solver (frontier now, tangency later).
    * Bounds both join and are released, so no n + 2 bound exists. A pinned set that
    * recurs within one solve stops it (non_converged, active_set_cycle); the cap
