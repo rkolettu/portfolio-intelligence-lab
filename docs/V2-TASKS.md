@@ -313,7 +313,9 @@ substitute the CapIQ value.**
   - No implementation code was written in this task.
 
 ## TASK 1 — Forward-model contracts, assumptions and methodology constants
-- **STATUS:** IN PROGRESS.
+- **STATUS:** BLOCKED — USER DECISION REQUIRED (Q27, Q28). The implementation, tests
+  and documentation are done; only the confirmation of two input guardrails is
+  outstanding.
 - **PURPOSE:** Define the types and defaults that every later task builds on:
   - types: `ForwardAssumptions`, `ViewInput`, `ForwardRiskFree`,
     `EffectiveRiskWindow`, `ForwardRiskModel`, `ExpectedReturnRow`,
@@ -342,10 +344,36 @@ substitute the CapIQ value.**
   - The MRP is labelled *Assumption* and is never market data.
   - Views and assumptions are stored locally only.
   - τ is internal.
-- **RESULT:** —
+- **RESULT (2026-10-08):**
+  - **Implemented:**
+    - `FORWARD_METHODOLOGY` (`forward-v1`), appended to `config/methodology.ts`;
+    - the contracts in `lib/types/forward.ts`;
+    - the defaults and the approved `FORWARD_LABELS` in
+      `lib/forward/assumptions.ts`;
+    - Zod validation in `lib/validation/forward.ts`;
+    - a pure reducer and versioned localStorage persistence
+      (`portfolio-lab:forward-assumptions:v1`) in `lib/state/forwardAssumptions.ts`;
+    - a V2 section started in `docs/METHODOLOGY.md`.
+  - **Tests:** 29 new in `tests/forward/assumptions.test.ts`. They include SHA-256
+    pins of every pre-V2 methodology constant, which prove that existing snapshot
+    identity is unchanged.
+  - **Finding:** Zod 4's `z.record` silently drops a `__proto__` key, which would
+    lose a view without an error. View keys are therefore validated on the raw input
+    before the record parse.
+  - **Checks:**
+    - typecheck clean;
+    - 527 / 527 unit tests (498 pre-existing + 29);
+    - build passes;
+    - lint shows only the pre-existing InfoTip error (Q26).
+  - **Pending decisions:**
+    - **Q27:** the MRP accepts any finite value above −100%, with no economic range.
+    - **Q28:** a Manual View is a 12-month expected *total* return, the same basis as
+      the CAPM prior, above −100% and with no upper cap.
 
 ## TASK 2 — Forward risk-free rate: 1Y Treasury from the existing curve
-- **STATUS:** NOT STARTED.
+- **STATUS:** BLOCKED — USER DECISION REQUIRED (Q29). The existing curve reports the
+  1Y yield on the latest date that all five maturities share. That may differ from
+  the latest DGS1 observation on its own.
 - **PURPOSE:**
   - Take the 12-month Rf from the 1Y point of the existing `currentTreasury()` curve:
     DGS1 via FRED, with the U.S. Treasury as fallback.
@@ -862,6 +890,14 @@ T1 ─┬─ T2 ──────────────┐
                                              └─ T25 ◄──────┘ (T16/T17)
 T26 runs alongside each task · T27–T30 close V2
 ```
+
+## Open questions raised during implementation
+
+| # | Raised in | Question | Blocks |
+| --- | --- | --- | --- |
+| Q27 | Task 1 | MRP input guardrail: numeric sanity only (finite, > −100%), or an economic range? | Task 1 sign-off |
+| Q28 | Task 1 | Manual View = 12M expected *total* return (same basis as the CAPM prior), > −100%, no upper cap? | Task 1 sign-off |
+| Q29 | Task 2 | Forward Rf = 1Y point of the existing common-date curve, or the latest DGS1 observation on its own? | Task 2 |
 
 ## External data service changes
 

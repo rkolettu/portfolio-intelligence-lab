@@ -340,6 +340,70 @@ Each proposal also carries plain observations: 0% floors, binding caps, concentr
 
 Required text on every construction view: "For educational and analytical purposes only. Allocation outputs are mathematical results based on selected inputs, assumptions and constraints, not personalized recommendations."
 
+## Forward model (V2, `forward-v1`) — in development
+
+V2 adds a forward layer that is separate from every historical layer above. It
+states what the model *assumes* for the next 12 months; it does not describe what
+happened. Constants live in `FORWARD_METHODOLOGY`. They are appended to
+`config/methodology.ts` without editing any earlier constant, so every Phase 1–6
+snapshot hash is unchanged; a test pins each earlier constant's hash. The task plan
+and the approved decisions are in [V2-TASKS.md](V2-TASKS.md). This section grows
+as each part is implemented; anything not described here is not yet built.
+
+**Horizon.** The outlook is fixed at the **next 12 months**. Nothing is compounded
+past it, extrapolated to longer horizons or decayed.
+
+**Risk window.** The historical window used to estimate covariance, volatility,
+Forward Model Beta and correlation is **1Y, 3Y or 5Y** (default 3Y). It is separate
+from the forecast horizon: changing it never changes the 12-month horizon. It is
+also independent of the historical Analysis Period. The rules for ending the window
+at the latest finalized session and for disclosing an Effective Risk Window arrive
+with the risk model.
+
+**Market proxy.** VTI (default), SPY or VT. Only these broad equity funds are
+accepted: a bond fund, or any other fund, can never stand in for the market
+portfolio. VTI is a practical market proxy, not the theoretical global market
+portfolio. Custom proxies need a separate, approved change.
+
+**Market Risk Premium (MRP).**
+- An explicit forward **assumption**, 5.00% by default, never presented as market
+  data.
+- The user may override it. The only validation is numeric sanity (finite and
+  above −100%); no economic range is imposed.
+
+**Views and confidence (inputs).**
+- Each risky security has one of three views:
+  - **No View** — the model uses the CAPM prior;
+  - **Street View**;
+  - **Manual View** — the user's 12-month expected *total* return, on the same
+    basis as the CAPM prior, which must be above −100%.
+- The manual value is kept while another source is active.
+- Confidence is explicit: 0–100%, default 50%. 0% ignores a view. It is never
+  generated or inferred.
+- Views are absolute and single-security, keyed by canonical ticker. CASH carries no
+  view.
+
+**Local assumption state.** One state holds the risk window, market proxy, MRP and
+per-ticker views. Portfolio Theory and Stock Lab share it.
+- It is stored only in this browser, under the versioned key
+  `portfolio-lab:forward-assumptions:v1`.
+- Corrupt, unsupported or denied storage restores the defaults with a notice; a
+  state is never partly restored.
+- Every change is revalidated as a whole state, and an invalid state is never stored.
+- τ (fixed at 0.05) is internal and is not part of the user's assumptions.
+
+**Terminology.** Forward and historical statistics carry distinct labels wherever
+both can appear, and a forward label is never shortened to a bare "Beta" or
+"Sharpe":
+
+| Forward label | Historical counterpart | Never written as |
+| --- | --- | --- |
+| Forward Model Beta / Model Beta vs Market Proxy | Historical Beta vs Benchmark | "Beta" |
+| Forward Model Sharpe | Historical Sharpe | "Sharpe" |
+| Model Capital Allocation Line (Model CAL) | — | "CML" |
+| Market CML Proxy | — | "CML" |
+| Expected Return Gap (Positive / Negative) | historical CAPM alpha | alpha, undervalued, overvalued |
+
 ## Reproducibility and limitations
 
 Results contain normalized source observations, UTC sessions, original configuration, finalized-data cutoff, fetch/source provenance, versioned methodology/calendar, interval-set hash and SHA-256 snapshot identity. Replaying `simulate({...result.snapshot, config: result.config, now: result.metadata.generatedAt})` reproduces the ledger. No durable server snapshot retention is claimed; future provider revisions can change newly fetched results. Hashes alone cannot recover old data. Production redistribution and retention permissions remain a release gate.

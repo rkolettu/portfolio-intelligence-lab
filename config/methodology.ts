@@ -138,3 +138,53 @@ export const STRESS_METHODOLOGY = {
   /** Treasury observations kept before each window for prior-known rate lookup. */
   treasuryContextDays: 14,
 } as const;
+
+/** V2 forward model (Layer B: what the model assumes for the next 12 months).
+ * Separate from every historical constant, so no Phase 1–6 snapshot identity changes.
+ * Fields are appended while V2 is built; after release any change is a new version. */
+export const FORWARD_METHODOLOGY = {
+  version: "forward-v1",
+  /** Fixed outlook. Nothing is compounded, extrapolated or decayed past it. */
+  horizonMonths: 12,
+  /** Risk estimation is separate from the forecast horizon. */
+  riskWindows: ["1Y", "3Y", "5Y"],
+  riskWindowYears: { "1Y": 1, "3Y": 3, "5Y": 5 },
+  defaultRiskWindow: "3Y",
+  /** Broad equity funds only: a bond fund can never stand in for the market. VTI is
+   * a practical market proxy, not the theoretical global market portfolio. */
+  marketProxies: ["VTI", "SPY", "VT"],
+  defaultMarketProxy: "VTI",
+  /** An explicit forward assumption, never market data. */
+  defaultMarketRiskPremium: 0.05,
+  riskFree: {
+    series: "DGS1",
+    maturity: "1Y",
+    convention:
+      "Latest quoted 1-year constant-maturity Treasury yield, used unconverted as a 12-month risk-free proxy; not a guaranteed realized holding-period return. The 3-month rate is never substituted.",
+  },
+  riskAnnualization: METHODOLOGY.riskAnnualization,
+  /** Common observations: < 60 unavailable, 60–251 limited, ≥ 252 normal. */
+  minimumObservations: 60,
+  normalObservations: 252,
+  covariance: {
+    estimator: "ledoit-wolf-2004",
+    target: "scaled_identity",
+    universe: "forward risky universe plus the market proxy",
+    version: "forward-lw-augmented-v1",
+  },
+  /** Forward Model Beta and market volatility from the same covariance matrix. */
+  beta: "Σ_im / Σ_mm of the forward covariance; σ_m = √Σ_mm",
+  views: {
+    /** V2 views are absolute, one security each. */
+    kind: "absolute_single_security",
+    defaultConfidence: 0.5,
+    omega:
+      "confidence-scaled (Idzorek-style closed form): Ω_k = p_k τΣ p_kᵀ (1 − c_k) / c_k; c = 0 ignores the view, c = 1 sets Ω_k = 0",
+  },
+  /** Internal and fixed. Under the confidence-scaled Ω it cancels from the
+   * posterior mean, so it carries no economic meaning and is not a user setting. */
+  tau: 0.05,
+  /** Deterministic efficient-frontier target returns (refinable without a
+   * methodology change to the frontier definition). */
+  frontierPoints: 41,
+} as const;
