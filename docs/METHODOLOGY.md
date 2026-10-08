@@ -763,21 +763,44 @@ replacing it.
   - **Rounding:** a weight that rounding pushes a few ulps below zero during a step
     is held at 0. The returned point is always an exact face solution, never a
     clipped one.
-  - **Limit:** 10,000 iterations, then `non_converged`.
-- **Top endpoint (point 40):** only allocations held entirely in the highest-return
-  securities reach max μ.
-  - **Ties (Q37):** securities with max μ − μᵢ ≤ 1e-12 (`topReturnTieTolerance`)
-    are tied. This is a numerical tie tolerance, not an economic assumption, and
-    each μᵢ is kept as it is.
-  - If one security is in the tied set, the endpoint is 100% in it.
-  - If several are tied, it is their minimum-variance mix: the existing
-    `minimumVariance` on their sub-covariance. A one-rounding-step difference
-    between two securities therefore no longer flips the endpoint to 100% in one of
-    them.
-  - Its target is max μ. It reports its actual μᵀw and is certified like every other
-    point. The tied spread is ≤ 1e-12, inside the 1e-10 return tolerance.
-- **Certification (Q34):** every point, the GMV included, is checked from its weights
-  alone. No solver multipliers or working set are used.
+  - **Releases are kept (Q38).** A security at 0% in the GMV starts pinned, and it
+    may need to enter at a higher target. So bounds both join and leave, and no
+    n + 2 bound on iterations exists.
+  - **Cycle guard:** at every iteration the pinned set is recorded as its canonical
+    sorted index list. If a set recurs within the same target's solve, the solve
+    stops at once with `non_converged` (`active_set_cycle`).
+  - **Cap:** max(50, 2n²) iterations (882 at n = 21), then `non_converged`
+    (`iteration_cap`). There are no retries and no changed tolerances.
+  - **Record:** each point keeps its iterations, joins, releases, the cap that
+    applied and whether a cycle was detected.
+- **Top endpoint (point 40):** the minimum-variance portfolio of the near-tied top
+  set T. It is 100% invested, holds no negative weights, and holds nothing outside
+  T.
+  - **The tie set (Q37):** T = {i : max μ − μᵢ ≤ 1e-12} (`topReturnTieTolerance`).
+    This is a numerical tie tolerance, not an economic assumption, and each μᵢ is
+    kept as it is.
+  - **One rule for every case:**
+    - one security in T gives 100% in it, as before;
+    - several, exact ties and near-ties alike, give the existing `minimumVariance`
+      on Σ_TT.
+  - **Stability:** a one-rounding-step difference between two securities no
+    longer flips the endpoint to 100% in one of them.
+  - **Reporting:** the endpoint reports its actual μᵀw, never max μ in its place.
+- **Top-endpoint certification (Q39):** the endpoint is certified as the problem that
+  defines it, not as an exact target-return problem. The exact-return KKT would
+  wrongly reject a near-tie mix whenever a lower-variance security sits just below
+  the top. Every one of these must pass:
+  - budget |Σw − 1| ≤ 1e-10 and bound max(0, −min w) ≤ 1e-10;
+  - exactly zero weight outside T;
+  - `minimumVariance`'s own certification rules on T (100% budget, 0–100% bounds):
+    projected-gradient stationarity and KKT, each ≤ 1e-8, normalized by
+    2·λmax(Σ_TT);
+  - max μ − μᵀw ≤ 1e-12 plus a rounding allowance of
+    (n + 2)·ε·(|max μ| + Σ|wᵢμᵢ|), the standard bound on evaluating that
+    difference. Any return given up by diversifying across T is therefore within
+    the tie definition.
+- **Certification (Q34):** the GMV and every interior point are checked from their
+  weights alone. No solver multipliers or working set are used.
   - **Constraint residuals:**
     - budget |Σw − 1| ≤ 1e-10;
     - bound max(0, −min w) ≤ 1e-10;
@@ -818,11 +841,12 @@ replacing it.
   - A corner portfolio that lands exactly on a grid point certifies.
   - A duplicated security still certifies: the Ledoit–Wolf Σ stays positive
     definite.
-  - Near-ties at the top give the exact tie's mix.
-- **Pending decisions:**
-  - **Q38:** the iteration limit, and whether a bound may be released.
-  - **Q39:** a near-tied top pair with a lower-variance security just below it.
-    Today the top point fails, typed, and is not plotted.
+  - Near-ties at the top give the exact tie's mix, and the endpoint certifies even
+    with a lower-variance security just below the tie set. The exact-return KKT
+    would reject that same allocation.
+  - On seeded stress models releases do occur, no cycle is detected, and no solve
+    comes near the cap.
+  - A forced loop stops with `active_set_cycle`.
 
 **Local assumption state.** One state holds the risk window, market proxy, MRP and
 per-ticker views. Portfolio Theory and Stock Lab share it.

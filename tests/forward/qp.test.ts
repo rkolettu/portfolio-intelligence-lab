@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { activeSetQp } from "@/lib/forward/qp";
+import { activeSetIterationCap, activeSetQp } from "@/lib/forward/qp";
+import { solveLinear } from "@/lib/analytics/construction/common";
 
 const SIGMA = [
   [0.09, 0.02, 0.04],
@@ -85,13 +86,14 @@ describe("activeSetQp — deterministic primal active-set solver", () => {
     expect(g2 - r.multipliers[0]).toBeGreaterThanOrEqual(0);
   });
 
-  it("releases a bound whose multiplier is negative (start at a vertex)", () => {
+  it("releases a bound whose multiplier is negative (start at a vertex), and counts it", () => {
     const r = ok(solve({ start: [1, 0, 0] }));
     const raw = solve3(SIGMA, [1, 1, 1]);
     const total = raw.reduce((s, x) => s + x, 0);
     r.x.forEach((x, i) => expect(x).toBeCloseTo(raw[i] / total, 14));
     expect(r.atBound).toEqual([]);
-    expect(r.iterations).toBeGreaterThan(1);
+    // Both pinned bounds are released; nothing joins.
+    expect(r).toMatchObject({ joins: 0, releases: 2, iterations: 3 });
   });
 
   it("ratio-test ties add only the lowest index; the other weight stays free at 0", () => {
@@ -107,6 +109,36 @@ describe("activeSetQp — deterministic primal active-set solver", () => {
     // Face {0,1,2} → bound 1 joins; face {0,2} → bound 2 joins by a zero-length step;
     // face {0} is optimal. Adding both at once would have taken two iterations.
     expect(r.iterations).toBe(3);
+    expect(r).toMatchObject({ joins: 2, releases: 0 });
+  });
+
+  it("Q38: stops with active_set_cycle the moment a pinned set recurs", () => {
+    // A faulty linear solve sends the solver around a loop: the full face "optimum"
+    // pushes weight 0 negative (0 joins), then the next face reports a negative
+    // multiplier for 0 (0 is released), which returns the pinned set to {} — already
+    // visited. The guard stops there instead of looping.
+    const looping = (A: number[][], b: number[]) =>
+      b.length === 4 ? [-1, 1, 1, 0] : b.length === 3 ? [0.5, 0.5, 10] : solveLinear(A, b);
+    const r = solve({ solve: looping, maxIterations: 50 });
+    expect(r).toMatchObject({
+      ok: false,
+      status: "non_converged",
+      cause: "active_set_cycle",
+      iterations: 3,
+      joins: 1,
+      releases: 1,
+    });
+    if (!r.ok) expect(r.reason).toMatch(/^active_set_cycle: the pinned set \{\} recurred/);
+  });
+
+  it("Q38: the iteration cap is max(50, 2n²), and reaching it is a typed failure", () => {
+    expect([1, 3, 5, 6, 20, 21].map(activeSetIterationCap)).toEqual([50, 50, 50, 72, 800, 882]);
+    expect(solve({ start: [1, 0, 0], maxIterations: 2 })).toMatchObject({
+      ok: false,
+      status: "non_converged",
+      cause: "iteration_cap",
+      iterations: 2,
+    });
   });
 
   it("is deterministic", () => {
@@ -135,8 +167,11 @@ describe("activeSetQp — deterministic primal active-set solver", () => {
     expect(solve({ start: [1, 0, 0], maxIterations: 1 })).toEqual({
       ok: false,
       status: "non_converged",
-      reason: "The active-set solver reached its 1-iteration limit.",
+      cause: "iteration_cap",
+      reason: "iteration_cap: the active-set solver reached its 1-iteration limit.",
       iterations: 1,
+      joins: 0,
+      releases: 1,
     });
   });
 });

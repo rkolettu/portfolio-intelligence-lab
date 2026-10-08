@@ -246,7 +246,13 @@ export const FORWARD_METHODOLOGY = {
     /** Q37: securities with max μ − μ_i at or below this are tied for the top point.
      * A numerical tie tolerance, not an economic assumption: each μ_i is kept. */
     topReturnTieTolerance: 1e-12,
-    /** Active-set iterations per target before a point is non_converged. */
-    maxIterations: 10_000,
+  },
+  /** Q38: the deterministic primal active-set solver (frontier now, tangency later).
+   * Bounds both join and are released, so no n + 2 bound exists. A pinned set that
+   * recurs within one solve stops it (non_converged, active_set_cycle); the cap
+   * max(minimum, perVariableSquared · n²) stops a runaway solve (882 at n = 21). */
+  activeSet: {
+    cycleDetection: "canonical sorted pinned-index list, checked at every iteration",
+    iterationCap: { minimum: 50, perVariableSquared: 2 },
   },
 } as const;

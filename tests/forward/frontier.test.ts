@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { buildEfficientFrontier, certifyFrontierPoint } from "@/lib/forward/frontier";
+import {
+  buildEfficientFrontier,
+  certifyFrontierPoint,
+  certifyTopEndpoint,
+} from "@/lib/forward/frontier";
 import { buildBlackLittermanPosterior } from "@/lib/forward/blackLitterman";
 import { buildCapmPrior } from "@/lib/forward/capm";
 import { buildBlackLittermanInputs } from "@/lib/forward/views";
@@ -107,24 +111,64 @@ function expectWellFormed(f: EfficientFrontier, sigma?: Matrix) {
       expect(p.status).toBe("success");
       expect(p.reason).toBeNull();
       expect(p.weights).not.toBeNull();
+      expect(p.cause).toBeNull();
       expect(p.weights!.every((w) => w >= 0)).toBe(true);
-      expect(p.residuals.budget!).toBeLessThanOrEqual(T.budget);
-      expect(p.residuals.bound!).toBeLessThanOrEqual(T.bound);
-      expect(p.residuals.return!).toBeLessThanOrEqual(T.targetReturn);
-      expect(p.residuals.kkt!).toBeLessThanOrEqual(T.kkt);
-      expect(Math.abs(p.expectedReturn! - p.targetReturn)).toBeLessThanOrEqual(T.targetReturn);
+      expect(p.expectedReturn).toBe(dot(p.weights!, f.expectedReturns));
+      const c = p.certification;
+      if (c.kind === "top_endpoint") {
+        // Q39: the top endpoint is certified as the tie-set minimum-variance problem.
+        expect(p.role).toBe("max_return");
+        expect(c.residuals.budget!).toBeLessThanOrEqual(T.budget);
+        expect(c.residuals.bound!).toBeLessThanOrEqual(T.bound);
+        expect(c.residuals.outsideTieSet).toBe(0);
+        expect(c.residuals.stationarity!).toBeLessThanOrEqual(T.kkt);
+        expect(c.residuals.kkt!).toBeLessThanOrEqual(T.kkt);
+        expect(c.residuals.returnShortfall!).toBeLessThanOrEqual(1e-12 + c.returnAllowance);
+        expect(c.tieSet).toEqual(f.maxReturnTickers);
+        p.weights!.forEach((w, i) => w !== 0 && expect(c.tieSet).toContain(f.tickers[i]));
+      } else {
+        expect(p.role).not.toBe("max_return");
+        expect(c.residuals.budget!).toBeLessThanOrEqual(T.budget);
+        expect(c.residuals.bound!).toBeLessThanOrEqual(T.bound);
+        expect(c.residuals.return!).toBeLessThanOrEqual(T.targetReturn);
+        expect(c.residuals.kkt!).toBeLessThanOrEqual(T.kkt);
+        expect(Math.abs(p.expectedReturn! - p.targetReturn)).toBeLessThanOrEqual(T.targetReturn);
+      }
       if (sigma) expect(Math.abs(p.volatility! - Math.sqrt(variance(sigma, p.weights!)))).toBeLessThan(1e-15);
     } else {
       expect(p.status).not.toBe("success");
       expect(p.reason).toEqual(expect.any(String));
+      expect(p.cause).toEqual(expect.any(String));
       expect(p.weights).toBeNull();
       expect(p.expectedReturn).toBeNull();
       expect(p.volatility).toBeNull();
       expect(p.binding).toEqual({ lower: [], upper: [] });
     }
+    // Q38: how the point was solved.
+    const r = p.solver;
+    expect(r.method).toBe(
+      p.role === "gmv" ? "minimum_variance" : p.role === "interior" ? "active_set" : r.method,
+    );
+    if (r.method === "active_set") {
+      expect(r.maxIterations).toBe(Math.max(50, 2 * f.tickers.length ** 2));
+      expect(r.iterations).toBeLessThanOrEqual(r.maxIterations!);
+      if (p.certified) {
+        expect(r.joins! + r.releases!).toBe(r.iterations - 1);
+        expect(r.cycleDetected).toBe(false);
+      }
+    } else {
+      expect(r.joins).toBeNull();
+      expect(r.releases).toBeNull();
+      expect(r.cycleDetected).toBe(false);
+    }
   });
   expect(f.certifiedCount).toBe(f.points.filter((p) => p.certified).length);
 }
+/** The target-return residuals of a GMV or interior point. */
+const targetResiduals = (p: EfficientFrontier["points"][number]) => {
+  if (p.certification.kind !== "target_return") throw new Error("not a target-return point");
+  return p.certification.residuals;
+};
 
 describe("buildEfficientFrontier — the certified efficient branch", () => {
   const MU = [0.1, 0.07, 0.12];
@@ -188,6 +232,34 @@ describe("buildEfficientFrontier — the certified efficient branch", () => {
     }
   });
 
+  it("Q38: on seeded stress models releases do occur, no active set cycles, and the cap is never approached", () => {
+    // 21-security seeds whose frontiers need releases, plus 60 smaller seeded models.
+    const models = [
+      ...[5014, 5032, 5068, 5086, 5132, 5161, 5183, 5188, 5203, 5204].map((seed) => randomModel(21, seed)),
+      ...Array.from({ length: 60 }, (_, k) => randomModel(2 + ((k + 1) % 9), k + 1)),
+    ];
+    let releases = 0;
+    let maxIterations = 0;
+    for (const { sigma, mu } of models) {
+      const f = frontier(sigma, mu);
+      expectWellFormed(f, sigma);
+      expect(f.certifiedCount).toBe(41);
+      for (const p of f.points.filter((q) => q.solver.method === "active_set")) {
+        expect(p.solver.cycleDetected).toBe(false);
+        expect(p.cause).toBeNull();
+        expect(p.solver.iterations).toBeLessThanOrEqual(p.solver.maxIterations!);
+        // Observed on these fixed seeds (not a bound: releases rule out n + 2).
+        expect(p.solver.iterations).toBeLessThanOrEqual(mu.length);
+        releases += p.solver.releases!;
+        maxIterations = Math.max(maxIterations, p.solver.iterations);
+      }
+    }
+    // Releases are kept: valid points need them.
+    expect(releases).toBeGreaterThan(0);
+    // At n = 21 the cap is 882; the most any solve here needs is 21.
+    expect(maxIterations).toBeLessThanOrEqual(21);
+  });
+
   it("two assets: each point is the unique feasible allocation and its closed-form volatility", () => {
     const S = [
       [0.04, 0.01],
@@ -225,13 +297,28 @@ describe("buildEfficientFrontier — the certified efficient branch", () => {
     expect(f.tolerances).toEqual({ budget: 1e-10, bound: 1e-10, targetReturn: 1e-10, kkt: 1e-8 });
   });
 
-  it("records residuals and solver iterations for every solved point", () => {
+  it("records residuals and how every point was solved", () => {
     const f = frontier(SIGMA, MU);
-    for (const p of f.points) {
-      expect(Object.values(p.residuals).every((r) => typeof r === "number")).toBe(true);
-      expect(p.iterations).toBeLessThan(FORWARD_METHODOLOGY.frontier.maxIterations);
-    }
-    expect(f.points.filter((p) => p.role === "interior").every((p) => p.iterations >= 1)).toBe(true);
+    for (const p of f.points)
+      expect(Object.values(p.certification.residuals).every((r) => typeof r === "number")).toBe(true);
+    expect(f.points[0].solver).toEqual({
+      method: "minimum_variance",
+      iterations: f.gmv.solver.iterations,
+      joins: null,
+      releases: null,
+      maxIterations: CONSTRUCTION_METHODOLOGY.limits.minimumVarianceIterations,
+      cycleDetected: false,
+    });
+    for (const p of f.points.filter((q) => q.role === "interior"))
+      expect(p.solver).toMatchObject({ method: "active_set", maxIterations: 50, cycleDetected: false });
+    expect(f.points[40].solver).toEqual({
+      method: "single_security",
+      iterations: 0,
+      joins: null,
+      releases: null,
+      maxIterations: null,
+      cycleDetected: false,
+    });
   });
 
   it("reports tickers held at the 0% floor, and the 100% endpoint at its 100% limit", () => {
@@ -329,7 +416,9 @@ describe("top endpoint", () => {
       expect(end.certified).toBe(true);
       expect(end.targetReturn).toBe(Math.max(...mu));
       expect(end.expectedReturn).toBe(dot(end.weights!, mu));
-      expect(end.residuals.return!).toBeLessThanOrEqual(1e-12);
+      if (end.certification.kind !== "top_endpoint") throw new Error("top endpoint");
+      expect(end.certification.residuals.returnShortfall!).toBeLessThanOrEqual(1e-12);
+      expect(end.certification.residuals.returnShortfall).toBe(Math.max(...mu) - end.expectedReturn!);
       end.weights!.forEach((w, i) => expect(Math.abs(w - exact.weights![i])).toBeLessThan(1e-12));
       // The same top allocation whatever the universe order.
       const order = [2, 3, 0, 1];
@@ -350,15 +439,53 @@ describe("top endpoint", () => {
     expect(f.thresholds).toEqual({ singlePoint: 1e-12, topReturnTie: 1e-12 });
   });
 
-  it("Q37 edge (Q39): a near-tied pair with a lower-variance security just below fails typed at the top", () => {
-    // B and C tie within 1e-12; D sits 1e-6 below with lower marginal variance. The
-    // B/C mix is not a KKT point within 1e-8, so the top point is not plotted.
-    const f = frontier(S, [0.05, 0.12, 0.12 - 0.5e-12, 0.12 - 1e-6], ["A", "B", "C", "D"]);
-    expectWellFormed(f, S);
-    expect(f.points[40].certified).toBe(false);
-    expect(f.points[40].reason).toMatch(/KKT residual/);
-    expect(f.points[40].residuals.kkt!).toBeGreaterThan(1e-8);
-    expect(f.certifiedCount).toBe(40);
+  it("Q39: a near-tied pair with a lower-variance security just below still gives a certified top endpoint", () => {
+    // B and C tie within 1e-12; D sits just below with lower marginal variance. The
+    // endpoint is the B/C minimum-variance mix, certified as that problem.
+    const exact = frontier(S, [0.05, 0.12, 0.12, 0.07], ["A", "B", "C", "D"]).points[40];
+    for (const gap of [2e-12, 1e-9, 1e-6]) {
+      const mu = [0.05, 0.12, 0.12 - 0.5e-12, 0.12 - gap];
+      const f = frontier(S, mu, ["A", "B", "C", "D"]);
+      expectWellFormed(f, S);
+      expect(f.certifiedCount).toBe(41);
+      const end = f.points[40];
+      expect(end.certification).toMatchObject({ kind: "top_endpoint", tieSet: ["B", "C"] });
+      end.weights!.forEach((w, i) => expect(Math.abs(w - exact.weights![i])).toBeLessThan(1e-12));
+      // The exact target-return KKT is the wrong problem for this endpoint: it rejects
+      // the same allocation, which is why the endpoint has its own certification.
+      const wrong = certifyFrontierPoint({
+        weights: end.weights!,
+        targetReturn: 0.12,
+        covariance: S,
+        expectedReturns: mu,
+        normalization: f.kktNormalization,
+      });
+      expect(wrong.failures).toEqual([expect.stringMatching(/^KKT residual/)]);
+      // Stable under ticker permutation.
+      const order = [3, 1, 0, 2];
+      const permuted = frontier(
+        order.map((i) => order.map((j) => S[i][j])),
+        order.map((i) => mu[i]),
+        order.map((i) => ["A", "B", "C", "D"][i]),
+      ).points[40];
+      expect(permuted.certified).toBe(true);
+      order.forEach((i, pos) => expect(Math.abs(permuted.weights![pos] - end.weights![i])).toBeLessThan(1e-12));
+    }
+  });
+
+  it("Q39: the top-endpoint certification rejects weight outside the tie set and a non-minimum-variance mix", () => {
+    const mu = [0.05, 0.12, 0.12, 0.07];
+    const end = frontier(S, mu, ["A", "B", "C", "D"]).points[40];
+    const check = (weights: number[]) =>
+      certifyTopEndpoint({ weights, tieSet: [1, 2], covariance: S, expectedReturns: mu });
+    expect(check(end.weights!).certified).toBe(true);
+    const leaked = check([1e-14, end.weights![1] - 1e-14, end.weights![2], 0]);
+    expect(leaked.failures).toContainEqual(expect.stringMatching(/^weight outside the tie set/));
+    const notMinVar = check([0, 0.5, 0.5, 0]);
+    expect(notMinVar.failures).toContainEqual(expect.stringMatching(/^tie-set KKT residual/));
+    // A tie set whose spread exceeds the tolerance cannot pass the return test.
+    const wide = certifyTopEndpoint({ weights: [0, 0.5, 0.5, 0], tieSet: [1, 2], covariance: S, expectedReturns: [0.05, 0.12, 0.12 - 1e-9, 0.07] });
+    expect(wide.failures).toContainEqual(expect.stringMatching(/^return shortfall/));
   });
 });
 
@@ -493,7 +620,7 @@ describe("independent certification", () => {
       const mv = minimumVariance({ covariance: sigma, lower, upper, budget: 1, start: equalWeight({ lower, upper, budget: 1 }).weights! });
       const g = frontier(sigma, mu);
       expect(g.points[0].certified).toBe(true);
-      expect(g.points[0].residuals.kkt!).toBeLessThanOrEqual(mv.residuals.kkt! + 1e-15);
+      expect(targetResiduals(g.points[0]).kkt!).toBeLessThanOrEqual(mv.residuals.kkt! + 1e-15);
     }
   });
 });
@@ -644,6 +771,9 @@ describe("module boundary", () => {
       "@/lib/utils/errors",
       "@/lib/utils/sha256",
     ]);
-    expect(imports("lib/forward/qp.ts")).toEqual(["@/lib/analytics/construction/common"]);
+    expect(imports("lib/forward/qp.ts")).toEqual([
+      "@/config/methodology",
+      "@/lib/analytics/construction/common",
+    ]);
   });
 });

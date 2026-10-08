@@ -528,25 +528,88 @@ export type ForwardSolverResiduals = {
   kkt: number | null;
 };
 
+/** Q39: the top endpoint's own certification. It is the minimum-variance portfolio
+ * of the near-tied top set, so it is checked as that problem, not as an exact
+ * target-return problem. */
+export type TopEndpointResiduals = {
+  /** |Σw − 1| ≤ 1e-10 */
+  budget: number | null;
+  /** max(0, −min w) ≤ 1e-10 */
+  bound: number | null;
+  /** max |wᵢ| outside the tie set; must be exactly 0 */
+  outsideTieSet: number | null;
+  /** minimumVariance's projected-gradient stationarity on the tie set, ≤ 1e-8 */
+  stationarity: number | null;
+  /** minimumVariance's KKT residual on the tie set over 2·λmax(Σ_TT), ≤ 1e-8 */
+  kkt: number | null;
+  /** max μ − μᵀw, ≤ the 1e-12 tie tolerance plus the floating-point allowance */
+  returnShortfall: number | null;
+};
+
+export type FrontierCertification =
+  | {
+      /** GMV and interior points: budget, bound, |μᵀw − r| and the frontier KKT. */
+      kind: "target_return";
+      residuals: ForwardSolverResiduals;
+    }
+  | {
+      kind: "top_endpoint";
+      /** Securities with max μ − μᵢ ≤ 1e-12 (Q37). */
+      tieSet: string[];
+      /** 2·λmax(Σ_TT): minimumVariance's normalization on the tie set. */
+      kktNormalization: number | null;
+      /** Rounding allowance added to the 1e-12 return tie tolerance. */
+      returnAllowance: number;
+      residuals: TopEndpointResiduals;
+    };
+
+/** Why a point produced no certified allocation. */
+export type FrontierFailureCause =
+  | "invalid_scale"
+  | "invalid_inputs"
+  | "no_free_variables"
+  | "singular_face"
+  | "iteration_cap"
+  | "active_set_cycle"
+  | "minimum_variance_failed"
+  | "certification_failed";
+
+/** How a point was solved (Q38). */
+export type FrontierSolveRecord = {
+  method: "active_set" | "minimum_variance" | "single_security";
+  iterations: number;
+  /** Active-set solves only (otherwise null): bounds that joined / were released. */
+  joins: number | null;
+  releases: number | null;
+  /** The iteration limit that applied: max(50, 2n²) for the active set,
+   * minimumVariance's own limit, null for a single security. */
+  maxIterations: number | null;
+  /** True when a pinned set recurred and the solve stopped (active_set_cycle). */
+  cycleDetected: boolean;
+};
+
 /** One efficient-frontier point. Only certified points carry weights and may be
- * plotted; every point records its residuals. */
+ * plotted; every point records its residuals and how it was solved. */
 export type FrontierPoint = {
   index: number;
   /** "gmv": the existing minimumVariance anchor; "max_return": the top endpoint. */
   role: "gmv" | "interior" | "max_return";
+  /** The grid target; max μ for the top endpoint, which reports its actual μᵀw. */
   targetReturn: number;
   status: ForwardSolverStatus;
   certified: boolean;
   reason: string | null;
+  cause: FrontierFailureCause | null;
   /** Risky weights in canonical order, summing to 1 — certified points only. */
   weights: number[] | null;
+  /** The actual μᵀw of the certified weights. */
   expectedReturn: number | null;
   volatility: number | null;
   /** Binding tickers as the existing bindingConstraints reports them for 0–100%
    * bounds: lower = held at 0%, upper = held at 100% (the problem has no caps). */
   binding: { lower: string[]; upper: string[] };
-  residuals: ForwardSolverResiduals;
-  iterations: number;
+  certification: FrontierCertification;
+  solver: FrontierSolveRecord;
 };
 
 /** The deterministic, certified efficient frontier of the risky universe. */

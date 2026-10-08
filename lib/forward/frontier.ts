@@ -1,29 +1,39 @@
 // V2 efficient frontier (Layer B): min wᵀΣw s.t. Σw = 1, μ_BLᵀw = r, w ≥ 0 over the
 // risky universe, on the efficient branch r ∈ [r_GMV, max μ]. The GMV anchor is the
 // existing minimumVariance, called exactly as the Constructor calls it; interior
-// points use the deterministic active-set QP; every point is certified
-// independently against Q34 and failed points carry no weights. Pure and
+// points use the deterministic active-set QP; the top endpoint is the
+// minimum-variance portfolio of the near-tied top set (Q37/Q39). Every point is
+// certified independently and failed points carry no weights. Pure and
 // browser-safe.
 import { CONSTRUCTION_METHODOLOGY, FORWARD_METHODOLOGY } from "@/config/methodology";
 import { dot, matVec } from "@/lib/analytics/construction/common";
 import { equalWeight } from "@/lib/analytics/construction/equalWeight";
 import { minimumVariance } from "@/lib/analytics/construction/minimumVariance";
 import { jacobiEigen } from "@/lib/analytics/matrix";
-import { bindingConstraints } from "@/lib/analytics/optimization";
+import {
+  bindingConstraints,
+  kktResidual,
+  projectedGradientResidual,
+} from "@/lib/analytics/optimization";
 import { portfolioVariance } from "@/lib/analytics/riskContribution";
 import type {
   BlackLittermanPosterior,
   EfficientFrontierOutcome,
   ForwardRiskModel,
   ForwardSolverResiduals,
+  FrontierCertification,
+  FrontierFailureCause,
   FrontierPoint,
+  FrontierSolveRecord,
+  TopEndpointResiduals,
 } from "@/lib/types/forward";
 import { LabError } from "@/lib/utils/errors";
 import { sha256Hex } from "@/lib/utils/sha256";
-import { activeSetQp } from "./qp";
+import { activeSetIterationCap, activeSetQp } from "./qp";
 
 const F = FORWARD_METHODOLOGY.frontier;
 const T = F.tolerances;
+const { eigenSweeps, minimumVarianceIterations } = CONSTRUCTION_METHODOLOGY.limits;
 type Matrix = readonly (readonly number[])[];
 
 /** Smallest achievable KKT violation of w, given g = 2Σw: over the budget and return
@@ -88,16 +98,100 @@ export function certifyFrontierPoint(input: {
   };
 }
 
+/** Q39: certification of the top endpoint as the problem that defines it, the
+ * minimum-variance portfolio of the near-tied top set T (max μ − μᵢ ≤ 1e-12):
+ * - budget |Σw − 1| ≤ 1e-10 and bound max(0, −min w) ≤ 1e-10;
+ * - exactly zero weight outside T;
+ * - minimumVariance's own rules on T (100% budget, 0–100% bounds): projected-gradient
+ *   stationarity and KKT, each ≤ 1e-8, normalized by 2·λmax(Σ_TT);
+ * - max μ − μᵀw ≤ 1e-12 plus a rounding allowance of (n + 2)·ε·(|max μ| + Σ|wᵢμᵢ|),
+ *   the standard bound on evaluating that difference.
+ * The exact target-return KKT is not applied: it is a different problem. */
+export function certifyTopEndpoint(input: {
+  weights: readonly number[];
+  tieSet: readonly number[];
+  covariance: Matrix;
+  expectedReturns: readonly number[];
+}): {
+  residuals: TopEndpointResiduals;
+  kktNormalization: number | null;
+  returnAllowance: number;
+  certified: boolean;
+  failures: string[];
+} {
+  const { weights: w, tieSet, expectedReturns: mu } = input;
+  const n = w.length;
+  const budget = Math.abs(w.reduce((s, x) => s + x, 0) - 1);
+  const bound = Math.max(0, ...w.map((x) => -x));
+  const outsideTieSet = Math.max(
+    0,
+    ...w.map((x, i) => (tieSet.includes(i) ? 0 : Math.abs(x))),
+  );
+  const sub = tieSet.map((i) => tieSet.map((j) => input.covariance[i][j]));
+  const wT = tieSet.map((i) => w[i]);
+  const eigen = jacobiEigen(sub, { maxSweeps: eigenSweeps });
+  const L = 2 * eigen.values.at(-1)!;
+  const scaled = eigen.converged && Number.isFinite(L) && L > 0;
+  const lower = tieSet.map(() => 0);
+  const upper = tieSet.map(() => 1);
+  const g = matVec(sub, wT).map((x) => 2 * x);
+  const stationarity = scaled
+    ? projectedGradientResidual(wT, g, 1 / L, lower, upper, 1)
+    : null;
+  const kkt = scaled ? kktResidual(wT, g, lower, upper).residual / L : null;
+  const maxMu = Math.max(...mu);
+  const returnShortfall = maxMu - dot(w, mu);
+  const returnAllowance =
+    (n + 2) *
+    Number.EPSILON *
+    (Math.abs(maxMu) + w.reduce((s, x, i) => s + Math.abs(x * mu[i]), 0));
+  const within = (value: number | null, tolerance: number) =>
+    value !== null && Number.isFinite(value) && value <= tolerance;
+  const failures = [
+    ...(within(budget, T.budget) ? [] : [`budget residual ${budget}`]),
+    ...(within(bound, T.bound) ? [] : [`bound residual ${bound}`]),
+    ...(outsideTieSet === 0 ? [] : [`weight outside the tie set ${outsideTieSet}`]),
+    ...(scaled ? [] : ["Σ of the tie set has no positive, finite largest eigenvalue"]),
+    ...(within(stationarity, T.kkt) ? [] : [`tie-set stationarity ${stationarity}`]),
+    ...(within(kkt, T.kkt) ? [] : [`tie-set KKT residual ${kkt}`]),
+    ...(within(returnShortfall, F.topReturnTieTolerance + returnAllowance)
+      ? []
+      : [`return shortfall ${returnShortfall}`]),
+  ];
+  return {
+    residuals: { budget, bound, outsideTieSet, stationarity, kkt, returnShortfall },
+    kktNormalization: scaled ? L : null,
+    returnAllowance,
+    certified: failures.length === 0,
+    failures,
+  };
+}
+
 const NO_RESIDUALS: ForwardSolverResiduals = {
   budget: null,
   return: null,
   bound: null,
   kkt: null,
 };
+const NO_TOP_RESIDUALS: TopEndpointResiduals = {
+  budget: null,
+  bound: null,
+  outsideTieSet: null,
+  stationarity: null,
+  kkt: null,
+  returnShortfall: null,
+};
 
 type Candidate =
-  | { weights: number[]; iterations: number }
-  | { failure: string; status: FrontierPoint["status"]; iterations: number };
+  | { weights: number[]; solver: FrontierSolveRecord }
+  | {
+      failure: string;
+      status: FrontierPoint["status"];
+      cause: FrontierFailureCause;
+      solver: FrontierSolveRecord;
+    };
+/** How a point is certified: the target-return KKT, or (top endpoint) Q39. */
+type Check = { kind: "target_return" } | { kind: "top_endpoint"; tieSet: number[] };
 
 /** The certified efficient frontier for the risk model's Σ and the BL posterior. */
 export function buildEfficientFrontier(input: {
@@ -134,9 +228,7 @@ export function buildEfficientFrontier(input: {
     };
 
   // KKT normalization exactly as minimumVariance computes it: L = 2·λmax(Σ).
-  const eigen = jacobiEigen(sigma, {
-    maxSweeps: CONSTRUCTION_METHODOLOGY.limits.eigenSweeps,
-  });
+  const eigen = jacobiEigen(sigma, { maxSweeps: eigenSweeps });
   const normalization = 2 * eigen.values.at(-1)!;
   if (!eigen.converged || !Number.isFinite(normalization) || !(normalization > 0))
     return {
@@ -171,17 +263,40 @@ export function buildEfficientFrontier(input: {
       throw error;
     }
   };
+  const mvRecord = (iterations: number): FrontierSolveRecord => ({
+    method: "minimum_variance",
+    iterations,
+    joins: null,
+    releases: null,
+    maxIterations: minimumVarianceIterations,
+    cycleDetected: false,
+  });
 
   const point = (
     index: number,
     role: FrontierPoint["role"],
     targetReturn: number,
     candidate: Candidate,
+    check: Check,
   ): FrontierPoint => {
+    const shell = (
+      residuals: ForwardSolverResiduals | TopEndpointResiduals,
+      extra?: { kktNormalization: number | null; returnAllowance: number },
+    ): FrontierCertification =>
+      check.kind === "target_return"
+        ? { kind: "target_return", residuals: residuals as ForwardSolverResiduals }
+        : {
+            kind: "top_endpoint",
+            tieSet: check.tieSet.map((i) => tickers[i]),
+            kktNormalization: extra?.kktNormalization ?? null,
+            returnAllowance: extra?.returnAllowance ?? 0,
+            residuals: residuals as TopEndpointResiduals,
+          };
     const rejected = (
       status: FrontierPoint["status"],
+      cause: FrontierFailureCause,
       reason: string,
-      residuals: ForwardSolverResiduals,
+      certification: FrontierCertification,
     ): FrontierPoint => ({
       index,
       role,
@@ -189,29 +304,51 @@ export function buildEfficientFrontier(input: {
       status,
       certified: false,
       reason,
+      cause,
       weights: null,
       expectedReturn: null,
       volatility: null,
       binding: { lower: [], upper: [] },
-      residuals,
-      iterations: candidate.iterations,
+      certification,
+      solver: candidate.solver,
     });
     if ("failure" in candidate)
-      return rejected(candidate.status, candidate.failure, NO_RESIDUALS);
+      return rejected(
+        candidate.status,
+        candidate.cause,
+        candidate.failure,
+        shell(check.kind === "target_return" ? NO_RESIDUALS : NO_TOP_RESIDUALS),
+      );
     const w = candidate.weights;
-    const check = certifyFrontierPoint({
-      weights: w,
-      targetReturn,
-      covariance: sigma,
-      expectedReturns: mu,
-      normalization,
-    });
+    let certification: FrontierCertification;
+    let failures: string[];
+    if (check.kind === "target_return") {
+      const c = certifyFrontierPoint({
+        weights: w,
+        targetReturn,
+        covariance: sigma,
+        expectedReturns: mu,
+        normalization,
+      });
+      certification = shell(c.residuals);
+      failures = c.failures;
+    } else {
+      const c = certifyTopEndpoint({
+        weights: w,
+        tieSet: check.tieSet,
+        covariance: sigma,
+        expectedReturns: mu,
+      });
+      certification = shell(c.residuals, c);
+      failures = c.failures;
+    }
     const sigmaP = volatility(w);
-    if (!check.certified || !Number.isFinite(sigmaP))
+    if (failures.length || !Number.isFinite(sigmaP))
       return rejected(
         "numerical_failure",
-        `Failed certification (${check.failures.join("; ") || "non-finite volatility"}); not a valid frontier point, so it is not plotted.`,
-        check.residuals,
+        "certification_failed",
+        `Failed certification (${failures.join("; ") || "non-finite volatility"}); not a valid frontier point, so it is not plotted.`,
+        certification,
       );
     const bind = bindingConstraints(w, lower, upper);
     return {
@@ -221,6 +358,7 @@ export function buildEfficientFrontier(input: {
       status: "success",
       certified: true,
       reason: null,
+      cause: null,
       weights: w,
       expectedReturn: dot(w, mu),
       volatility: sigmaP,
@@ -228,16 +366,19 @@ export function buildEfficientFrontier(input: {
         lower: bind.lower.map((i) => tickers[i]),
         upper: bind.upper.map((i) => tickers[i]),
       },
-      residuals: check.residuals,
-      iterations: candidate.iterations,
+      certification,
+      solver: candidate.solver,
     };
   };
 
   const rGmv = dot(gmvWeights, mu);
-  const gmvPoint = point(0, "gmv", rGmv, {
-    weights: gmvWeights,
-    iterations: mv.iterations,
-  });
+  const gmvPoint = point(
+    0,
+    "gmv",
+    rGmv,
+    { weights: gmvWeights, solver: mvRecord(mv.iterations) },
+    { kind: "target_return" },
+  );
   // The frontier's KKT residual never exceeds minimumVariance's own (ν = 0 with the
   // best λ is among the multipliers it minimizes over), so a certified GMV always
   // passes; the check stays as a guard.
@@ -259,6 +400,7 @@ export function buildEfficientFrontier(input: {
     // The first security holding exactly max μ: mixing it with the GMV reaches every
     // target exactly, so each interior start is feasible.
     const k = mu.indexOf(maxMu);
+    const cap = activeSetIterationCap(n);
     for (let index = 1; index < count - 1; index++) {
       const target = rGmv + (index / (count - 1)) * (maxMu - rGmv);
       const t = (target - rGmv) / (maxMu - rGmv);
@@ -269,44 +411,65 @@ export function buildEfficientFrontier(input: {
       // original coordinates: |μᵀw − r| ≤ 1e-10.
       const offsets = mu.map((m) => m - target);
       const scale = Math.max(...offsets.map(Math.abs));
-      const qp =
-        Number.isFinite(scale) && scale > 0
-          ? activeSetQp({
-              covariance: sigma,
-              E: [tickers.map(() => 1), offsets.map((d) => d / scale)],
-              f: [1, 0],
-              start,
-              optimalityTolerance: T.kkt * normalization,
-              maxIterations: F.maxIterations,
-            })
-          : null;
-      points.push(
-        point(
-          index,
-          "interior",
-          target,
-          !qp
-            ? {
-                failure: `The return constraint has no positive, finite scale (max|μ_i − r| = ${scale}); the point is not solved.`,
-                status: "numerical_failure",
-                iterations: 0,
-              }
-            : qp.ok
-              ? { weights: qp.x, iterations: qp.iterations }
-              : { failure: qp.reason, status: qp.status, iterations: qp.iterations },
-        ),
-      );
+      const record = (r: { iterations: number; joins: number; releases: number }, cycle = false): FrontierSolveRecord => ({
+        method: "active_set",
+        iterations: r.iterations,
+        joins: r.joins,
+        releases: r.releases,
+        maxIterations: cap,
+        cycleDetected: cycle,
+      });
+      let candidate: Candidate;
+      if (!(Number.isFinite(scale) && scale > 0))
+        candidate = {
+          failure: `The return constraint has no positive, finite scale (max|μ_i − r| = ${scale}); the point is not solved.`,
+          status: "numerical_failure",
+          cause: "invalid_scale",
+          solver: record({ iterations: 0, joins: 0, releases: 0 }),
+        };
+      else {
+        const qp = activeSetQp({
+          covariance: sigma,
+          E: [tickers.map(() => 1), offsets.map((d) => d / scale)],
+          f: [1, 0],
+          start,
+          optimalityTolerance: T.kkt * normalization,
+          maxIterations: cap,
+        });
+        candidate = qp.ok
+          ? { weights: qp.x, solver: record(qp) }
+          : {
+              failure: qp.reason,
+              status: qp.status,
+              cause: qp.cause,
+              solver: record(qp, qp.cause === "active_set_cycle"),
+            };
+      }
+      points.push(point(index, "interior", target, candidate, { kind: "target_return" }));
     }
-    // Top point: only allocations in the top-return securities reach max μ. One such
-    // security: 100% in it. Several (Q37 ties): their minimum-variance mix, from the
-    // existing minimumVariance on their sub-covariance. Either way it is certified
-    // against the target max μ and reports its actual μᵀw.
+    // Top endpoint (Q37/Q39): the minimum-variance portfolio of the near-tied top set
+    // T. One security in T: 100% in it. Several: the existing minimumVariance on Σ_TT.
+    // Certified as that problem (certifyTopEndpoint); it reports its actual μᵀw.
+    const top: Check = { kind: "top_endpoint", tieSet: tied };
     if (tied.length === 1)
       points.push(
-        point(count - 1, "max_return", maxMu, {
-          weights: tickers.map((_, i) => (i === k ? 1 : 0)),
-          iterations: 0,
-        }),
+        point(
+          count - 1,
+          "max_return",
+          maxMu,
+          {
+            weights: tickers.map((_, i) => (i === tied[0] ? 1 : 0)),
+            solver: {
+              method: "single_security",
+              iterations: 0,
+              joins: null,
+              releases: null,
+              maxIterations: null,
+              cycleDetected: false,
+            },
+          },
+          top,
+        ),
       );
     else {
       const zero = tied.map(() => 0);
@@ -329,14 +492,16 @@ export function buildEfficientFrontier(input: {
                 weights: tickers.map((_, i) =>
                   tied.includes(i) ? mix[tied.indexOf(i)] : 0,
                 ),
-                iterations: tiedMv.iterations,
+                solver: mvRecord(tiedMv.iterations),
               }
             : {
                 failure: `Minimum variance among the tied top-return securities is unavailable: ${tiedMv.reason ?? tiedMv.status}.`,
                 status:
                   tiedMv.status === "non_converged" ? "non_converged" : "numerical_failure",
-                iterations: tiedMv.iterations,
+                cause: "minimum_variance_failed",
+                solver: mvRecord(tiedMv.iterations),
               },
+          top,
         ),
       );
     }
