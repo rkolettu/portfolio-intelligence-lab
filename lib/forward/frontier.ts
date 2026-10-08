@@ -248,42 +248,60 @@ export function buildEfficientFrontier(input: {
       reason: `The Global Minimum Variance anchor failed frontier certification: ${gmvPoint.reason}`,
     };
   const maxMu = Math.max(...mu);
-  const maxIdx = mu.flatMap((m, i) => (m === maxMu ? [i] : []));
+  // Q37: securities within the numerical tie tolerance of max μ are tied for the top
+  // point. Their μ are kept as they are.
+  const tied = mu.flatMap((m, i) => (maxMu - m <= F.topReturnTieTolerance ? [i] : []));
   // Q35: a range at or below the threshold is a single point (never exact equality).
   const single = maxMu - rGmv <= F.singlePointThreshold;
   const points: FrontierPoint[] = [gmvPoint];
   if (!single) {
     const count = FORWARD_METHODOLOGY.frontierPoints;
-    const k = maxIdx[0];
+    // The first security holding exactly max μ: mixing it with the GMV reaches every
+    // target exactly, so each interior start is feasible.
+    const k = mu.indexOf(maxMu);
     for (let index = 1; index < count - 1; index++) {
       const target = rGmv + (index / (count - 1)) * (maxMu - rGmv);
-      // Feasible start: the GMV mixed with the highest-return security so that the
-      // budget and the target return both hold.
       const t = (target - rGmv) / (maxMu - rGmv);
       const start = gmvWeights.map((w, i) => (1 - t) * w + (i === k ? t : 0));
-      const qp = activeSetQp({
-        covariance: sigma,
-        E: [tickers.map(() => 1), [...mu]],
-        f: [1, target],
-        start,
-        optimalityTolerance: T.kkt * normalization,
-        maxIterations: F.maxIterations,
-      });
+      // Q36: given Σw = 1, μᵀw = r is the same constraint as (μ − r·1)ᵀw = 0. The
+      // solve uses that row divided by s = max|μ_i − r|, which keeps it well
+      // conditioned when expected returns are nearly equal. Certification below is in
+      // original coordinates: |μᵀw − r| ≤ 1e-10.
+      const offsets = mu.map((m) => m - target);
+      const scale = Math.max(...offsets.map(Math.abs));
+      const qp =
+        Number.isFinite(scale) && scale > 0
+          ? activeSetQp({
+              covariance: sigma,
+              E: [tickers.map(() => 1), offsets.map((d) => d / scale)],
+              f: [1, 0],
+              start,
+              optimalityTolerance: T.kkt * normalization,
+              maxIterations: F.maxIterations,
+            })
+          : null;
       points.push(
         point(
           index,
           "interior",
           target,
-          qp.ok
-            ? { weights: qp.x, iterations: qp.iterations }
-            : { failure: qp.reason, status: qp.status, iterations: qp.iterations },
+          !qp
+            ? {
+                failure: `The return constraint has no positive, finite scale (max|μ_i − r| = ${scale}); the point is not solved.`,
+                status: "numerical_failure",
+                iterations: 0,
+              }
+            : qp.ok
+              ? { weights: qp.x, iterations: qp.iterations }
+              : { failure: qp.reason, status: qp.status, iterations: qp.iterations },
         ),
       );
     }
-    // Top endpoint: only allocations entirely in the highest-return securities reach
-    // max μ. One such security: 100% in it. An exact tie: the minimum-variance mix of
-    // the tied securities (the existing minimumVariance on their sub-covariance).
-    if (maxIdx.length === 1)
+    // Top point: only allocations in the top-return securities reach max μ. One such
+    // security: 100% in it. Several (Q37 ties): their minimum-variance mix, from the
+    // existing minimumVariance on their sub-covariance. Either way it is certified
+    // against the target max μ and reports its actual μᵀw.
+    if (tied.length === 1)
       points.push(
         point(count - 1, "max_return", maxMu, {
           weights: tickers.map((_, i) => (i === k ? 1 : 0)),
@@ -291,16 +309,16 @@ export function buildEfficientFrontier(input: {
         }),
       );
     else {
-      const zero = maxIdx.map(() => 0);
-      const one = maxIdx.map(() => 1);
-      const tied = minimumVariance({
-        covariance: maxIdx.map((i) => maxIdx.map((j) => sigma[i][j])),
+      const zero = tied.map(() => 0);
+      const one = tied.map(() => 1);
+      const tiedMv = minimumVariance({
+        covariance: tied.map((i) => tied.map((j) => sigma[i][j])),
         lower: zero,
         upper: one,
         budget: 1,
         start: equalWeight({ lower: zero, upper: one, budget: 1 }).weights!,
       });
-      const mix = tied.status === "success" ? tied.weights : null;
+      const mix = tiedMv.status === "success" ? tiedMv.weights : null;
       points.push(
         point(
           count - 1,
@@ -309,15 +327,15 @@ export function buildEfficientFrontier(input: {
           mix
             ? {
                 weights: tickers.map((_, i) =>
-                  maxIdx.includes(i) ? mix[maxIdx.indexOf(i)] : 0,
+                  tied.includes(i) ? mix[tied.indexOf(i)] : 0,
                 ),
-                iterations: tied.iterations,
+                iterations: tiedMv.iterations,
               }
             : {
-                failure: `Minimum variance among the tied highest-return securities is unavailable: ${tied.reason ?? tied.status}.`,
+                failure: `Minimum variance among the tied top-return securities is unavailable: ${tiedMv.reason ?? tiedMv.status}.`,
                 status:
-                  tied.status === "non_converged" ? "non_converged" : "numerical_failure",
-                iterations: tied.iterations,
+                  tiedMv.status === "non_converged" ? "non_converged" : "numerical_failure",
+                iterations: tiedMv.iterations,
               },
         ),
       );
@@ -351,13 +369,17 @@ export function buildEfficientFrontier(input: {
         solver: { termination: mv.termination, iterations: mv.iterations },
       },
       maxExpectedReturn: maxMu,
-      maxReturnTickers: maxIdx.map((i) => tickers[i]),
+      maxReturnTickers: tied.map((i) => tickers[i]),
       kktNormalization: normalization,
       tolerances: {
         budget: T.budget,
         bound: T.bound,
         targetReturn: T.targetReturn,
         kkt: T.kkt,
+      },
+      thresholds: {
+        singlePoint: F.singlePointThreshold,
+        topReturnTie: F.topReturnTieTolerance,
       },
       points,
       certifiedCount: points.filter((p) => p.certified).length,

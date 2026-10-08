@@ -741,9 +741,16 @@ replacing it.
 - **Interior points (1–39):** a deterministic primal active-set QP (Nocedal &
   Wright, Algorithm 16.3).
   - **Start:** the feasible allocation (1 − t)·w_GMV + t·e_k. Here e_k is 100% in
-    the highest-return security (lowest index on an exact tie), and t places the
-    start's return on the target. Every target is therefore feasible by
-    construction.
+    the first security holding exactly max μ, and t places the start's return on
+    the target. Every target is therefore feasible by construction.
+  - **Return constraint (Q36):** because Σw = 1, μᵀw = r is the same constraint as
+    (μ − r·1)ᵀw = 0. The solve uses that row divided by s = max|μᵢ − r|, which keeps
+    the KKT system well conditioned even when expected returns are nearly equal.
+    - Only the numerical representation changes. The feasible set, the target and
+      the weights do not.
+    - Certification below is always in original coordinates: |μᵀw − r| ≤ 1e-10.
+    - A zero or non-finite s is a typed failure. It cannot occur once the status is
+      `frontier`, because then s ≥ (max μ − r_GMV)/40 > 0.
   - **Each iteration:**
     - solve the exact KKT system on the current free set with the existing
       `solveLinear` (pivot test unchanged);
@@ -759,9 +766,16 @@ replacing it.
   - **Limit:** 10,000 iterations, then `non_converged`.
 - **Top endpoint (point 40):** only allocations held entirely in the highest-return
   securities reach max μ.
-  - If one security has the highest return, the endpoint is 100% in it.
-  - If several tie exactly, it is their minimum-variance mix: the existing
-    `minimumVariance` on their sub-covariance.
+  - **Ties (Q37):** securities with max μ − μᵢ ≤ 1e-12 (`topReturnTieTolerance`)
+    are tied. This is a numerical tie tolerance, not an economic assumption, and
+    each μᵢ is kept as it is.
+  - If one security is in the tied set, the endpoint is 100% in it.
+  - If several are tied, it is their minimum-variance mix: the existing
+    `minimumVariance` on their sub-covariance. A one-rounding-step difference
+    between two securities therefore no longer flips the endpoint to 100% in one of
+    them.
+  - Its target is max μ. It reports its actual μᵀw and is certified like every other
+    point. The tied spread is ≤ 1e-12, inside the 1e-10 return tolerance.
 - **Certification (Q34):** every point, the GMV included, is checked from its weights
   alone. No solver multipliers or working set are used.
   - **Constraint residuals:**
@@ -796,15 +810,19 @@ replacing it.
   - Every interior point matches a brute-force optimum to 1e-12 (all 2ⁿ supports
     enumerated, each solved independently) on seven models of 3–8 assets and on
     the fixture forward chain.
+  - Expected returns as close as 2e-12 still give all 41 certified points, matching
+    the brute force and passing |μᵀw − r| ≤ 1e-10.
+  - All 41 points certify at the maximum universe of 21 securities.
   - Two-asset closed forms hold.
   - Σ-order invariance holds.
   - A corner portfolio that lands exactly on a grid point certifies.
   - A duplicated security still certifies: the Ledoit–Wolf Σ stays positive
     definite.
+  - Near-ties at the top give the exact tie's mix.
 - **Pending decisions:**
-  - **Q36:** expected returns so close that the KKT system is ill-conditioned.
-    Today such interior points fail, typed, and are not plotted.
-  - **Q37:** the endpoint's tie rule. Today it is exact equality.
+  - **Q38:** the iteration limit, and whether a bound may be released.
+  - **Q39:** a near-tied top pair with a lower-variance security just below it.
+    Today the top point fails, typed, and is not plotted.
 
 **Local assumption state.** One state holds the risk window, market proxy, MRP and
 per-ticker views. Portfolio Theory and Stock Lab share it.

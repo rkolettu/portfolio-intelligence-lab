@@ -565,7 +565,8 @@ export type EfficientFrontier = {
     solver: { termination: string; iterations: number };
   };
   maxExpectedReturn: number;
-  /** Securities with exactly the highest expected return. */
+  /** Securities tied for the highest expected return: max μ − μ_i ≤ the Q37
+   * top-return tie tolerance (their μ are kept as they are). */
   maxReturnTickers: string[];
   /** 2·λmax(Σ): the KKT normalization, as in minimumVariance. */
   kktNormalization: number;
@@ -575,6 +576,8 @@ export type EfficientFrontier = {
     targetReturn: number;
     kkt: number;
   };
+  /** Q35 single-point threshold and Q37 top-return tie tolerance. */
+  thresholds: { singlePoint: number; topReturnTie: number };
   points: FrontierPoint[];
   certifiedCount: number;
   /** SHA-256 of the canonical frontier payload (risk-model hash, μ, targets, results). */

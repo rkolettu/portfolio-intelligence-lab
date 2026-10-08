@@ -38,9 +38,12 @@ const variance = (S: Matrix, w: readonly number[]) => w.reduce((s, wi, i) => s +
 /** Independent oracle for min wᵀΣw s.t. 1ᵀw = 1, μᵀw = r, w ≥ 0: the convex optimum
  * is the equality-constrained optimum on its own support, so enumerate supports,
  * solve each KKT system by Gauss–Jordan elimination, keep the nonnegative solutions
- * and take the least variance. */
-function oracle(S: Matrix, mu: number[], r: number): number[] {
+ * and take the least variance. `scaled` writes the return row as its exact
+ * equivalent ((μ − r)/max|μ − r|)ᵀw = 0, for nearly equal μ. */
+function oracle(S: Matrix, mu: number[], r: number, scaled = false): number[] {
   const n = mu.length;
+  const s = Math.max(...mu.map((m) => Math.abs(m - r)));
+  const row = scaled ? mu.map((m) => (m - r) / s) : mu;
   let best: { w: number[]; v: number } | null = null;
   for (let mask = 1; mask < 1 << n; mask++) {
     const idx = [...Array(n).keys()].filter((i) => mask & (1 << i));
@@ -49,12 +52,12 @@ function oracle(S: Matrix, mu: number[], r: number): number[] {
     idx.forEach((i, a) => {
       idx.forEach((j, b) => (M[a][b] = 2 * S[i][j]));
       M[a][m] = -1;
-      M[a][m + 1] = -mu[i];
+      M[a][m + 1] = -row[i];
       M[m][a] = 1;
-      M[m + 1][a] = mu[i];
+      M[m + 1][a] = row[i];
     });
     M[m][m + 2] = 1;
-    M[m + 1][m + 2] = r;
+    M[m + 1][m + 2] = scaled ? 0 : r;
     let singular = false;
     for (let c = 0; c < m + 2 && !singular; c++) {
       let p = c;
@@ -173,6 +176,15 @@ describe("buildEfficientFrontier — the certified efficient branch", () => {
         p.weights!.forEach((x, i) => expect(Math.abs(x - w[i])).toBeLessThan(1e-12));
         expect(Math.abs(p.volatility! ** 2 - variance(sigma, w)) / variance(sigma, w)).toBeLessThan(1e-12);
       }
+    }
+  });
+
+  it("certifies all 41 points at the maximum universe (21 risky securities) on seeded models", () => {
+    for (let seed = 5001; seed <= 5010; seed++) {
+      const { sigma, mu } = randomModel(21, seed);
+      const f = frontier(sigma, mu);
+      expectWellFormed(f, sigma);
+      expect(f.certifiedCount).toBe(41);
     }
   });
 
@@ -301,14 +313,52 @@ describe("top endpoint", () => {
     expect(end.weights![2]).toBeCloseTo(1 - wB, 10);
   });
 
-  it("ties are exact equality (pending Q37): a security one ulp higher takes 100%", () => {
+  it("Q37: a near-tie within 1e-12 gives the exact tie's minimum-variance mix, at its actual return", () => {
     const top = 0.12;
-    const higher = top + Number.EPSILON * top;
-    expect(higher).toBeGreaterThan(top);
-    const f = frontier(S, [0.05, higher, top, 0.07], ["A", "B", "C", "D"]);
+    const exact = frontier(S, [0.05, top, top, 0.07], ["A", "B", "C", "D"]).points[40];
+    for (const mu of [
+      [0.05, top + Number.EPSILON * top, top, 0.07], // one ulp apart
+      [0.05, top, top - 0.5e-12, 0.07],
+    ]) {
+      const f = frontier(S, mu, ["A", "B", "C", "D"]);
+      expectWellFormed(f, S);
+      expect(f.maxReturnTickers).toEqual(["B", "C"]);
+      // Each μ is kept as given; nothing is equalized.
+      expect(f.expectedReturns).toEqual(mu);
+      const end = f.points[40];
+      expect(end.certified).toBe(true);
+      expect(end.targetReturn).toBe(Math.max(...mu));
+      expect(end.expectedReturn).toBe(dot(end.weights!, mu));
+      expect(end.residuals.return!).toBeLessThanOrEqual(1e-12);
+      end.weights!.forEach((w, i) => expect(Math.abs(w - exact.weights![i])).toBeLessThan(1e-12));
+      // The same top allocation whatever the universe order.
+      const order = [2, 3, 0, 1];
+      const permuted = frontier(
+        order.map((i) => order.map((j) => S[i][j])),
+        order.map((i) => mu[i]),
+        order.map((i) => ["A", "B", "C", "D"][i]),
+      ).points[40];
+      order.forEach((i, pos) => expect(Math.abs(permuted.weights![pos] - end.weights![i])).toBeLessThan(1e-12));
+    }
+  });
+
+  it("Q37: a gap above 1e-12 is not a tie, and the top point is unchanged (100% in it)", () => {
+    const f = frontier(S, [0.05, 0.12, 0.12 - 2e-12, 0.07], ["A", "B", "C", "D"]);
     expectWellFormed(f, S);
     expect(f.maxReturnTickers).toEqual(["B"]);
     expect(f.points[40].weights).toEqual([0, 1, 0, 0]);
+    expect(f.thresholds).toEqual({ singlePoint: 1e-12, topReturnTie: 1e-12 });
+  });
+
+  it("Q37 edge (Q39): a near-tied pair with a lower-variance security just below fails typed at the top", () => {
+    // B and C tie within 1e-12; D sits 1e-6 below with lower marginal variance. The
+    // B/C mix is not a KKT point within 1e-8, so the top point is not plotted.
+    const f = frontier(S, [0.05, 0.12, 0.12 - 0.5e-12, 0.12 - 1e-6], ["A", "B", "C", "D"]);
+    expectWellFormed(f, S);
+    expect(f.points[40].certified).toBe(false);
+    expect(f.points[40].reason).toMatch(/KKT residual/);
+    expect(f.points[40].residuals.kkt!).toBeGreaterThan(1e-8);
+    expect(f.certifiedCount).toBe(40);
   });
 });
 
@@ -349,22 +399,43 @@ describe("degenerate and ill-conditioned cases", () => {
     for (const p of f.points) expect(p.weights![0]).toBeCloseTo(p.weights![1], 9);
   });
 
-  it("nearly identical expected returns (pending Q36): ill-conditioned interior points fail typed and are not plotted", () => {
+  it("Q36: nearly equal expected returns give all 41 points, certified in original coordinates", () => {
     const S = [
       [0.04, 0.006, 0.01],
       [0.006, 0.09, 0.02],
       [0.01, 0.02, 0.0625],
     ];
-    const f = frontier(S, [0.08, 0.08 + 1e-9, 0.08 - 1e-9]);
-    expectWellFormed(f, S);
-    expect(f.status).toBe("frontier");
-    expect(f.points[0].certified).toBe(true);
-    expect(f.points[40].certified).toBe(true);
-    const interior = f.points.filter((p) => p.role === "interior");
-    expect(interior.every((p) => !p.certified && p.status === "numerical_failure")).toBe(true);
-    expect(interior[0].reason).toMatch(/singular under the existing pivot test/);
-    expect(interior[0].residuals).toEqual({ budget: null, return: null, bound: null, kkt: null });
-    expect(f.certifiedCount).toBe(2);
+    for (const spread of [2e-12, 1e-11, 1e-9, 1e-7, 1e-5]) {
+      const mu = [0.08, 0.08 + spread, 0.08 - spread];
+      const f = frontier(S, mu);
+      expectWellFormed(f, S);
+      expect(f.status).toBe("frontier");
+      expect(f.certifiedCount).toBe(41);
+      for (const p of f.points) {
+        // The original equation μᵀw = r, checked here, not the solver's scaled row.
+        expect(Math.abs(dot(mu, p.weights!) - p.targetReturn)).toBeLessThanOrEqual(1e-10);
+        if (p.role === "interior") {
+          const w = oracle(S, mu, p.targetReturn, true);
+          p.weights!.forEach((x, i) => expect(Math.abs(x - w[i])).toBeLessThan(1e-11));
+        }
+      }
+      // The scaled row is homogeneous, so it cannot see a budget scaled by 1 + 1e-8;
+      // certification in original coordinates does.
+      const p = f.points[20];
+      const scaled = p.weights!.map((x) => x * (1 + 1e-8));
+      const d = mu.map((m) => m - p.targetReturn);
+      const sMax = Math.max(...d.map(Math.abs));
+      expect(Math.abs(dot(d.map((x) => x / sMax), scaled))).toBeLessThan(1e-12);
+      const check = certifyFrontierPoint({
+        weights: scaled,
+        targetReturn: p.targetReturn,
+        covariance: S,
+        expectedReturns: mu,
+        normalization: f.kktNormalization,
+      });
+      expect(check.certified).toBe(false);
+      expect(check.failures).toContainEqual(expect.stringMatching(/^target-return residual/));
+    }
   });
 
   it("a singular Σ supplied directly (outside the Ledoit–Wolf path) never yields an uncertified plotted point", () => {

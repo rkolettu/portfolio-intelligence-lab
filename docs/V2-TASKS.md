@@ -722,10 +722,12 @@ substitute the CapIQ value.**
     - build passes.
 
 ## TASK 8 — Efficient-frontier solver (deterministic active-set QP)
-- **STATUS:** BLOCKED — USER DECISION REQUIRED (Q36, Q37; Q38 to confirm).
-  Implementation, tests and documentation are done. Two numerical cases fall
-  outside the approved methodology. Until they are decided they fail safely, typed
-  and unplotted (Q36), or follow the exact-arithmetic definition (Q37).
+- **STATUS:** BLOCKED — USER DECISION REQUIRED (Q38, Q39).
+  - Q36 and Q37 are approved and implemented.
+  - Q38: the proposed n + 2 cap assumes the active set only grows, but the solver
+    releases pinned bounds. Per the owner's instruction, the cap is unchanged until
+    the owner decides.
+  - Q39: a near-tie edge found while applying Q37.
 - **PURPOSE:**
   - Solve min wᵀΣw s.t. Σw = 1, wᵀμ_BL = r, w ≥ 0, over risky assets only.
   - Use 41 deterministic target returns from r_GMV to max μ.
@@ -749,7 +751,9 @@ substitute the CapIQ value.**
       - KKT 1e-8, from the existing stationarity tolerance;
       - binding 1e-10.
     - The Q35 threshold, 1e-12.
-    - `maxIterations` 10,000 (Q38).
+    - Q36: `returnConstraint`, the scaled-row representation.
+    - Q37: `topReturnTieTolerance` 1e-12.
+    - `maxIterations` 10,000, pending Q38.
   - **`lib/forward/qp.ts`, `activeSetQp`:** a generic, deterministic primal
     active-set solver for min xᵀΣx s.t. Ex = f, x ≥ 0, from a feasible start.
     - It solves the exact KKT system on each face with the existing `solveLinear`.
@@ -765,9 +769,14 @@ substitute the CapIQ value.**
     - takes the GMV from the existing `minimumVariance` with the Constructor's
       call, unchanged;
     - applies the Q35 single-point rule;
-    - builds the 41-point grid; solves the interior points by `activeSetQp` from
-      a feasible GMV/top-security mix; the top endpoint is 100% in the top security,
-      or the `minimumVariance` mix of an exact tie;
+    - builds the 41-point grid;
+    - solves the interior points by `activeSetQp` from a feasible GMV/top-security
+      mix, with the return constraint passed as the Q36 scaled row
+      ((μ − r·1)/s)ᵀw = 0, s = max|μᵢ − r|. A zero or non-finite s is a typed
+      failure;
+    - takes the top endpoint as 100% in the top security, or the `minimumVariance`
+      mix of the Q37 tied set (max μ − μᵢ ≤ 1e-12). The tied set keeps each μᵢ and
+      reports its actual μᵀw;
     - records binding tickers from the existing `bindingConstraints`;
     - computes `frontierHash` with `sha256Hex`.
   - **`certifyFrontierPoint`:** independent Q34 certification.
@@ -780,10 +789,10 @@ substitute the CapIQ value.**
   - **Infeasible targets:** the frontier only requests targets in
     [r_GMV, max μ], each feasible by construction. Called directly with a target no
     allocation reaches, the QP returns a typed failure, never a point.
-  - **Types:** `ForwardSolverResiduals`, `FrontierPoint`, `EfficientFrontier`,
-    `EfficientFrontierOutcome`.
-  - **Tests:** 35 in total.
-    - **`tests/forward/frontier.test.ts`** (28):
+  - **Types:** `ForwardSolverResiduals`, `FrontierPoint`, `EfficientFrontier`
+    (including `thresholds`), `EfficientFrontierOutcome`.
+  - **Tests:** 38 in total.
+    - **`tests/forward/frontier.test.ts`** (31):
       - 41 certified, evenly spaced targets;
       - the GMV is `minimumVariance` exactly;
       - a brute-force support-enumeration oracle to 1e-12 on seven models
@@ -791,10 +800,20 @@ substitute the CapIQ value.**
       - the two-asset closed form; monotone E and σ; the 2λmax normalization;
         residuals and iterations on every point; binding tickers;
       - Q35: one asset, equal μ, and either side of 1e-12;
-      - the endpoint: unique, exact tie (closed form) and 1-ulp near-tie (Q37);
+      - the maximum universe: 21 securities, 10 seeded models, 41/41 each;
+      - the endpoint:
+        - unique; exact tie (closed form);
+        - Q37 near-ties (1 ulp, 0.5e-12) equal the exact tie's mix, at their
+          actual μᵀw with μ unchanged, in any universe order;
+        - a 2e-12 gap is not a tie;
+        - the Q39 edge fails typed;
       - a corner exactly on a grid point;
       - a duplicated security via Ledoit–Wolf (positive definite, 41/41);
-      - near-identical μ (Q36); a singular Σ given directly;
+      - Q36: spreads 2e-12 to 1e-5 all give 41/41, each checked against
+        μᵀw = r in original coordinates and against a scaled-row brute force;
+        a budget scaled by 1 + 1e-8 passes the scaled row but fails
+        certification;
+      - a singular Σ given directly;
       - certification: rejects budget, bound, return and suboptimal (KKT-only)
         points; GMV residual ≤ the `minimumVariance` residual on 30 models;
       - determinism, permutation invariance and the hash payload and its
@@ -814,8 +833,13 @@ substitute the CapIQ value.**
       oracle to 1.2e-14; worst KKT 2.6e-15.
     - 500 models of 21 assets (20,500 points): 0 failures; at most 21 iterations;
       at most 60 ms per frontier.
+    - Before vs after Q36/Q37 on those 800 models (32,800 points): all certified
+      both times; targets identical; weights differ by at most 1.8e-14.
+    - Q38 evidence (31,200 interior solves): 640 (2.1%) release a pinned bound,
+      at most 4 times. Each release is a security that is 0% in the GMV and so
+      starts pinned, then enters at a higher target. Iterations never exceed n.
   - **Checks:**
-    - unit tests 715 / 715;
+    - unit tests 718 / 718;
     - typecheck clean;
     - lint clean on all V2 code (only the pre-existing InfoTip error remains);
     - build passes.
@@ -1209,9 +1233,10 @@ T26 runs alongside each task · T27–T30 close V2
 | Q33 | Task 7 | **APPROVED A:** a browser-safe synchronous SHA-256 (`lib/utils/sha256.ts`) for result identity only; `snapshotHash` unchanged. | — |
 | Q34 | Task 8 | **APPROVED:** frontier tolerances: budget ≤ 1e-10, bound ≤ 1e-10, KKT ≤ 1e-8 normalized by 2·λmax as in `minimumVariance`, \|μᵀw − r\| ≤ 1e-10. Never relaxed; failed points are not plotted; residuals recorded for every solved point. | — |
 | Q35 | Task 8 | **APPROVED:** if max μ − r_GMV ≤ 1e-12, the frontier is a single point (`single_point`, the GMV); never exact equality. | — |
-| Q36 | Task 8 | **OPEN.** When expected returns are within about 1e-7 of each other (but the range is above Q35's 1e-12), the interior KKT systems fail the existing `solveLinear` pivot test. The points fail typed and are not plotted, leaving the GMV and the endpoint. Options: (A) accept; (B) solve each face with the return row replaced by the equivalent centered and scaled row ((μ − c)/s)ᵀw = (r − c)/s. That is an exact row operation: same constraints, same certification in original units, no tolerance change. In a scratch test it certified all 39 interior points down to 1e-12. (C) raise the single-point threshold. | Task 8 |
-| Q37 | Task 8 | **OPEN.** The top endpoint ties securities by exact equality. Identical 100%-confidence views on two securities give exactly equal μ_BL in 84% of 2,000 random trials and a 1-ulp difference in 16%. The endpoint then flips from the minimum-variance mix to 100% in one security. Options: (A) keep exact equality; (B) tie securities within Q35's 1e-12 of max μ. The endpoint's return is then within 1e-12 of its target, inside Q34. | Task 8 |
-| Q38 | Task 8 | **TO CONFIRM.** The active-set iteration cap is 10,000. The observed maximum is 21 at 21 assets. Exceeding the cap is a typed `non_converged`, never a point. | Task 8 |
+| Q36 | Task 8 | **APPROVED B:** inside the active-set solve, μᵀw = r is passed as ((μ − r·1)/s)ᵀw = 0 with s = max\|μᵢ − r\| (identical given Σw = 1). Only the numerical representation changes. Certification stays in original coordinates (\|μᵀw − r\| ≤ 1e-10). A zero or non-finite s is a typed failure. The Q35 threshold is not raised. | — |
+| Q37 | Task 8 | **APPROVED B:** securities with max μ − μᵢ ≤ 1e-12 (`topReturnTieTolerance`, a numerical tie tolerance) are tied. The top point is their minimum-variance mix via the existing `minimumVariance`, reported at its actual μᵀw, with each μᵢ kept and certified as usual. | — |
+| Q38 | Task 8 | **OPEN.** The owner proposed maxIterations = n + 2, with an invariant that every continuing iteration pins a new security. That assumes the active set only grows, but the solver also releases pinned bounds (2.1% of 31,200 seeded solves, at most 4 releases). Each release is a security that is 0% in the GMV, so it starts pinned in the GMV-mix start, and then enters at a higher target. Per the owner's instruction the cap is unchanged until decided. Option A: a strictly positive start (equal weight blended toward the top- or bottom-return security), the monotone invariant (a needed release is a typed failure) and cap n + 2. In a scratch prototype: 31,629 solves, 0 releases, 0 failures, at most n − 1 iterations, weights bit-identical. Option B: keep releases, with an n-derived cap plus a never-repeat-a-working-set guard. | Task 8 |
+| Q39 | Task 8 | **OPEN.** Found while applying Q37. When the tied top set has a nonzero spread and another security lies within about 1e-6 below the top with lower marginal variance, the tied mix fails the 1e-8 KKT check: the large return multiplier times the spread. The top point is then not plotted, typed. Exact equality never hit this. Options: (A) accept; (B) another rule. | Task 8 |
 
 ## External data service changes
 

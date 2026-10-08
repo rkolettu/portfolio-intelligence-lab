@@ -223,6 +223,12 @@ export const FORWARD_METHODOLOGY = {
   frontier: {
     problem:
       "min wᵀΣw s.t. Σw = 1, μ_BLᵀw = r, w ≥ 0 over the risky universe; efficient branch r ∈ [r_GMV, max μ]",
+    /** Q36: inside the active-set solve, μᵀw = r is represented by the equivalent
+     * row ((μ − r·1)/s)ᵀw = 0, s = max|μ_i − r| (identical given Σw = 1). Only the
+     * numerical representation changes; certification stays in original
+     * coordinates. */
+    returnConstraint:
+      "solved as ((μ − r·1)/s)ᵀw = 0 with s = max_i |μ_i − r| > 0; certified as |μᵀw − r| ≤ the target-return tolerance",
     /** Q34: the Constructor's tolerances where they apply, plus the new
      * expected-return equality. KKT residuals are normalized by 2·λmax(Σ), as in
      * minimumVariance. Never relaxed to make a point pass. */
@@ -237,6 +243,9 @@ export const FORWARD_METHODOLOGY = {
     },
     /** Q35: max μ − r_GMV at or below this makes the frontier a single point (GMV). */
     singlePointThreshold: 1e-12,
+    /** Q37: securities with max μ − μ_i at or below this are tied for the top point.
+     * A numerical tie tolerance, not an economic assumption: each μ_i is kept. */
+    topReturnTieTolerance: 1e-12,
     /** Active-set iterations per target before a point is non_converged. */
     maxIterations: 10_000,
   },
