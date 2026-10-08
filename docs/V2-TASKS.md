@@ -424,7 +424,7 @@ substitute the CapIQ value.**
       remains).
 
 ## TASK 3 — Forward risk model: risk window, augmented Ledoit–Wolf Σ, Forward Model Beta, σ_m
-- **STATUS:** COMPLETE (2026-10-08). Awaiting the owner's review before Task 4.
+- **STATUS:** COMPLETE (approved by the owner 2026-10-08).
 - **PURPOSE:** A clean, certified forward risk model. No CAPM priors are computed
   here.
 - **RESULT:**
@@ -486,20 +486,64 @@ substitute the CapIQ value.**
       (Q19) needs a browser-compatible SHA-256. This is decided at Task 7/12.
 
 ## TASK 4 — CAPM prior
-- **STATUS:** NOT STARTED.
+- **STATUS:** COMPLETE (2026-10-08). Awaiting the owner's approval before Task 5.
 - **PURPOSE:**
-  - Π_i = Rf + β_i × MRP, with β the Forward Model Beta; CASH earns Rf.
-  - Historical CAGR or mean returns are never used as the prior.
-- **DEPENDENCIES:** Tasks 2, 3.
-- **FILES:** `lib/forward/capm.ts` (new).
-- **TESTS:**
-  - a hand-computed vector;
-  - CASH = Rf;
-  - β = 0 → Rf;
-  - β = 1 → Rf + MRP;
-  - the prior is linear in the MRP;
-  - the portfolio prior equals Rf + β_p × MRP.
-- **RESULT:** —
+  - Π_i = Rf + Forward Model Beta_i × MRP, from the certified Task 3 risk model, the
+    Task 2 forward Rf and the Task 1 MRP.
+  - No historical returns, no Street data, and no Black–Litterman.
+- **RESULT:**
+  - `lib/forward/capm.ts`:
+    - **`capmRequiredReturn(rf, beta, mrp)`:** the only implementation of Rf + β × MRP.
+      It throws `INVALID_INPUT` on non-finite input. The prior, CASH, the expected
+      market return and (later) the SML all use it.
+    - **`expectedMarketReturn(rf, mrp)`:** the β = 1 case, giving the one canonical
+      Rf + MRP.
+    - **`buildCapmPrior({ riskModel, riskFree, marketRiskPremium })`:** validates its
+      inputs:
+      - the risk-free rate is DGS1/1Y, finite and above −100%;
+      - the MRP passes the Task 1 range schema;
+      - there is one finite beta per ticker, in canonical order;
+      - a held proxy has β = 1 exactly.
+
+      It returns a `CapmPrior`:
+      - shared at parent level: Rf with its date and source, MRP, proxy, window,
+        risk-model hash and expected market return;
+      - rows of `{ticker, forwardModelBeta, capmPrior}`;
+      - CASH as `{β 0, expectedReturn Rf}`.
+
+      Results are never floored or clamped. A prior at or below −100% is
+      `invalid_capm_prior`, listing the ticker, β, Rf, MRP and calculated prior.
+    - The module has no Node-only, server-only, historical or Street imports (a test
+      enforces its import allowlist), so it is browser-safe for Q19.
+  - **Types:** `CapmPriorRow`, `CapmPrior`, `InvalidCapmPrior`, `CapmPriorOutcome`.
+  - **Tests:** 23 in `tests/forward/capm.test.ts`:
+    - the 4% / 9% / 11.5% cases;
+    - negative β, negative MRP, and both negative;
+    - MRP = 0 gives Rf for every security;
+    - a one-for-one Rf shift and a β × ΔMRP shift;
+    - CASH = Rf;
+    - the canonical expected market return;
+    - the proxy identity, including a held proxy with exactly one prior, and refusal
+      of β ≠ 1 for a held proxy;
+    - betas taken exactly from the risk model;
+    - invariance to historical mean returns (cumulative growth ×3.6, same prior);
+    - all-CASH;
+    - `invalid_capm_prior` with its details, and no upper cap;
+    - non-finite and out-of-range inputs;
+    - another maturity refused;
+    - malformed beta vectors;
+    - order invariance and independence from retrieval time;
+    - the import boundary.
+  - **Checks:**
+    - unit tests 602 / 602;
+    - typecheck clean;
+    - lint clean on all V2 code (only the pre-existing InfoTip error remains);
+    - build passes.
+  - **Not done here (by design):**
+    - the Expected Return Gap;
+    - P, Q and Ω;
+    - a CAPM-prior hash, which is browser-safe hashing for Task 7/12. The prior
+      records the risk-model hash and is fully deterministic.
 
 ## TASK 5 — Views and confidence model
 - **STATUS:** NOT STARTED.

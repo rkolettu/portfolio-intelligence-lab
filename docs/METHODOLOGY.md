@@ -474,6 +474,54 @@ portfolio. Custom proxies need a separate, approved change.
   the tangency portfolio report a typed *undefined* status. They are never
   manufactured.
 
+**CAPM prior** (12 months):
+
+> **CAPM Prior_i = Rf + Forward Model Beta_i × Market Risk Premium**
+
+- **Rf** is the latest available 1Y Treasury proxy above.
+- **Forward Model Beta** is measured against the selected Market Proxy, from the
+  certified forward risk model. It is never re-estimated, and never replaced by the
+  historical benchmark beta.
+- **MRP** is the explicit, user-visible assumption.
+- All values are decimals (5.00% = 0.05); formatting belongs to the UI.
+- **What it is:** a model *equilibrium assumption*. It is **not**:
+  - a historical realized return;
+  - a historical CAGR or average return;
+  - a price target;
+  - historical alpha;
+  - a guaranteed forecast.
+- **What it never uses:** historical returns, analyst targets, Street data or
+  Black–Litterman. A test shows that adding a large drift to a security's past
+  returns, tripling its cumulative growth, leaves its prior unchanged.
+- **One formula:** `capmRequiredReturn(rf, beta, mrp)` is the only implementation
+  of Rf + β × MRP. The CAPM prior, CASH, the canonical expected market return and
+  the later Security Market Line all call it, so the CAPM Required Return and the
+  SML can never diverge.
+- **Expected market return:** **Rf + MRP** — the β = 1 case of that function. It
+  is exposed once, and the Market CML Proxy, the SML and explanations reuse that
+  single value.
+- **Market proxy:** its Forward Model Beta is 1 exactly, so its prior equals the
+  expected market return. A held proxy has exactly one prior. A risk model in which
+  a held proxy's beta is not exactly 1 is refused.
+- **CASH:** expected return = Rf, with Forward Model Beta shown as 0. CASH stays
+  outside the risky covariance model.
+- **Negative inputs:**
+  - Negative betas and a negative MRP are not special-cased. A prior below Rf, or
+    below zero, is shown as calculated.
+  - There is no floor at Rf, no clamp at zero and no substituted assumption.
+  - MRP = 0 gives every risky security exactly Rf.
+- **Impossible results:**
+  - A 12-month simple return cannot be at or below −100%. A prior there is a typed
+    `invalid_capm_prior` error, listing the ticker, beta, Rf, MRP and calculated
+    prior. It is never clamped.
+  - There is no upper cap.
+- **Determinism:** the prior depends only on the risk model (recorded by its hash),
+  Rf (value, observation date, source) and the MRP. Results come in the risk
+  model's canonical ticker order, and retrieval timestamps do not affect them. The
+  module has no Node-only or server-only imports, so the same function recomputes
+  the prior in the browser when only the MRP changes (Q19).
+- The Expected Return Gap is not computed until Black–Litterman exists.
+
 **Views and confidence (inputs).**
 - Each risky security has one of three views:
   - **No View** — the model uses the CAPM prior;

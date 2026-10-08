@@ -155,6 +155,57 @@ export type ForwardRiskModelOutcome =
       alignedReturns: number | null;
     };
 
+/** One risky security's CAPM prior. Shared inputs (Rf, MRP, proxy, window) live on
+ * the parent result, so every row is computed from exactly the same values. */
+export type CapmPriorRow = {
+  ticker: string;
+  /** Forward Model Beta from the certified risk model (never re-estimated). */
+  forwardModelBeta: number;
+  /** Rf + β × MRP: the 12-month CAPM prior, identical to the CAPM Required Return. */
+  capmPrior: number;
+};
+
+/** The 12-month CAPM prior: an equilibrium model assumption, not a historical
+ * return, price target, forecast guarantee or historical alpha. */
+export type CapmPrior = {
+  methodologyVersion: string;
+  /** Hash of the forward risk model the betas came from. */
+  riskModelHash: string;
+  marketProxy: MarketProxy;
+  riskWindow: RiskWindow;
+  /** Latest available 1Y Treasury yield (DGS1), decimal. */
+  riskFreeRate: number;
+  riskFreeObservationDate: string;
+  riskFreeSource: string;
+  /** Explicit Market Risk Premium assumption, decimal. */
+  marketRiskPremium: number;
+  /** Rf + MRP: the ONE canonical forward expected market return. */
+  expectedMarketReturn: number;
+  /** Risky securities, canonical (risk-model) order. */
+  rows: CapmPriorRow[];
+  /** CASH stays outside the risky model: β = 0, expected return = Rf. */
+  cash: { ticker: "CASH"; forwardModelBeta: 0; expectedReturn: number };
+};
+
+/** A 12-month simple return at or below −100% that the CAPM formula produced. */
+export type InvalidCapmPrior = {
+  ticker: string;
+  forwardModelBeta: number;
+  riskFreeRate: number;
+  marketRiskPremium: number;
+  capmPrior: number;
+};
+
+export type CapmPriorOutcome =
+  | { available: true; prior: CapmPrior }
+  | { available: false; code: "invalid_inputs"; reason: string }
+  | {
+      available: false;
+      code: "invalid_capm_prior";
+      reason: string;
+      invalid: InvalidCapmPrior[];
+    };
+
 /** A forward statistic that can be undefined (e.g. Sharpe at zero volatility). */
 export type ForwardMetric =
   { available: true; value: number } | { available: false; reason: string };
