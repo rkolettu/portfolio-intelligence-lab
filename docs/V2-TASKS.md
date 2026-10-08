@@ -939,8 +939,8 @@ substitute the CapIQ value.**
     - build passes.
 
 ## TASK 10 — Tangency / Maximum-Sharpe solver
-- **STATUS:** BLOCKED — USER DECISION REQUIRED (Q41: KKT normalization scale).
-  Implementation, tests and documentation are done.
+- **STATUS:** COMPLETE (Q41 approved B 2026-10-08; the Q41 regression audit
+  passed).
 - **PURPOSE:**
   - The constrained risky tangency: maximize (μ_BL − Rf)ᵀw / √(wᵀΣw) s.t. Σw = 1,
     w ≥ 0, over the whole risky universe. There is no CASH, and no security is
@@ -979,9 +979,11 @@ substitute the CapIQ value.**
     - outputs recomputed from the final w;
     - `tangencyHash` and `expectedReturnsHash`.
   - **Certification:**
-    - **y-problem:** |(a/s)ᵀy − 1| ≤ 1e-10; y ≥ 0; KKT ≤ 1e-8 over 2λmax(Σ)·1ᵀy (the
-      exact one-multiplier min-max residual). The solver releases below
-      −1e-8·2λmax, which is never looser, because 1ᵀy ≥ 1.
+    - **y-problem:** |(a/s)ᵀy − 1| ≤ 1e-10; y ≥ 0; and (Q41) the gradient-scaled KKT
+      residual ≤ 1e-8. That residual is the exact one-multiplier min-max divided by
+      ‖2Σy‖∞, which must be positive and finite. The solver releases bounds on the
+      same scale: a multiplier below −1e-8·‖2Σx‖∞. The λmax-scaled residual is
+      recorded as a diagnostic only.
     - **Final portfolio:**
       - |Σw − 1| ≤ 1e-10 and w ≥ 0;
       - |aᵀy/s − 1| ≤ 1e-10;
@@ -1001,7 +1003,32 @@ substitute the CapIQ value.**
       the singular face, and asymmetric, indefinite and singular Σ;
     - five code mutants (no certification gate, no canonical sort, filtering by
       excess, ≥ instead of >, wrong normalization) are each caught.
-    - One finding needs the owner: Q41.
+    - One finding needed the owner: Q41 (approved B).
+  - **Q41 regression audit** (3,400 cases):
+    - **Normal / production-like** (1,600: 800 seeded, 200 at the existence
+      threshold, 600 well-conditioned): 0 changed, maximum weight difference 0,
+      maximum Sharpe difference 0, no new failures.
+      - The Task 8 frontier is byte-identical on 800 seeded models.
+    - **Adversarial**, judged by a refined brute-force maximum-Sharpe oracle
+      (materially sub-optimal = Sharpe shortfall above 1e-6 relative):
+
+      | Set | Wrong approvals before Q41 | Wrong approvals after | Worst accepted shortfall after (before) |
+      | --- | --- | --- | --- |
+      | Near-singular 1e-6 | 127 | 0 | 5.4e-10 (18%) |
+      | Near-singular 1e-9 | 11 | 0 | 2.1e-16 (11%) |
+      | Volatility spread 1e5 | 46 | 0 | 7.1e-15 (27%) |
+
+    - **Valid solves now rejected:** 35, all in the near-singular 1e-9 set
+      (condition number about 1e9–1e10, beyond any Ledoit–Wolf Σ).
+      - In each, the gradient ‖2Σy‖∞ is only 1e-10 to 2e-9, and its rounding
+        (raw residual ~1e-17) breaks the 1e-8 relative test.
+      - They are typed `numerical_failure` (`certification_failed`); nothing wrong
+        is published.
+      - The other 11 newly rejected cases were sub-optimal before.
+    - **Rejections unchanged by Q41:** Σ singular within the existing 1e-10
+      tolerance gives `invalid_inputs` (462 near-singular-1e-9 cases and 102
+      volatility-spread cases), from the review-step positive-definite
+      requirement.
   - **Sweeps:**
     - 1,000 cases (800 seeded models plus 200 with max excess 1e-11 to 1e-3):
       979 certified, 21 correctly unavailable, 0 failures;
@@ -1010,15 +1037,15 @@ substitute the CapIQ value.**
     - at most 20 iterations and 19 releases.
     - Joins are rare (none in about 199,000 random solves), but are constructed and
       tested: the start security leaves, and another leaves and re-enters.
-  - **Tests:** 32 in `tests/forward/tangency.test.ts`.
+  - **Tests:** 35 in `tests/forward/tangency.test.ts` (3 of them for Q41).
   - **Checks:**
-    - unit tests 768 / 768;
+    - unit tests 771 / 771;
     - typecheck clean;
     - lint clean on all V2 code (only the pre-existing InfoTip error remains);
     - build passes.
 
 ## TASK 11 — Model CAL, Market CML Proxy and SML line engines
-- **STATUS:** NOT STARTED.
+- **STATUS:** IN PROGRESS.
 - **PURPOSE:** Compute the three lines as independent series:
   - Model CAL: E = Rf + [(E_t − Rf)/σ_t]σ;
   - Market CML Proxy: E = Rf + (MRP/σ_m)σ, with the proxy point (σ_m, Rf + MRP);
@@ -1382,7 +1409,7 @@ T26 runs alongside each task · T27–T30 close V2
 | Q38 | Task 8 | **APPROVED B:** releases are kept: a pinned security may re-enter, and valid points need it. Cycle detection: the pinned set is recorded at every iteration as a canonical sorted index list, and a recurrence within one target's solve stops it with `non_converged` (`active_set_cycle`). The cap is max(50, 2n²), 882 at n = 21; reaching it is `non_converged` (`iteration_cap`), not plotted, never retried. Iterations, joins, releases, the cap and the cycle flag are recorded. | — |
 | Q39 | Task 8 | **APPROVED (separate certification):** the top endpoint is the minimum-variance portfolio of the near-tie set T and is certified as that problem: budget and bound; zero weight outside T; `minimumVariance`'s stationarity and KKT on T; and max μ − μᵀw ≤ 1e-12 plus a floating-point allowance. Exact ties and near-ties use the same rule; one security in T is 100% as before. The exact target-return KKT is not applied to it. | — |
 | Q40 | Task 9 | **APPROVED:** Portfolio Theory shows only its own GMV by default, never the Constructor's Minimum Variance as another main frontier point. A concise methodology note explains the difference: "Portfolio Theory GMV uses the forward risk model and selected historical risk window. The Constructor uses its own analysis-period covariance and may therefore produce a different Minimum Variance allocation." Task 9 still proves in tests that the two agree when covariance, universe and CASH handling are identical and bounds do not bind. An optional comparison overlay may come later. | — |
-| Q41 | Task 10 | **OPEN.** The KKT certificate and the solver's release threshold are normalized by 2·λmax(Σ)(·1ᵀy), the approved Q34 / `minimumVariance` convention. It is not scale-invariant. On the production Ledoit–Wolf Σ (condition number ≤ n/δ) results match a brute-force maximum-Sharpe search to ~1e-15. For adversarial positive-definite Σ, a sub-optimal portfolio can certify. Tangency: 91 of 542 near-singular cases and 126 of 563 cases with volatilities spread by 1e5, with Sharpe up to 7–74% too low. The Task 8 frontier is exposed too: 114 and 255 sub-optimal certified points. Options: (A) keep the convention everywhere and document the validity domain; (B) normalize the tangency's release threshold and certificate by its gradient scale ‖2Σy‖∞. On every well-conditioned and seeded model that gives the same results, with 0 sub-optimal cases in the adversarial sets. Applied to the frontier, B is not clean: the unchanged `minimumVariance` GMV then fails re-certification, making 18–49 adversarial frontiers unavailable. (C) A + a typed precondition on Σ's condition number (a new threshold). | Task 10 |
+| Q41 | Task 10 | **APPROVED B (tangency only):** the KKT certificate and the release rule use the gradient scale ‖2Σy‖∞; the residual must be ≤ 1e-8, and an invalid scale is a typed `numerical_failure`. The λmax-scaled residual is kept as a diagnostic. The Task 8 frontier, `minimumVariance` and the Constructor keep the 2·λmax convention, documented as a developer limitation. | — |
 
 ## External data service changes
 
