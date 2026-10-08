@@ -453,6 +453,9 @@ describe("approved forward labels", () => {
     expect(FORWARD_LABELS.borrowingExtension).toBe(
       "Requires borrowing/leverage at the assumed risk-free rate and is outside the lab's modeled allocation constraints.",
     );
+    expect(FORWARD_LABELS.gmvConstructorNote).toBe(
+      "Portfolio Theory GMV uses the forward risk model and selected historical risk window. The Constructor uses its own analysis-period covariance and may therefore produce a different Minimum Variance allocation.",
+    );
     const all = Object.values(FORWARD_LABELS).join(" ");
     expect(all).not.toMatch(/undervalued|overvalued|\balpha\b/i);
   });

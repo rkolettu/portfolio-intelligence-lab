@@ -71,6 +71,9 @@ export const FORWARD_LABELS = {
   retrieved: "Retrieved",
   borrowingExtension:
     "Requires borrowing/leverage at the assumed risk-free rate and is outside the lab's modeled allocation constraints.",
+  /** Q40: Portfolio Theory's note on the Constructor's Minimum Variance. */
+  gmvConstructorNote:
+    "Portfolio Theory GMV uses the forward risk model and selected historical risk window. The Constructor uses its own analysis-period covariance and may therefore produce a different Minimum Variance allocation.",
 } as const;
 
 /** "Forward Model Beta vs VTI": always names the selected proxy, never bare "Beta". */

@@ -722,7 +722,7 @@ substitute the CapIQ value.**
     - build passes.
 
 ## TASK 8 — Efficient-frontier solver (deterministic active-set QP)
-- **STATUS:** COMPLETE (Q34–Q39 approved; final solver audit passed 2026-10-08).
+- **STATUS:** COMPLETE (approved by the owner 2026-10-08; Q34–Q39 approved).
 - **PURPOSE:**
   - Solve min wᵀΣw s.t. Σw = 1, wᵀμ_BL = r, w ≥ 0, over risky assets only.
   - Use 41 deterministic target returns from r_GMV to max μ.
@@ -878,7 +878,7 @@ substitute the CapIQ value.**
     - build passes.
 
 ## TASK 9 — Global Minimum Variance and Constructor consistency
-- **STATUS:** NOT STARTED.
+- **STATUS:** COMPLETE — awaiting the owner's approval.
 - **PURPOSE:**
   - GMV is the existing `minimumVariance()` on the forward Σ (B = 1, bounds [0,1]).
   - The frontier's low end must agree with it.
@@ -887,12 +887,56 @@ substitute the CapIQ value.**
     universe, covariance, CASH treatment and constraints). It never plots the
     Constructor's result as a main frontier point.
 - **DEPENDENCIES:** Tasks 3, 8.
-- **FILES:** `lib/forward/frontier.ts`.
+- **FILES:**
+  - `tests/forward/gmvConsistency.test.ts` (new);
+  - `lib/forward/assumptions.ts` (the Q40 note as `FORWARD_LABELS.gmvConstructorNote`);
+  - `docs/METHODOLOGY.md`.
 - **TESTS:**
   - GMV equals the frontier endpoint;
   - on an identical Σ, GMV equals the Constructor's Minimum Variance allocation;
   - with CASH c and non-binding caps, Constructor MV = (1 − c) × GMV.
-- **RESULT:** —
+- **RESULT:**
+  - **No production methodology changed.** Neither the Constructor nor the Task 8
+    frontier was modified; both already call the same `minimumVariance` with an
+    equal-weight start. There is no new result object: the production GMV remains
+    the Task 8 point.
+  - **Identity proven:** the real Constructor path (`runConstruction`) runs on the
+    forward fixture prices. Its own shipped Σ_construction, put in canonical order,
+    then goes through `buildEfficientFrontier`.
+    - **No CASH:** GMV weights, variance and volatility equal the Constructor's
+      Minimum Variance bit for bit.
+    - **CASH 0/10/25/50%:** the Constructor's risky weights = (1 − c) × GMV within
+      1e-15, summing to 1 − c (not renormalized). CASH is held at exactly c, and Σ
+      is unchanged by c.
+    - **Order and metadata:** holdings reversed, holding keys reversed and prices
+      refetched with other retrieval metadata give the same Σ and identical
+      weights. A permuted frontier universe gives the same GMV, permuted, within
+      1e-12.
+  - **Expected differences:**
+    - **Binding cap** (CCC ≤ 48.67%, GMV 97.35%): the Constructor holds CCC at the
+      cap, with σ 10.86% vs GMV 7.31%.
+    - **Binding floor** (AAA ≥ 20%, GMV 0%): AAA is held at the floor, with σ 9.38%.
+    - In both, `minimumVariance` given the same bound reproduces the Constructor
+      exactly, so the difference is the feasible set alone. A cap that does not bind
+      leaves GMV unchanged.
+    - **Different covariance:** over the same 3Y window, the forward Σ (with the VTI
+      proxy in the Ledoit–Wolf universe) differs from the holdings-only Σ by up to
+      9.5e-5, and the weights by up to 0.34 percentage points. A Constructor period
+      starting 2023-06-01 differs from Portfolio Theory by up to 1.76 points. Each
+      allocation is exactly the minimum-variance allocation of its own Σ.
+  - **Risk-only and anchor:**
+    - Three other μ_BL vectors (including negative and equal returns) leave the GMV
+      weights and volatility identical. Only w_GMVᵀμ_BL changes.
+    - On 21 models, the GMV volatility is ≤ every certified frontier point's.
+  - **Q40:** the approved note is stored once, in `FORWARD_LABELS`. No chart series
+    or other frontier point was added.
+  - **Tests:** 14 in `tests/forward/gmvConsistency.test.ts`, plus 1 label
+    assertion.
+  - **Checks:**
+    - unit tests 736 / 736;
+    - typecheck clean;
+    - lint clean on all V2 code (only the pre-existing InfoTip error remains);
+    - build passes.
 
 ## TASK 10 — Tangency / Maximum-Sharpe solver
 - **STATUS:** NOT STARTED.

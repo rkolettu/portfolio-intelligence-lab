@@ -848,6 +848,37 @@ replacing it.
     comes near the cap.
   - A forced loop stops with `active_set_cycle`.
 
+**GMV and the Constructor's Minimum Variance** (Task 9):
+- **GMV is risk-only.** It minimizes wᵀΣw subject to the budget and bounds.
+  Expected returns, the MRP, the Treasury rate, CAPM, Black–Litterman and Street
+  views never enter it. They only set where it is plotted: its chart y-coordinate
+  is w_GMVᵀμ_BL. Changing μ_BL moves that coordinate and never the weights.
+- **It is the frontier's anchor.** Its volatility is the lowest of every certified
+  frontier point.
+- **The same problem on the same inputs.** Both sides call the existing
+  `minimumVariance` with an equal-weight start. With the same risky universe, Σ,
+  budget, bounds and CASH treatment they are one optimization problem. Tests prove:
+  - **No CASH, 0–100% bounds:** identical weights, variance and volatility, bit for
+    bit, whatever the ticker order, object key order or retrieval metadata.
+  - **CASH c fixed outside the optimizer, no binding bound:** the Constructor's risky
+    weights equal (1 − c) × GMV (within 1e-15 at c = 0%, 10%, 25% and 50%). They sum
+    to 1 − c and are never renormalized.
+- **Expected differences** (never inconsistencies):
+  - **A binding floor or cap:** it changes the feasible set. The Constructor holds
+    the security at that bound with a higher variance than GMV, and the same
+    optimizer given the same bound reproduces it exactly.
+  - **A different covariance:** Portfolio Theory's Σ is the forward risk model over
+    the selected risk window, with the market proxy in the Ledoit–Wolf estimation
+    universe. The Constructor's Σ is holdings-only over the Analysis Period.
+    - Even over the same dates, adding the proxy changes the shrinkage target and
+      intensity, so the weights differ.
+    - A different period moves them further.
+- **Display (Q40):** Portfolio Theory shows only its own GMV. The Constructor's
+  allocation is never plotted as another frontier point. The page carries this
+  note: "Portfolio Theory GMV uses the forward risk model and selected historical
+  risk window. The Constructor uses its own analysis-period covariance and may
+  therefore produce a different Minimum Variance allocation."
+
 **Local assumption state.** One state holds the risk window, market proxy, MRP and
 per-ticker views. Portfolio Theory and Stock Lab share it.
 - It is stored only in this browser, under the versioned key
