@@ -44,47 +44,116 @@ export type ForwardAssumptionState = {
  * Same shape as the data layer's reading, so nothing is re-described. */
 export type ForwardRiskFree = LatestTreasuryYield;
 
-/** The risk-estimation window actually used, which may start later than requested. */
+/** The risk-estimation window: what was requested and the common aligned sample
+ * actually used. Thresholds apply to aligned RETURN observations. */
 export type EffectiveRiskWindow = {
   requested: RiskWindow;
+  /** N years before the end session (a calendar date; the sample starts at the
+   * first session on or after it). */
   requestedStartDate: string;
+  /** First session on or after the requested start. */
+  requestedFirstSession: string;
   /** The latest finalized market session (independent of the Analysis Period). */
   endDate: string;
+  /** First and last session of the common aligned sample (price base → last close). */
+  effectiveStartDate: string;
+  effectiveEndDate: string;
+  /** Aligned close-to-close return observations in the common sample. */
+  alignedReturns: number;
   sample: Sample;
+  /** < 60 aligned returns is unavailable; 60–251 limited; 252+ normal. */
   status: "normal" | "limited";
-  /** True when the common sample starts after the requested start. */
+  /** True when the common sample starts after the requested first session. */
   shortened: boolean;
-  /** Securities whose first trade set a later effective start. */
+  /** Securities whose provider-reported first trade set the later start. */
   limitingTickers: string[];
   notes: string[];
 };
 
-/** The server's hashed forward risk-model snapshot. A new snapshot is required when
- * the risk window, market proxy, universe or market history changes; MRP, views
- * and confidence are applied to it by the same pure functions anywhere. */
+/** Eigen-diagnostics of one validated covariance matrix. */
+export type CovarianceConditioning = {
+  minEigenvalue: number;
+  maxEigenvalue: number;
+  conditionNumber: number | null;
+  singular: boolean;
+  rank: number;
+};
+
+/** The certified forward risk model: one Ledoit–Wolf covariance over the forward
+ * risky universe plus the market proxy, estimated on one common aligned sample.
+ * Forward Model Beta and σ_m come from that same matrix. A new model is required
+ * when the risk window, market proxy, universe or market history changes; MRP,
+ * views and confidence never change it. */
 export type ForwardRiskModel = {
   methodologyVersion: string;
-  /** Forward risky universe, canonical (sorted) order; CASH excluded. */
+  covarianceVersion: string;
+  /** Forward risky universe (zero-weight rows included), canonical (sorted) order;
+   * CASH excluded. Empty for an all-CASH portfolio. */
   tickers: string[];
   marketProxy: MarketProxy;
   /** The proxy is itself a security in the universe. */
   proxyInUniverse: boolean;
+  /** True when the universe is empty: only the proxy is estimated. */
+  noRiskyAssets: boolean;
+  /** Tickers of the estimated matrix: universe ∪ proxy, canonical order. */
+  modelTickers: string[];
   window: EffectiveRiskWindow;
-  /** Annualized Ledoit–Wolf Σ of the risky universe: the risky block of the matrix
-   * estimated over universe ∪ proxy. Canonical order. */
+  /** Annualized Ledoit–Wolf Σ over `modelTickers` (× 252). */
+  modelCovariance: number[][];
+  /** Its risky-universe block, `tickers` order. */
   covariance: number[][];
-  /** Forward Model Beta Σ_im / Σ_mm, canonical order. */
+  /** √Σ_ii of the risky universe, `tickers` order. */
+  modelVolatility: number[];
+  /** Forward Model Beta vs the market proxy, Σ_im / Σ_mm, `tickers` order. */
   modelBeta: number[];
   /** σ_m = √Σ_mm. */
   marketVolatility: number;
-  /** Ledoit–Wolf δ of the augmented matrix. */
-  shrinkage: number;
-  /** Historical sample correlation over the effective window (canonical order);
-   * null where a security is constant. Labelled historical, never the model Σ. */
-  sampleCorrelation: (number | null)[][];
-  riskFree: ForwardRiskFree;
+  shrinkage: {
+    estimator: string;
+    target: string;
+    /** Ledoit–Wolf δ ∈ [0, 1] of the augmented matrix. */
+    delta: number;
+    /** Annualized scaled-identity target μ = tr(S)/N × 252. */
+    mu: number;
+    sampleConvention: string;
+  };
+  annualization: { factor: number; convention: string };
+  /** Both matrices pass the shared validator; conditioning before and after shrinkage. */
+  validation: {
+    tolerance: number;
+    sample: CovarianceConditioning;
+    model: CovarianceConditioning;
+  };
+  /** Historical (sample) correlation over the same common sample, `modelTickers`
+   * order. Labelled Historical Correlation; never the shrunk model matrix. */
+  sampleCorrelation: { tickers: string[]; matrix: (number | null)[][] };
+  /** SHA-256 over methodology, proxy, window, tickers, interval set and matrix. */
   hash: string;
 };
+
+export type ForwardRiskModelFailure =
+  | "invalid_inputs"
+  | "history_unavailable"
+  | "coverage_gap"
+  | "insufficient_history"
+  | "zero_volatility"
+  | "invalid_covariance";
+
+/** A forward risk model, or a typed reason it cannot be estimated. */
+export type ForwardRiskModelOutcome =
+  | { available: true; model: ForwardRiskModel }
+  | {
+      available: false;
+      code: ForwardRiskModelFailure;
+      reason: string;
+      /** Securities responsible, when known (the proxy included). */
+      tickers: string[];
+      riskWindow: RiskWindow;
+      requestedStartDate: string | null;
+      endDate: string | null;
+      /** Aligned returns in the common sample, when one was built. */
+      alignedReturns: number | null;
+    };
 
 /** A forward statistic that can be undefined (e.g. Sharpe at zero volatility). */
 export type ForwardMetric =

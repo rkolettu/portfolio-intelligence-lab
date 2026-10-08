@@ -182,6 +182,13 @@ export const FORWARD_METHODOLOGY = {
     target: "scaled_identity",
     universe: "forward risky universe plus the market proxy",
     version: "forward-lw-augmented-v1",
+    sampleConvention: CONSTRUCTION_METHODOLOGY.covariance.sampleConvention,
+    /** The shared validator's relative symmetry/PSD tolerance (as construction). */
+    matrixTolerance: CONSTRUCTION_METHODOLOGY.tolerances.matrixRelative,
+    /** One common aligned sample across the universe and the proxy; the end is the
+     * latest finalized session; zero-volatility securities are a model error under
+     * the existing scale-aware rule (dispersion ≤ 1e-12 × largest |return|). */
+    sample: "common_aligned_sessions",
   },
   /** Forward Model Beta and market volatility from the same covariance matrix. */
   beta: "Σ_im / Σ_mm of the forward covariance; σ_m = √Σ_mm",

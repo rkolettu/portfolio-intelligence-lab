@@ -424,33 +424,66 @@ substitute the CapIQ value.**
       remains).
 
 ## TASK 3 — Forward risk model: risk window, augmented Ledoit–Wolf Σ, Forward Model Beta, σ_m
-- **STATUS:** IN PROGRESS.
-- **PURPOSE:**
-  - The risk window (1Y/3Y/5Y, default 3Y) ends at the latest finalized session (Q2).
-  - Load the universe plus the proxy through `loadHistories`.
-  - Build one common sample with the `portfolioCoverage` rules: no forward-fill and
-    no bridging. Shortening is disclosed as the Effective Risk Window, with the
-    limiting tickers (Q3).
-  - Estimate one annualized Ledoit–Wolf Σ over universe ∪ proxy, validated by
-    `validateCovariance` (Q1).
-  - Compute β_i = Σ_im/Σ_mm and σ_m = √Σ_mm.
-  - Compute the historical sample correlations over the same window (Q24).
-  - Record the sample metadata, the hash, δ and the conditioning.
-- **DEPENDENCIES:** Task 1.
-- **FILES:** `lib/forward/sample.ts` (new), `lib/forward/riskModel.ts` (new).
-- **TESTS:**
-  - Σ is symmetric and PSD;
-  - β equals Σ_im/Σ_mm;
-  - the proxy has β = 1 against itself;
-  - portfolio β = wᵀβ;
-  - with no views, every portfolio's Sharpe is ≤ MRP/σ_m (Cauchy–Schwarz);
-  - a held proxy coincides with the market point;
-  - ticker-ordering invariance;
-  - < 60 observations → unavailable; 60–251 → limited; shortened windows are
-    disclosed;
-  - a zero-volatility asset makes the model invalid;
-  - a non-allowed proxy is rejected.
-- **RESULT:** —
+- **STATUS:** COMPLETE (2026-10-08). Awaiting the owner's review before Task 4.
+- **PURPOSE:** A clean, certified forward risk model. No CAPM priors are computed
+  here.
+- **RESULT:**
+  - **Implemented:**
+    - `lib/forward/sample.ts`: the window end is the latest finalized session (last
+      XNYS session before today's New York date); the start is N years earlier.
+    - `lib/forward/riskModel.ts` (`buildForwardRiskModel`), which builds one
+      common aligned sample over universe ∪ proxy with the unchanged
+      `portfolioCoverage` and then:
+      - applies the 60/252 thresholds to aligned returns;
+      - shortens the window only where the provider reports a later first trade,
+        disclosing the Effective Risk Window and the limiting tickers;
+      - rejects zero volatility under the existing scale-aware rule (1e-12);
+      - estimates the unchanged `ledoitWolf`, annualizes it with
+        `annualizeCovariance` and validates it with `validateCovariance` (sample
+        and model, 1e-10);
+      - computes β_i = Σ_im/Σ_mm and σ_m = √Σ_mm;
+      - computes the historical correlations from the same sample;
+      - records full audit metadata and a SHA-256 hash.
+    - Typed failures: `invalid_inputs`, `history_unavailable`, `coverage_gap`,
+      `insufficient_history`, `zero_volatility` and `invalid_covariance`.
+    - `lib/server/forward.ts` (`loadForwardRiskModel`): one `loadHistories` batch
+      with the shared cache keys. It returns a replayable snapshot, validates the
+      inputs before any fetch, and never throws.
+    - Labels "Forward Model Beta vs {proxy}", "Historical Correlation" and
+      "Requested Risk Window".
+    - `ForwardRiskModel` was revised from its Task 1 draft. The risk-free rate is no
+      longer embedded: it joins the risk model in the Task 12 snapshot.
+  - **Unchanged:** `lib/backtest/*`, `lib/analytics/*`, `lib/server/analyze.ts` and
+    `lib/server/history.ts`.
+  - **Tests:**
+    - `tests/forward/riskModel.test.ts` (21) covers:
+      - window dates (after the close, weekends, holidays);
+      - exact estimator wiring;
+      - β = Σ_im/Σ_mm, and a held proxy with β = 1 exactly;
+      - β_p σ_m ≤ σ_p over 206 long-only portfolios;
+      - Historical Correlation equals the Pearson value and differs from the shrunk
+        matrix;
+      - shortened windows with their notes;
+      - the 59/60/251/252 thresholds;
+      - leading, interior and proxy gaps;
+      - zero volatility in a security and in the proxy;
+      - all-CASH and single-asset universes;
+      - order invariance and hash stability;
+      - fetch failures and invalid inputs.
+    - `tests/data/forwardRiskModel.test.ts` (6) covers: the loaded tickers and
+      window, exact replay, cache reuse, the selected proxy and window, proxy
+      failure, no qualified provider, and invalid inputs refused before any fetch.
+    - 1 label test.
+  - **Checks:**
+    - unit tests 579 / 579;
+    - typecheck clean;
+    - lint clean on all V2 code (only the pre-existing InfoTip error remains);
+    - build passes.
+  - **Heads-ups for later tasks** (not Task 3 issues):
+    - **(a)** Stock Lab "Correlation to Benchmark" needs the analysis benchmark, which
+      is not in the forward common sample. This is decided at Task 20/22.
+    - **(b)** `snapshotHash` uses `node:crypto`. A browser-side derived-result hash
+      (Q19) needs a browser-compatible SHA-256. This is decided at Task 7/12.
 
 ## TASK 4 — CAPM prior
 - **STATUS:** NOT STARTED.

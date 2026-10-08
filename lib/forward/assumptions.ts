@@ -2,6 +2,7 @@ import { FORWARD_METHODOLOGY } from "@/config/methodology";
 import type {
   ForwardAssumptionState,
   ForwardAssumptions,
+  MarketProxy,
   ViewInput,
 } from "@/lib/types/forward";
 
@@ -56,7 +57,10 @@ export const FORWARD_LABELS = {
   modelCalShort: "Model CAL",
   marketCmlProxy: "Market CML Proxy",
   sml: "Security Market Line",
+  requestedRiskWindow: "Requested Risk Window",
   effectiveRiskWindow: "Effective Risk Window",
+  /** Sample correlation on the risk model's common sample; never the shrunk Σ. */
+  historicalCorrelation: "Historical Correlation",
   scenarioBaseline: "Scenario Baseline",
   proposedPortfolio: "Proposed Portfolio",
   /** Manual View basis: same as the CAPM prior and the BL vector. */
@@ -68,3 +72,7 @@ export const FORWARD_LABELS = {
   borrowingExtension:
     "Requires borrowing/leverage at the assumed risk-free rate and is outside the lab's modeled allocation constraints.",
 } as const;
+
+/** "Forward Model Beta vs VTI": always names the selected proxy, never bare "Beta". */
+export const modelBetaLabel = (proxy: MarketProxy) =>
+  `${FORWARD_LABELS.modelBeta} vs ${proxy}`;

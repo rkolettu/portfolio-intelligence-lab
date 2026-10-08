@@ -7,6 +7,7 @@ import {
   FORWARD_LABELS,
   defaultForwardState,
   defaultView,
+  modelBetaLabel,
 } from "@/lib/forward/assumptions";
 import {
   FORWARD_STORAGE_KEY,
@@ -421,6 +422,11 @@ describe("approved forward labels", () => {
     expect(FORWARD_LABELS.forwardSharpe).toBe("Forward Model Sharpe");
     expect(FORWARD_LABELS.historicalSharpe).toBe("Historical Sharpe");
     expect(FORWARD_LABELS.scenarioBaseline).toBe("Scenario Baseline");
+    expect(modelBetaLabel("VTI")).toBe("Forward Model Beta vs VTI");
+    expect(modelBetaLabel("SPY")).toBe("Forward Model Beta vs SPY");
+    expect(FORWARD_LABELS.historicalCorrelation).toBe("Historical Correlation");
+    expect(FORWARD_LABELS.requestedRiskWindow).toBe("Requested Risk Window");
+    expect(FORWARD_LABELS.effectiveRiskWindow).toBe("Effective Risk Window");
   });
 
   it("never calls the Model CAL a CML, and qualifies the market line as a proxy", () => {

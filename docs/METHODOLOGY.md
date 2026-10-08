@@ -356,9 +356,66 @@ past it, extrapolated to longer horizons or decayed.
 **Risk window.** The historical window used to estimate covariance, volatility,
 Forward Model Beta and correlation is **1Y, 3Y or 5Y** (default 3Y). It is separate
 from the forecast horizon: changing it never changes the 12-month horizon. It is
-also independent of the historical Analysis Period. The rules for ending the window
-at the latest finalized session and for disclosing an Effective Risk Window arrive
-with the risk model.
+also independent of the historical Analysis Period.
+- **End:** the latest finalized market session. That is the last XNYS session
+  before today's New York date: the current day's bar is excluded until the next New
+  York date, as everywhere else in the lab.
+- **Start:** N years before that session. The sample begins at the first session on
+  or after that date.
+
+**Forward risk model** (`forward-lw-augmented-v1`):
+- **Universe:** the forward risky opportunity set (zero-weight rows included; CASH
+  excluded) plus the selected market proxy.
+- **One common aligned sample** under the Phase 1 coverage rules. There are no
+  pairwise samples, no forward-fill and no bridging.
+  - An interior or terminal missing session fails explicitly (`coverage_gap`), and
+    so does an unexplained late start.
+  - A later start is accepted only where the provider reports a later first trade.
+    The window then shortens to the common period and is never silently shortened:
+    the result shows the **Requested Risk Window**, the **Effective Risk Window**
+    (the actual first and last session of the common sample), the aligned-return
+    count, and the securities that caused the truncation.
+- **Thresholds** apply to aligned *return* observations:
+  - fewer than 60: the forward risk model is unavailable;
+  - 60–251: Limited History;
+  - 252 or more: normal.
+- **Covariance:** one Ledoit–Wolf (2004) scaled-identity shrinkage covariance over
+  universe ∪ proxy.
+  - It uses the existing estimator, sample convention and annualization
+    (Σ_annual = 252 × Σ_daily).
+  - It is validated by the shared covariance validator (symmetry and PSD at 1e-10
+    relative, eigensolver convergence), both before and after shrinkage. A failure
+    makes the model unavailable (`invalid_covariance`).
+  - Shrinkage δ and μ depend on the whole universe, so they are recorded with the
+    model.
+- **Forward Model Beta** = Σ_im / Σ_mm and **σ_m** = √Σ_mm, from that same matrix.
+  - A held proxy therefore has β = 1 exactly and sits on the market point.
+  - Every long-only portfolio satisfies β_p σ_m ≤ σ_p. So, with no views, no
+    portfolio's forward Sharpe can exceed the Market CML Proxy slope.
+  - It is labelled "Forward Model Beta vs VTI" (or the selected proxy), never bare
+    "Beta".
+- **Historical Correlation** is the Pearson correlation of the same common sample
+  (sample covariance). It is never the shrunk model matrix.
+- **Zero volatility:** a security (or the proxy) whose daily returns have zero or
+  effectively zero dispersion over the effective window is a data/model error
+  (`zero_volatility`, naming the ticker). It is never treated as a risk-free asset.
+  The tolerance is the existing scale-aware rule: dispersion ≤ 1e-12 × the largest
+  absolute daily return.
+- **All-CASH:** only the proxy is estimated (σ_m is still available). Portfolio risk
+  metrics, the risky frontier and the tangency portfolio report "No risky assets".
+- **Single risky asset:** valid. Its β is Σ_im / Σ_mm, and its feasible risky
+  frontier is a single point.
+- **Audit:** each model records:
+  - the requested and effective window and the aligned-return count;
+  - the tickers and the proxy;
+  - the limiting securities and the history status;
+  - the covariance version, δ and μ, and the annualization;
+  - the validation conditioning;
+  - the betas, σ_m and the historical correlations;
+  - a SHA-256 hash over the methodology, proxy, window, tickers, interval set and
+    matrix.
+
+  Replaying the builder on its price snapshot reproduces the model exactly.
 
 **Forward risk-free rate.** Labelled **Forward Risk-Free Rate · 1Y U.S. Treasury
 · Latest Available**, with its observation date and source. It is never called live.
