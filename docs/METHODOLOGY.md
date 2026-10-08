@@ -886,6 +886,10 @@ portfolio, `buildTangencyPortfolio`):
   - μ_BL is the Task 6 posterior, Rf the CAPM prior's forward 1Y Treasury rate and
     Σ the Task 3 Ledoit–Wolf covariance. All three must come from one risk model
     (hash, proxy, window, and the same Rf as the posterior's CASH).
+  - Σ must be symmetric positive definite under the existing `validateCovariance`
+    (relative tolerance 1e-10). A singular Σ could make the maximum-Sharpe portfolio
+    non-unique, and no tie rule is approved, so it is `invalid_inputs`. The
+    Ledoit–Wolf Σ always passes.
   - CASH is not in the problem; it is combined with the tangency later, on the
     Model CAL.
   - The tangency is its own exact portfolio. It is never inserted into or
@@ -919,8 +923,8 @@ portfolio, `buildTangencyPortfolio`):
   - **Releases are kept:** securities enter by release, and one can leave (join)
     and re-enter.
   - **Safety:** deterministic lowest-index ties, the active-set cycle guard and the
-    max(50, 2n²) cap. Iterations, joins, releases, the cap and the cycle flag are
-    recorded.
+    max(50, 2n²) cap. Iterations, joins, releases, the cap, the cycle flag, the
+    solved y and 1ᵀy are recorded.
   - **Single security:** 100% in it, with no QP.
   - **No risky assets:** "No risky assets", with no solver.
 - **Certification of the scaled y-problem** (independent of the solver's
@@ -940,8 +944,13 @@ portfolio, `buildTangencyPortfolio`):
     s/√(yᵀΣy).
     - Exactly, the difference is Sharpe_y·((a/s)ᵀy − 1) + Rf·(Σw − 1)/σ. Its bound
       therefore uses the existing 1e-10 equality and budget tolerances, plus the
-      floating-point allowance (n + 2)·ε·(2|Sharpe_y| + (Σ|wᵢμᵢ| + |Rf|)/σ), in
-      the form approved for Q39.
+      standard floating-point error of evaluating both sides (the form approved for
+      Q39):
+      - the excess return: (n + 2)·ε·(Σ|wᵢμᵢ| + |Rf|)/σ;
+      - the quadratic forms wᵀΣw and yᵀΣy, each accurate to (2n + 2)·ε relative to
+        |v|ᵀ|Σ||v|: ½·(2n + 2)·ε·(κ_w + κ_y)·|Sharpe_y|, with
+        κ_v = |v|ᵀ|Σ||v| / vᵀΣv;
+      - the divisions and roots: 2·(n + 2)·ε·|Sharpe_y|.
   - Every output (expected return, excess, variance, volatility, Forward Model
     Sharpe) is recomputed from the final w.
 - **Verified by tests:**
@@ -950,8 +959,17 @@ portfolio, `buildTangencyPortfolio`):
   - the exact target-return frontier solve at the tangency's return reproduces it
     (or the top endpoint in the near-tie region);
   - Sharpe ≥ every certified frontier point and every single security;
-  - the MRP and view cases, the 1e-12 threshold, ticker-order invariance, the hash,
-    a forced cycle and invalid inputs.
+  - the MRP and view cases, the strict 1e-12 threshold, ticker-order invariance and
+    the hash;
+  - a forced cycle, a singular face and a solve that fails certification (nothing
+    is published), and invalid, asymmetric, indefinite and singular Σ;
+  - each certifier rejecting each kind of violation.
+- **Validity domain (pending Q41):** the KKT check is normalized by 2·λmax(Σ)·1ᵀy,
+  the Task 8 and `minimumVariance` convention. That normalization is not
+  scale-invariant. Under the production Ledoit–Wolf Σ its condition number is at
+  most n/δ, and results match a brute-force maximum-Sharpe search to about 1e-15.
+  For adversarial Σ (near-singular, or volatilities spread by 1e5) a sub-optimal
+  portfolio can pass. The same applies to Task 8 frontier points.
 - **Tangency hash:** `tangencyHash` is a SHA-256 of a canonical payload:
   - the version, risk-model hash, proxy and window;
   - Rf with its observation date;

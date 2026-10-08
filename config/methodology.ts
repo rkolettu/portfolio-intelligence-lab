@@ -269,7 +269,7 @@ export const FORWARD_METHODOLOGY = {
       binding: CONSTRUCTION_METHODOLOGY.tolerances.binding,
     },
   },
-  /** Q38: the deterministic primal active-set solver (frontier now, tangency later).
+  /** Q38: the deterministic primal active-set solver (frontier and tangency).
    * Bounds both join and are released, so no n + 2 bound exists. A pinned set that
    * recurs within one solve stops it (non_converged, active_set_cycle); the cap
    * max(minimum, perVariableSquared · n²) stops a runaway solve (882 at n = 21). */

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { buildTangencyPortfolio } from "@/lib/forward/tangency";
+import {
+  buildTangencyPortfolio,
+  certifyTangencyEconomics,
+  certifyTangencyY,
+} from "@/lib/forward/tangency";
 import {
   buildEfficientFrontier,
   certifyFrontierPoint,
@@ -141,7 +145,18 @@ function expectCertified(t: TangencyPortfolio, sigma: Matrix) {
   expect(c.economic.positiveExcessReturn).toBe(true);
   expect(c.economic.sharpeIdentity!).toBeLessThanOrEqual(c.economic.sharpeIdentityTolerance!);
   expect(Math.abs(t.forwardModelSharpe - t.yIdentitySharpe)).toBe(c.economic.sharpeIdentity);
-  expect(t.solver.excessReturnScale).toBe(Math.max(...mu.map((m) => m - t.riskFreeRate)));
+  const s = Math.max(...mu.map((m) => m - t.riskFreeRate));
+  expect(t.solver.excessReturnScale).toBe(s);
+  // The y-space values come from y itself: w = y / Σy exactly, aᵀy = s, and the
+  // identity Sharpe is s/√(yᵀΣy), recomputed here independently of w.
+  const y = t.solver.y!;
+  expect(t.solver.ySum).toBe(y.reduce((u, v) => u + v, 0));
+  t.weights.forEach((w, i) => expect(w).toBe(y[i] / t.solver.ySum!));
+  expect(Math.abs(dot(mu.map((m) => m - t.riskFreeRate), y) / s - 1)).toBeLessThanOrEqual(T.scaledEquality);
+  expect(Math.abs(t.yIdentitySharpe - s / Math.sqrt(variance(sigma, y))) / t.yIdentitySharpe).toBeLessThan(1e-14);
+  // KKT normalization: 2·λmax(Σ)·1ᵀy, minimumVariance's L·B with B = 1ᵀy.
+  const L = 2 * jacobiEigen(sigma, { maxSweeps: CONSTRUCTION_METHODOLOGY.limits.eigenSweeps }).values.at(-1)!;
+  expect(c.scaled.kktNormalization).toBe(L * t.solver.ySum!);
   if (t.solver.method === "active_set") {
     expect(t.solver.maxIterations).toBe(Math.max(50, 2 * mu.length ** 2));
     expect(t.solver.iterations).toBeLessThanOrEqual(t.solver.maxIterations!);
@@ -274,6 +289,19 @@ describe("existence: max(μ_BL − Rf) > 1e-12, whatever the sign of the MRP", (
     expect(FORWARD_METHODOLOGY.tangency.positiveExcessReturnTolerance).toBe(1e-12);
   });
 
+  it("the threshold is strict: a max excess return of exactly 1e-12 is unavailable, 2e-12 exists", () => {
+    const S = [
+      [0.04, 0.01],
+      [0.01, 0.09],
+    ];
+    expect(outcome(S, [1e-12, -0.01], { rf: 0 })).toMatchObject({
+      available: false,
+      code: "no_positive_excess_return",
+      maxExcessReturn: 1e-12,
+    });
+    expect(outcome(S, [2e-12, -0.01], { rf: 0 }).available).toBe(true);
+  });
+
   it("one security barely below the threshold: unavailable; clearly above: tangency", () => {
     const below = outcome(SIGMA, [RF + 0.9e-12, RF - 0.01, RF - 0.02]);
     expect(below).toMatchObject({ available: false, code: "no_positive_excess_return" });
@@ -301,12 +329,33 @@ describe("existence: max(μ_BL − Rf) > 1e-12, whatever the sign of the MRP", (
     expect(t.weights[1]).toBeCloseTo(0.03 / 0.072, 12);
   });
 
-  it("negative expected returns stay eligible", () => {
+  it("negative expected returns stay eligible, and one is held when it hedges", () => {
     const mu = [-0.05, 0.08, -0.2];
     const t = tangency(SIGMA, mu);
     expectCertified(t, SIGMA);
     expect(t.tickers).toHaveLength(3);
     const o = oracle(SIGMA, mu.map((m) => m - RF));
+    t.weights.forEach((w, i) => expect(Math.abs(w - o.w[i])).toBeLessThan(1e-12));
+    // B has a NEGATIVE expected return but correlation −0.8 with A: with Rf = 1%,
+    // Σ⁻¹a ∝ [0.00216, 0.00144], so B holds 40%.
+    const S = [
+      [0.04, -0.032],
+      [-0.032, 0.04],
+    ];
+    const hedge = tangency(S, [0.08, -0.01], { rf: 0.01 });
+    expectCertified(hedge, S);
+    expect(hedge.expectedReturns[1]).toBeLessThan(0);
+    expect(hedge.weights[1]).toBeCloseTo(0.4, 12);
+  });
+
+  it("an exact tie in the largest excess return starts from the lowest canonical ticker", () => {
+    const mu = [0.1, 0.07, 0.1];
+    const t = tangency(SIGMA, mu, { tickers: ["ZZZ", "MMM", "AAA"] });
+    expect(t.solver.startTicker).toBe("AAA");
+    const order = [2, 1, 0];
+    const S = order.map((i) => order.map((j) => SIGMA[i][j]));
+    expectCertified(t, S);
+    const o = oracle(S, order.map((i) => mu[i] - RF));
     t.weights.forEach((w, i) => expect(Math.abs(w - o.w[i])).toBeLessThan(1e-12));
   });
 
@@ -466,17 +515,37 @@ describe("frontier consistency and independent checks", () => {
     expect(checked).toBeGreaterThan(20);
   });
 
+  it("in the near-tie top region it is checked against the approved top endpoint", () => {
+    // A and B highly correlated, A higher: Σ⁻¹a shorts B, so the tangency is 100% A,
+    // the highest-return security — the frontier's top endpoint.
+    const S = [
+      [0.04, 0.036],
+      [0.036, 0.04],
+    ];
+    const mu = [RF + 0.06, RF + 0.04];
+    const t = tangency(S, mu);
+    expectCertified(t, S);
+    const f = frontierOf(S, mu);
+    expect(f.maxExpectedReturn - t.expectedReturn).toBeLessThanOrEqual(FORWARD_METHODOLOGY.frontier.topReturnTieTolerance);
+    expect(f.points[40]).toMatchObject({ certified: true, certification: { kind: "top_endpoint" } });
+    f.points[40].weights!.forEach((w, i) => expect(Math.abs(w - t.weights[i])).toBeLessThan(1e-12));
+  });
+
   it("its Sharpe is ≥ every certified frontier point's and every single security's", () => {
+    let compared = 0;
     for (let seed = 1; seed <= 40; seed++) {
       const { sigma, mu } = randomModel(2 + (seed % 9), 200 + seed);
       const out = outcome(sigma, mu);
       if (!out.available) continue;
       const t = out.tangency;
       const slack = 1e-12 * Math.abs(t.forwardModelSharpe);
-      for (const p of frontierOf(sigma, mu).points.filter((q) => q.certified))
+      for (const p of frontierOf(sigma, mu).points.filter((q) => q.certified)) {
         expect((p.expectedReturn! - RF) / p.volatility!).toBeLessThanOrEqual(t.forwardModelSharpe + slack);
+        compared++;
+      }
       mu.forEach((m, i) => expect((m - RF) / Math.sqrt(sigma[i][i])).toBeLessThanOrEqual(t.forwardModelSharpe + slack));
     }
+    expect(compared).toBeGreaterThan(1000);
   });
 
   it("the y-space identity: Sharpe from w equals s/√(yᵀΣy), and aᵀy/s = 1", () => {
@@ -514,6 +583,21 @@ describe("frontier consistency and independent checks", () => {
         }),
       ),
     );
+    expect(a.expectedReturnsHash).toBe(
+      sha256Hex(
+        JSON.stringify({
+          kind: "bl-expected-returns",
+          methodologyVersion: FORWARD_METHODOLOGY.version,
+          riskModelHash: "risk-model-hash",
+          tickers: ["AAPL", "JPM", "MSFT"],
+          expectedReturns: mu,
+        }),
+      ),
+    );
+    expect(b.expectedReturnsHash).toBe(a.expectedReturnsHash);
+    expect(tangency(SIGMA, [0.1, 0.07, 0.121], { tickers: ["AAPL", "JPM", "MSFT"] }).expectedReturnsHash).not.toBe(
+      a.expectedReturnsHash,
+    );
     expect(tangency(SIGMA, mu, { tickers: ["AAPL", "JPM", "MSFT"], hash: "other" }).tangencyHash).not.toBe(a.tangencyHash);
     expect(tangency(SIGMA, mu, { tickers: ["AAPL", "JPM", "MSFT"], date: "2024-05-31" }).tangencyHash).not.toBe(
       a.tangencyHash,
@@ -533,6 +617,30 @@ describe("failures are typed, never a manufactured portfolio", () => {
     expect(calls).toBeGreaterThan(0);
     expect(out).toMatchObject({ available: false, code: "non_converged", cause: "active_set_cycle" });
     if (!out.available) expect(out.solver).toMatchObject({ cycleDetected: true, maxIterations: 50 });
+  });
+
+  it("a solver failure that is not a cycle maps to numerical_failure (singular_face)", () => {
+    const out = outcome(SIGMA, [0.1, 0.07, 0.12], { solve: () => null });
+    expect(out).toMatchObject({
+      available: false,
+      code: "numerical_failure",
+      cause: "singular_face",
+      maxExcessReturn: 0.12 - RF,
+      solver: { method: "active_set", cycleDetected: false, maxIterations: 50, y: null, ySum: null },
+    });
+  });
+
+  it("the certification gate blocks a solve that is not certified: nothing is published", () => {
+    // A linear solve that returns a face optimum 1e-6 off: the scaled equality fails.
+    const skewed = (A: number[][], b: number[]) => {
+      const x = solveLinear(A, b);
+      return x && x.map((v, i) => (i < b.length - 1 ? v * (1 + 1e-6) : v));
+    };
+    const out = outcome(SIGMA, [0.1, 0.07, 0.12], { solve: skewed });
+    expect(out).toMatchObject({ available: false, code: "numerical_failure", cause: "certification_failed" });
+    if (out.available) throw new Error("published");
+    expect(out.certification!.scaled.scaledEquality!).toBeGreaterThan(FORWARD_METHODOLOGY.tangency.tolerances.scaledEquality);
+    expect(out.reason).toMatch(/scaled equality residual/);
   });
 
   it("rejects inconsistent or invalid inputs", () => {
@@ -558,8 +666,64 @@ describe("failures are typed, never a manufactured portfolio", () => {
       { ...base, riskModel: { ...base.riskModel, covariance: [[0.04, 0.01]] } },
       { ...base, riskModel: { ...base.riskModel, tickers: ["A", "A"] }, posterior: { ...base.posterior, universeTickers: ["A", "A"] } },
       { ...base, riskModel: { ...base.riskModel, covariance: [[0, 0], [0, 0]] } },
+      { ...base, posterior: { ...base.posterior, riskModelHash: "x" } },
+      { ...base, posterior: { ...base.posterior, riskWindow: "5Y" as const } },
+      { ...base, posterior: { ...base.posterior, blackLittermanExpectedReturn: [0.1] } },
+      { ...base, riskModel: { ...base.riskModel, covariance: [[0.04, 0.01], [0.01]] } },
+      { ...base, riskModel: { ...base.riskModel, covariance: [[0.04, Infinity], [Infinity, 0.09]] } },
+      // Asymmetric, indefinite and singular (non-unique tangency) Σ.
+      { ...base, riskModel: { ...base.riskModel, covariance: [[0.04, 0.01], [0.02, 0.09]] } },
+      { ...base, riskModel: { ...base.riskModel, covariance: [[0.04, 0.01], [0.01, -0.09]] } },
+      { ...base, riskModel: { ...base.riskModel, covariance: [[0.04, 0.04], [0.04, 0.04]] } },
     ];
     for (const input of bad) expect(buildTangencyPortfolio(input)).toMatchObject({ available: false, code: "invalid_inputs" });
+  });
+});
+
+describe("the certifiers reject each kind of violation", () => {
+  const mu = [0.1, 0.07, 0.12];
+  const t = tangency(SIGMA, mu);
+  const a = mu.map((m) => m - RF);
+  const s = Math.max(...a);
+  const c = a.map((x) => x / s);
+  const L = 2 * jacobiEigen(SIGMA, { maxSweeps: CONSTRUCTION_METHODOLOGY.limits.eigenSweeps }).values.at(-1)!;
+  const y = t.solver.y!;
+  const certY = (v: number[]) => certifyTangencyY({ y: v, scaledExcessReturns: c, covariance: SIGMA, normalization: L });
+  const econ = (o: Partial<Parameters<typeof certifyTangencyEconomics>[0]> = {}) =>
+    certifyTangencyEconomics({
+      weights: t.weights,
+      y,
+      excessReturns: a,
+      excessReturnScale: s,
+      expectedReturns: mu,
+      riskFreeRate: RF,
+      volatility: t.volatility,
+      ySharpe: t.yIdentitySharpe,
+      covariance: SIGMA,
+      ...o,
+    });
+
+  it("y-problem: accepts the solution; rejects a feasible non-optimal y, a broken equality and a negative entry", () => {
+    expect(certY(y).failures).toEqual([]);
+    // 100% in the top security: feasible, not optimal.
+    const start = c.map((_, i) => (i === c.indexOf(1) ? 1 : 0));
+    expect(certY(start).failures).toEqual([expect.stringMatching(/^y KKT residual/)]);
+    expect(certY(y.map((v) => v * (1 + 1e-6))).failures).toContainEqual(expect.stringMatching(/^scaled equality residual/));
+    expect(certY(y.map((v, i) => (i === 0 ? -1e-6 : v))).failures).toContainEqual(expect.stringMatching(/^y bound residual/));
+  });
+
+  it("final portfolio: accepts the solution; rejects budget, scale-identity and Sharpe-identity breaks", () => {
+    expect(econ().failures).toEqual([]);
+    expect(econ({ weights: t.weights.map((w, i) => (i === 0 ? w + 1e-9 : w)) }).failures).toContainEqual(
+      expect.stringMatching(/^budget residual/),
+    );
+    expect(econ({ y: y.map((v) => v * (1 + 1e-6)) }).failures).toContainEqual(expect.stringMatching(/^scale identity residual/));
+    expect(econ({ ySharpe: t.yIdentitySharpe * (1 + 1e-9) }).failures).toEqual([
+      expect.stringMatching(/^Sharpe identity discrepancy/),
+    ]);
+    expect(econ({ expectedReturns: mu.map(() => RF - 0.01) }).failures).toContainEqual(
+      expect.stringMatching(/is not positive/),
+    );
   });
 });
 

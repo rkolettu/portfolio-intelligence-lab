@@ -8,7 +8,7 @@
 // final portfolio are each certified independently. Pure and browser-safe.
 import { CONSTRUCTION_METHODOLOGY, FORWARD_METHODOLOGY } from "@/config/methodology";
 import { dot, matVec } from "@/lib/analytics/construction/common";
-import { jacobiEigen } from "@/lib/analytics/matrix";
+import { jacobiEigen, validateCovariance } from "@/lib/analytics/matrix";
 import { bindingConstraints } from "@/lib/analytics/optimization";
 import { portfolioVariance } from "@/lib/analytics/riskContribution";
 import type {
@@ -58,6 +58,13 @@ function oneMultiplierKkt(
 
 const within = (value: number | null, tolerance: number) =>
   value !== null && Number.isFinite(value) && value <= tolerance;
+const finiteOrNull = (value: number) => (Number.isFinite(value) ? value : null);
+/** κ = |v|ᵀ|Σ||v| / vᵀΣv: how much cancellation evaluating vᵀΣv involves. */
+const cancellation = (sigma: Matrix, v: readonly number[]) => {
+  const absolute = v.reduce((s, vi, i) => s + Math.abs(vi) * sigma[i].reduce((t, c, j) => t + Math.abs(c * v[j]), 0), 0);
+  const value = v.reduce((s, vi, i) => s + vi * dot(sigma[i], v), 0);
+  return absolute / value;
+};
 
 /** Independent certification of the scaled y-problem: the scaled equality, the
  * bounds and the KKT residual over 2·λmax(Σ)·1ᵀy (minimumVariance's L·B with
@@ -87,10 +94,10 @@ export function certifyTangencyY(input: {
   ];
   return {
     certification: {
-      scaledEquality,
-      bound,
-      kkt: Number.isFinite(kkt) ? kkt : null,
-      kktNormalization: Number.isFinite(kktNormalization) ? kktNormalization : null,
+      scaledEquality: finiteOrNull(scaledEquality),
+      bound: finiteOrNull(bound),
+      kkt: finiteOrNull(kkt),
+      kktNormalization: finiteOrNull(kktNormalization),
     },
     failures,
   };
@@ -98,10 +105,15 @@ export function certifyTangencyY(input: {
 
 /** Independent certification of the final portfolio in original economics: budget,
  * bounds, the scale identity aᵀy/s = 1, a positive excess return, and the Sharpe
- * identity Sharpe(w) = s/√(yᵀΣy) within a bound derived from the 1e-10 equality and
- * budget tolerances: Sharpe(w) − s/√(yᵀΣy) = Sharpe_y·((a/s)ᵀy − 1) + Rf·(Σw − 1)/σ,
- * plus a floating-point allowance (n + 2)·ε·(2·|Sharpe_y| + (Σ|wᵢμᵢ| + |Rf|)/σ)
- * for evaluating both sides. */
+ * identity Sharpe(w) = s/√(yᵀΣy). In exact arithmetic
+ * Sharpe(w) − s/√(yᵀΣy) = Sharpe_y·((a/s)ᵀy − 1) + Rf·(Σw − 1)/σ, so the bound uses the
+ * existing 1e-10 equality and budget tolerances plus the standard floating-point error
+ * of evaluating both sides:
+ * - the excess return: (n + 2)·ε·(Σ|wᵢμᵢ| + |Rf|)/σ;
+ * - the two quadratic forms wᵀΣw and yᵀΣy, each accurate to (2n + 2)·ε relative to
+ *   |v|ᵀ|Σ||v| (halved by the square root): ½·(2n + 2)·ε·(κ_w + κ_y)·|Sharpe_y|, with
+ *   κ_v = |v|ᵀ|Σ||v| / vᵀΣv;
+ * - the remaining divisions and roots: 2·(n + 2)·ε·|Sharpe_y|. */
 export function certifyTangencyEconomics(input: {
   weights: readonly number[];
   y: readonly number[];
@@ -111,6 +123,7 @@ export function certifyTangencyEconomics(input: {
   riskFreeRate: number;
   volatility: number;
   ySharpe: number;
+  covariance: Matrix;
 }): { certification: TangencyEconomicCertification; failures: string[] } {
   const { weights: w, expectedReturns: mu, riskFreeRate: rf, volatility: sigmaP } = input;
   const n = w.length;
@@ -122,8 +135,13 @@ export function certifyTangencyEconomics(input: {
   const sharpe = excess / sigmaP;
   const sharpeIdentity = Math.abs(sharpe - input.ySharpe);
   const eps = (n + 2) * Number.EPSILON;
+  const quadratic =
+    0.5 *
+    (2 * n + 2) *
+    Number.EPSILON *
+    (cancellation(input.covariance, w) + cancellation(input.covariance, input.y));
   const sharpeIdentityTolerance =
-    (T.scaledEquality + 2 * eps) * Math.abs(input.ySharpe) +
+    (T.scaledEquality + 2 * eps + quadratic) * Math.abs(input.ySharpe) +
     (T.budget * Math.abs(rf) +
       eps * (w.reduce((s, x, i) => s + Math.abs(x * mu[i]), 0) + Math.abs(rf))) /
       sigmaP;
@@ -139,14 +157,12 @@ export function certifyTangencyEconomics(input: {
   ];
   return {
     certification: {
-      budget,
-      bound,
-      scaleIdentity,
+      budget: finiteOrNull(budget),
+      bound: finiteOrNull(bound),
+      scaleIdentity: finiteOrNull(scaleIdentity),
       positiveExcessReturn,
-      sharpeIdentity: Number.isFinite(sharpeIdentity) ? sharpeIdentity : null,
-      sharpeIdentityTolerance: Number.isFinite(sharpeIdentityTolerance)
-        ? sharpeIdentityTolerance
-        : null,
+      sharpeIdentity: finiteOrNull(sharpeIdentity),
+      sharpeIdentityTolerance: finiteOrNull(sharpeIdentityTolerance),
     },
     failures,
   };
@@ -235,6 +251,21 @@ export function buildTangencyPortfolio(input: {
       { maxExcessReturn: s },
     );
 
+  // Σ must be symmetric positive definite (the Task 3 Ledoit–Wolf Σ always is): a
+  // singular Σ can make the maximum-Sharpe portfolio non-unique, and no tie rule is
+  // approved for choosing among equivalent tangencies.
+  const validation = validateCovariance(sigma, {
+    tolerance: FORWARD_METHODOLOGY.covariance.matrixTolerance,
+    maxSweeps: CONSTRUCTION_METHODOLOGY.limits.eigenSweeps,
+  });
+  if (!validation.ok || validation.diagnostics.singular)
+    return unavailable(
+      "invalid_inputs",
+      validation.ok
+        ? "Σ is singular within tolerance, so the tangency portfolio need not be unique; Σ must be positive definite."
+        : `Σ is not a valid covariance matrix: ${validation.reason}`,
+      { maxExcessReturn: s },
+    );
   // KKT normalization exactly as minimumVariance computes it: L = 2·λmax(Σ).
   const eigen = jacobiEigen(sigma, { maxSweeps: CONSTRUCTION_METHODOLOGY.limits.eigenSweeps });
   const L = 2 * eigen.values.at(-1)!;
@@ -261,6 +292,7 @@ export function buildTangencyPortfolio(input: {
       cycleDetected: false,
       excessReturnScale: s,
       startTicker: tickers[k],
+      y: [1],
       ySum: 1,
     };
   } else {
@@ -288,10 +320,10 @@ export function buildTangencyPortfolio(input: {
       return unavailable(qp.status === "non_converged" ? "non_converged" : "numerical_failure", qp.reason, {
         cause: qp.cause,
         maxExcessReturn: s,
-        solver: { ...base, ySum: null },
+        solver: { ...base, y: null, ySum: null },
       });
     y = qp.x;
-    record = { ...base, ySum: y.reduce((t, v) => t + v, 0) };
+    record = { ...base, y, ySum: y.reduce((t, v) => t + v, 0) };
   }
 
   // w = y / Σᵢ yᵢ: each yᵢ divided by the sum of all y components.
@@ -331,6 +363,7 @@ export function buildTangencyPortfolio(input: {
     riskFreeRate: rf,
     volatility,
     ySharpe: yIdentitySharpe,
+    covariance: sigma,
   });
   const certification = {
     scaled: scaledCheck.certification,

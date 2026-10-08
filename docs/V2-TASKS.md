@@ -939,20 +939,83 @@ substitute the CapIQ value.**
     - build passes.
 
 ## TASK 10 — Tangency / Maximum-Sharpe solver
-- **STATUS:** NOT STARTED.
+- **STATUS:** BLOCKED — USER DECISION REQUIRED (Q41: KKT normalization scale).
+  Implementation, tests and documentation are done.
 - **PURPOSE:**
-  - Use the convex reformulation: min yᵀΣy s.t. (μ − Rf)ᵀy = 1, y ≥ 0, then
-    w = y/Σy. It is solved by the same QP and certified by KKT.
-  - When no asset has μ_i > Rf, the result is "undefined" with that reason.
-- **DEPENDENCIES:** Task 8.
-- **FILES:** `lib/forward/tangency.ts` (new).
+  - The constrained risky tangency: maximize (μ_BL − Rf)ᵀw / √(wᵀΣw) s.t. Σw = 1,
+    w ≥ 0, over the whole risky universe. There is no CASH, and no security is
+    filtered by its own excess return.
+  - It is solved as the scaled homogeneous problem min yᵀΣy s.t. (a/s)ᵀy = 1,
+    y ≥ 0, with a = μ_BL − Rf·1 and s = max aᵢ, by the Task 8 active-set QP. Then
+    w = y / Σᵢ yᵢ.
+  - It exists only when max aᵢ > 1e-12 (`positiveExcessReturnTolerance`), whatever
+    the MRP sign; otherwise `no_positive_excess_return`.
+- **DEPENDENCIES:** Tasks 3, 4, 6, 8.
+- **FILES:**
+  - `lib/forward/tangency.ts` (new);
+  - `lib/forward/frontier.ts` (`solveTargetReturn` extracted, byte-identical);
+  - `lib/types/forward.ts`, `config/methodology.ts`;
+  - `tests/forward/tangency.test.ts` (new).
 - **TESTS:**
   - the tangency Sharpe is ≥ that of every frontier point and every asset;
   - the tangency lies on the frontier;
   - two-asset closed form;
   - the undefined case;
   - ticker-order invariance.
-- **RESULT:** —
+- **RESULT:**
+  - **`buildTangencyPortfolio({ riskModel, capmPrior, posterior })`:**
+    - checks one lineage (hash, proxy, window, Rf = posterior CASH);
+    - requires Σ symmetric positive definite (`validateCovariance`), since a
+      singular Σ could make the tangency non-unique;
+    - canonical (sorted) ordering;
+    - the existence rule;
+    - the scaled reformulation; the start is 100% in the largest-excess security
+      (its scaled coefficient is exactly 1; lowest canonical index on exact ties);
+    - the active-set QP with E = [a/s], f = [1] and no budget row, keeping releases,
+      the cycle guard and the max(50, 2n²) cap;
+    - a single security is 100% with no QP; no risky assets → "No risky assets";
+    - w = y/Σy;
+    - two independent certifications;
+    - outputs recomputed from the final w;
+    - `tangencyHash` and `expectedReturnsHash`.
+  - **Certification:**
+    - **y-problem:** |(a/s)ᵀy − 1| ≤ 1e-10; y ≥ 0; KKT ≤ 1e-8 over 2λmax(Σ)·1ᵀy (the
+      exact one-multiplier min-max residual). The solver releases below
+      −1e-8·2λmax, which is never looser, because 1ᵀy ≥ 1.
+    - **Final portfolio:**
+      - |Σw − 1| ≤ 1e-10 and w ≥ 0;
+      - |aᵀy/s − 1| ≤ 1e-10;
+      - excess return > 0 and σ > 0;
+      - the Sharpe identity Sharpe(w) = s/√(yᵀΣy), within a bound derived from the
+        1e-10 equality and budget tolerances plus the standard floating-point
+        allowance (excess return, both quadratic forms via κ_v = |v|ᵀ|Σ||v|/vᵀΣv,
+        roots and divisions).
+  - **Adversarial review** (four lenses, 20 findings, each verified):
+    - fixed the Sharpe-identity allowance, which left out the quadratic-form
+      rounding term and rejected a correct, ill-conditioned tangency;
+    - added the positive-definite Σ requirement;
+    - narrowed the types and recorded y in the solve record;
+    - closed every test gap: the certification gate, both certifiers, the y-space
+      identity recomputed from y, a held negative-return hedge, the top-endpoint
+      branch, the exact-tie start, the strict 1e-12 boundary, the lineage hash,
+      the singular face, and asymmetric, indefinite and singular Σ;
+    - five code mutants (no certification gate, no canonical sort, filtering by
+      excess, ≥ instead of >, wrong normalization) are each caught.
+    - One finding needs the owner: Q41.
+  - **Sweeps:**
+    - 1,000 cases (800 seeded models plus 200 with max excess 1e-11 to 1e-3):
+      979 certified, 21 correctly unavailable, 0 failures;
+    - weights match the brute-force maximum Sharpe to 1.9e-15, Sharpe to 1.6e-15;
+    - no frontier point and no asset beats it;
+    - at most 20 iterations and 19 releases.
+    - Joins are rare (none in about 199,000 random solves), but are constructed and
+      tested: the start security leaves, and another leaves and re-enters.
+  - **Tests:** 32 in `tests/forward/tangency.test.ts`.
+  - **Checks:**
+    - unit tests 768 / 768;
+    - typecheck clean;
+    - lint clean on all V2 code (only the pre-existing InfoTip error remains);
+    - build passes.
 
 ## TASK 11 — Model CAL, Market CML Proxy and SML line engines
 - **STATUS:** NOT STARTED.
@@ -1319,6 +1382,7 @@ T26 runs alongside each task · T27–T30 close V2
 | Q38 | Task 8 | **APPROVED B:** releases are kept: a pinned security may re-enter, and valid points need it. Cycle detection: the pinned set is recorded at every iteration as a canonical sorted index list, and a recurrence within one target's solve stops it with `non_converged` (`active_set_cycle`). The cap is max(50, 2n²), 882 at n = 21; reaching it is `non_converged` (`iteration_cap`), not plotted, never retried. Iterations, joins, releases, the cap and the cycle flag are recorded. | — |
 | Q39 | Task 8 | **APPROVED (separate certification):** the top endpoint is the minimum-variance portfolio of the near-tie set T and is certified as that problem: budget and bound; zero weight outside T; `minimumVariance`'s stationarity and KKT on T; and max μ − μᵀw ≤ 1e-12 plus a floating-point allowance. Exact ties and near-ties use the same rule; one security in T is 100% as before. The exact target-return KKT is not applied to it. | — |
 | Q40 | Task 9 | **APPROVED:** Portfolio Theory shows only its own GMV by default, never the Constructor's Minimum Variance as another main frontier point. A concise methodology note explains the difference: "Portfolio Theory GMV uses the forward risk model and selected historical risk window. The Constructor uses its own analysis-period covariance and may therefore produce a different Minimum Variance allocation." Task 9 still proves in tests that the two agree when covariance, universe and CASH handling are identical and bounds do not bind. An optional comparison overlay may come later. | — |
+| Q41 | Task 10 | **OPEN.** The KKT certificate and the solver's release threshold are normalized by 2·λmax(Σ)(·1ᵀy), the approved Q34 / `minimumVariance` convention. It is not scale-invariant. On the production Ledoit–Wolf Σ (condition number ≤ n/δ) results match a brute-force maximum-Sharpe search to ~1e-15. For adversarial positive-definite Σ, a sub-optimal portfolio can certify. Tangency: 91 of 542 near-singular cases and 126 of 563 cases with volatilities spread by 1e5, with Sharpe up to 7–74% too low. The Task 8 frontier is exposed too: 114 and 255 sub-optimal certified points. Options: (A) keep the convention everywhere and document the validity domain; (B) normalize the tangency's release threshold and certificate by its gradient scale ‖2Σy‖∞. On every well-conditioned and seeded model that gives the same results, with 0 sub-optimal cases in the adversarial sets. Applied to the frontier, B is not clean: the unchanged `minimumVariance` GMV then fails re-certification, making 18–49 adversarial frontiers unavailable. (C) A + a typed precondition on Σ's condition number (a new threshold). | Task 10 |
 
 ## External data service changes
 

@@ -677,7 +677,7 @@ export type TangencyEconomicCertification = {
   /** |aᵀy / s − 1| ≤ 1e-10 (a unscaled) */
   scaleIdentity: number | null;
   /** μ_BLᵀw − Rf > 0 */
-  positiveExcessReturn: boolean | null;
+  positiveExcessReturn: boolean;
   /** |Sharpe(w) − s/√(yᵀΣy)| */
   sharpeIdentity: number | null;
   /** The bound that discrepancy must meet, derived from the 1e-10 equality and
@@ -685,14 +685,16 @@ export type TangencyEconomicCertification = {
   sharpeIdentityTolerance: number | null;
 };
 
-export type TangencySolveRecord = FrontierSolveRecord & {
+export type TangencySolveRecord = Omit<FrontierSolveRecord, "method"> & {
+  method: "active_set" | "single_security";
   /** s = max aᵢ: the excess-return scale of the constraint (solver provenance, not
    * an economic assumption). */
   excessReturnScale: number;
   /** The start security (largest excess return, lowest index on an exact tie): a
    * numerical implementation detail. */
   startTicker: string;
-  /** 1ᵀy of the solved y. */
+  /** The solved y of the scaled problem (canonical order) and its sum 1ᵀy. */
+  y: number[] | null;
   ySum: number | null;
 };
 
@@ -744,7 +746,7 @@ export type TangencyOutcome =
       reason: string;
       /** Typed solver/certification cause for numerical failures. */
       cause: FrontierFailureCause | null;
-      riskModelHash: string | null;
+      riskModelHash: string;
       riskFreeRate: number | null;
       /** max(μ_BL − Rf) when known. */
       maxExcessReturn: number | null;
