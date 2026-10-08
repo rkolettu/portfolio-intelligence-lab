@@ -539,6 +539,56 @@ portfolio. Custom proxies need a separate, approved change.
 - Views are absolute and single-security, keyed by canonical ticker. CASH carries no
   view.
 
+**Black–Litterman inputs: P, Q and Ω.** These are built from the saved views and
+the certified forward risk model. No posterior is computed at this step.
+- **Which views are ACTIVE.** A view is ACTIVE only when all of these hold:
+  - its security is in the current forward risky universe;
+  - it is a readable Manual or Street View;
+  - for a Street View, a qualified Street value exists;
+  - its confidence is above 0%.
+- **Every other configured view** keeps a typed status and contributes nothing to P,
+  Q, Ω or the active-view count. It stays visible:
+  - `OUT_OF_UNIVERSE`: kept in the user's state as *not applicable*.
+  - `ZERO_CONFIDENCE`: a configured view with no model effect.
+  - `STREET_DATA_UNAVAILABLE`: Street View selected, but no qualified Street value.
+    The security keeps its CAPM prior. The manual value, the CAPM prior or an
+    average target is never substituted, and nothing is manufactured.
+  - `INVALID_VIEW`: an unreadable saved view, or any view on CASH. CASH can never
+    carry a view or a P row.
+- **Order of checks:** no view; unreadable view; Street data; zero confidence;
+  active.
+- **One active view per security.** The selected source alone feeds Q.
+- **Return basis is kept on every view:**
+  - Manual: `total_return`, labelled "12M Expected Total Return".
+  - Street: `price_return`, labelled "12M Price-Target Return · Dividends Excluded",
+    and only from a **median** target.
+  - Both have a 12-month horizon.
+- **P** is m × n, for m active views over the n risky securities. Columns are
+  exactly the risk model's canonical ticker order. Each row is a selector: 1 at the
+  viewed security, 0 elsewhere. There are no relative views in V2.
+- **Q** holds the m view returns in decimals (12% = 0.12), in P's row order. Rows
+  follow canonical ticker order, so identical views give identical P, Q and Ω
+  however they were created.
+- **Ω** is diagonal. For view k:
+  - Ω_k = (P_k τ Σ P_kᵀ) × (1 − c_k) / c_k, which equals τ Σ_kk (1 − c_k)/c_k for a
+    selector row;
+  - Σ is the certified annualized Ledoit–Wolf matrix, matching Q's 12-month units;
+  - confidence c is a fraction in [0, 1].
+
+  At the boundaries:
+  - c = 50% gives Ω = τ Σ_kk; 25% gives 3×; 75% gives ⅓×;
+  - c = 100% gives Ω = 0 exactly, with no epsilon;
+  - c = 0% drops the view, and no infinite Ω is created.
+- **No new numerical tolerance.** A non-finite or non-positive base variance is a
+  typed `invalid_view_variance` failure naming the security.
+- **τ** is the internal constant 0.05, recorded with the inputs. Under this Ω it
+  cancels from the posterior mean. It does not control how aggressive the posterior
+  is, and it is not a user setting.
+- **No active views** gives P = 0 × n, Q = [] and Ω = 0 × 0. No placeholder view is
+  created, so the posterior can equal the CAPM prior exactly.
+- The module has no Node-only or server-only imports. Every view and confidence
+  change therefore re-runs the same function wherever it happens.
+
 **Local assumption state.** One state holds the risk window, market proxy, MRP and
 per-ticker views. Portfolio Theory and Stock Lab share it.
 - It is stored only in this browser, under the versioned key

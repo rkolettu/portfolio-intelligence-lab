@@ -206,6 +206,113 @@ export type CapmPriorOutcome =
       invalid: InvalidCapmPrior[];
     };
 
+/** Return basis of a 12-month view. Manual views are total returns (the CAPM prior's
+ * basis); Street views are price-target returns with dividends excluded. Kept on
+ * every view so the methodology stays auditable. */
+export type ViewReturnBasis = "total_return" | "price_return";
+
+/** A provider-neutral Street view for one security, as produced from qualified,
+ * normalized Street data (never from a provider directly). Only the median target
+ * qualifies; nothing is ever manufactured. */
+export type StreetViewInput =
+  | {
+      ticker: string;
+      available: true;
+      /** Median target / provider quote − 1, decimal. */
+      priceTargetReturn: number;
+      basis: "price_return";
+      horizonMonths: 12;
+      targetStatistic: "median";
+      provider: string;
+      retrievedAt: string;
+    }
+  | { ticker: string; available: false; reason: string };
+
+/** How a configured view (or a security without one) enters the model. */
+export type ViewStatus =
+  | "ACTIVE"
+  | "NO_VIEW"
+  | "OUT_OF_UNIVERSE"
+  | "ZERO_CONFIDENCE"
+  | "STREET_DATA_UNAVAILABLE"
+  | "INVALID_VIEW";
+
+/** One security's view classification, with its full audit metadata. */
+export type ViewClassification = {
+  ticker: string;
+  /** What the user selected (None / Manual / Street). */
+  requestedSource: ViewSource;
+  status: ViewStatus;
+  /** The source whose return feeds (or would feed) Q; null when there is none. */
+  source: "manual" | "street" | null;
+  basis: ViewReturnBasis | null;
+  horizonMonths: 12 | null;
+  /** Confidence as a FRACTION in [0, 1] (0.5 = 50%); never a whole-number percent. */
+  confidence: number | null;
+  /** The 12-month view return in decimals (0.12 = 12%); Q's value when ACTIVE. */
+  viewReturn: number | null;
+  /** "12M Expected Total Return" or "12M Price-Target Return · Dividends Excluded". */
+  label: string | null;
+  /** Why the view has no model effect; null when ACTIVE or NO_VIEW. */
+  reason: string | null;
+};
+
+/** An ACTIVE view: its P row, Q entry and Ω diagonal. */
+export type ActiveView = ViewClassification & {
+  status: "ACTIVE";
+  source: "manual" | "street";
+  basis: ViewReturnBasis;
+  horizonMonths: 12;
+  confidence: number;
+  viewReturn: number;
+  /** Row of P, Q and Ω. */
+  row: number;
+  /** Canonical column of the viewed security in the risk model. */
+  column: number;
+  /** P_k τ Σ P_kᵀ (= τ Σ_kk for an absolute view). */
+  baseVariance: number;
+  /** baseVariance × (1 − c) / c; exactly 0 at 100% confidence. */
+  omega: number;
+};
+
+/** Certified Black–Litterman inputs: absolute single-security views over the
+ * certified forward risk model. No posterior is computed here. */
+export type BlackLittermanInputs = {
+  methodologyVersion: string;
+  riskModelHash: string;
+  /** Internal constant; under this Ω it cancels from the posterior mean. */
+  tau: number;
+  omegaConvention: string;
+  /** P's columns: the risk model's canonical risky universe. */
+  universeTickers: string[];
+  /** One row per universe security, canonical order. */
+  securities: ViewClassification[];
+  /** Saved views outside the universe (kept, contributing nothing), sorted. */
+  notApplicable: ViewClassification[];
+  /** Saved views that cannot be read (e.g. a view on CASH), sorted. */
+  invalid: ViewClassification[];
+  /** ACTIVE views in canonical order: row k of P, Q and Ω. */
+  activeViews: ActiveView[];
+  /** Every configured view with no model effect (status ≠ ACTIVE, ≠ NO_VIEW). */
+  inactiveViews: ViewClassification[];
+  /** m × n selector matrix; 0 × n (empty) when no view is active. */
+  P: number[][];
+  /** m view returns, decimals, in P's row order. */
+  Q: number[];
+  /** m × m diagonal view-uncertainty matrix. */
+  Omega: number[][];
+  dimensions: { views: number; securities: number };
+};
+
+export type BlackLittermanInputsOutcome =
+  | { available: true; inputs: BlackLittermanInputs }
+  | {
+      available: false;
+      code: "invalid_inputs" | "invalid_view_variance";
+      reason: string;
+      tickers: string[];
+    };
+
 /** A forward statistic that can be undefined (e.g. Sharpe at zero volatility). */
 export type ForwardMetric =
   { available: true; value: number } | { available: false; reason: string };

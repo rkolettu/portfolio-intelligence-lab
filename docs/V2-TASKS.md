@@ -486,7 +486,7 @@ substitute the CapIQ value.**
       (Q19) needs a browser-compatible SHA-256. This is decided at Task 7/12.
 
 ## TASK 4 — CAPM prior
-- **STATUS:** COMPLETE (2026-10-08). Awaiting the owner's approval before Task 5.
+- **STATUS:** COMPLETE (approved by the owner 2026-10-08).
 - **PURPOSE:**
   - Π_i = Rf + Forward Model Beta_i × MRP, from the certified Task 3 risk model, the
     Task 2 forward Rf and the Task 1 MRP.
@@ -545,26 +545,64 @@ substitute the CapIQ value.**
     - a CAPM-prior hash, which is browser-safe hashing for Task 7/12. The prior
       records the risk-model hash and is fully deterministic.
 
-## TASK 5 — Views and confidence model
-- **STATUS:** NOT STARTED.
-- **PURPOSE:**
-  - Each security has No View, Street View or Manual View, plus a confidence from
-    0–100% (default 50%). The confidence is never AI-generated.
-  - Analyst counts, dispersion and freshness are shown as context only and are never
-    mapped to confidence.
-  - The task builds P (absolute, single-security views), Q and the confidence-scaled
-    Ω (Idzorek-style closed form).
-  - Only views on securities in the active universe enter P (Q20).
-- **DEPENDENCIES:** Task 1. The Street values arrive later through the normalized
-  Street types, and manual views work without them.
-- **FILES:** `lib/forward/views.ts` (new).
-- **TESTS:**
-  - c = 0 → the row is removed;
-  - c = 1 → Ω_k = 0, with no division by zero;
-  - Ω_k = p_k τΣ p_kᵀ (1 − c)/c;
-  - an inactive Street view is never silently replaced by the manual value;
-  - a view on a security outside the universe is ignored.
-- **RESULT:** —
+## TASK 5 — Views, confidence and Black–Litterman inputs (P, Q, Ω)
+- **STATUS:** COMPLETE (2026-10-08). Awaiting the owner's approval before Task 6.
+- **PURPOSE:** Deterministic P, Q and Ω from the saved views and the certified
+  forward risk model. No posterior, no Expected Return Gap, no frontier.
+- **RESULT:**
+  - `lib/forward/views.ts` (`buildBlackLittermanInputs`):
+    - **Statuses:**
+      - `ACTIVE`;
+      - `NO_VIEW`;
+      - `OUT_OF_UNIVERSE` (kept as not applicable);
+      - `ZERO_CONFIDENCE` (kept, no effect);
+      - `STREET_DATA_UNAVAILABLE` (never substituted);
+      - `INVALID_VIEW` (unreadable, or any view on CASH).
+
+      Order of checks: no view → unreadable → Street data → zero confidence →
+      active.
+    - **Street inputs** are the provider-neutral `StreetViewInput`. One qualifies only
+      if it is available, for the same ticker, a 12-month `price_return` from the
+      **median** target, finite and above −100%.
+    - **P** (m × n): selector rows in canonical ticker order, with columns exactly
+      the risk model's `tickers`.
+    - **Q:** the decimal view returns, in row order.
+    - **Ω:** diagonal; Ω_k = (P_k τ Σ P_kᵀ)(1 − c)/c on the certified annual LW Σ,
+      exactly 0 at c = 1.
+    - **Variance check:** a non-finite or non-positive base variance is
+      `invalid_view_variance`, naming the security. No new tolerance is introduced.
+    - **No views:** P = 0 × n, Q = [], Ω = 0 × 0.
+    - Every view records its basis (`total_return` / `price_return`), label, 12-month
+      horizon, confidence fraction, status and reason.
+    - The module is browser-safe (an import allowlist test enforces it).
+  - **Types:** `ViewReturnBasis`, `StreetViewInput`, `ViewStatus`,
+    `ViewClassification`, `ActiveView`, `BlackLittermanInputs`,
+    `BlackLittermanInputsOutcome`.
+  - **Tests:** 22 in `tests/forward/views.test.ts`:
+    - selector row and exact Q;
+    - dimensions and canonical row order;
+    - creation-order invariance;
+    - the empty representation;
+    - Ω at 50%, 25%, 75%, 100% and 0%;
+    - diagonal multi-view Ω;
+    - Σ scaling, and the exact Task 3 Σ;
+    - out-of-universe kept;
+    - Street unavailable with no substitution;
+    - seven disqualified Street inputs (unavailable, average, wrong basis, wrong
+      horizon, NaN, −100%, wrong ticker);
+    - CASH rejected;
+    - unreadable views isolated;
+    - one source per security;
+    - Street basis and label;
+    - confidence as a fraction (50 rejected);
+    - invalid covariance or universe;
+    - `invalid_view_variance`;
+    - the import boundary.
+  - **Checks:**
+    - unit tests 624 / 624;
+    - typecheck clean;
+    - lint clean on all V2 code (only the pre-existing InfoTip error remains);
+    - build passes.
 
 ## TASK 6 — Black–Litterman engine
 - **STATUS:** NOT STARTED.
