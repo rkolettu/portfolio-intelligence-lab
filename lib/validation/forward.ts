@@ -8,7 +8,14 @@ import type {
 import { fail } from "@/lib/utils/errors";
 import { symbolSchema } from "./symbols";
 
-const { riskWindows, marketProxies } = FORWARD_METHODOLOGY;
+const {
+  riskWindows,
+  marketProxies,
+  marketRiskPremiumRange: MRP,
+  views: { manualReturnRange: MANUAL },
+} = FORWARD_METHODOLOGY;
+const pct = (x: number) =>
+  `${x > 0 ? "+" : x < 0 ? "−" : ""}${(Math.abs(x) * 100).toFixed(2)}%`;
 
 export const riskWindowSchema = z.enum(riskWindows, {
   error: `The risk window must be one of ${riskWindows.join(", ")}.`,
@@ -20,10 +27,13 @@ export const marketProxySchema = z.enum(marketProxies, {
   error: `The market proxy must be ${marketProxies.join(", ")}; a bond or other non-market fund cannot stand in for the market portfolio.`,
 });
 
-/** Numeric sanity only (finite, above −100%); no economic range is imposed. */
+/** The MRP is an explicit assumption bounded to [−10%, +20%]. A negative premium is
+ * an allowed scenario; anything outside the range is rejected, never clamped. */
+const MRP_RANGE_MESSAGE = `The Market Risk Premium must be between ${pct(MRP.min)} and ${pct(MRP.max)}.`;
 export const marketRiskPremiumSchema = z
-  .number({ error: "The Market Risk Premium must be a finite number." })
-  .gt(-1, "The Market Risk Premium must be greater than −100%.");
+  .number({ error: MRP_RANGE_MESSAGE })
+  .min(MRP.min, MRP_RANGE_MESSAGE)
+  .max(MRP.max, MRP_RANGE_MESSAGE);
 
 export const forwardAssumptionsSchema = z
   .object({
@@ -33,6 +43,8 @@ export const forwardAssumptionsSchema = z
   })
   .strict();
 
+const MANUAL_RANGE_MESSAGE = `A 12M Expected Total Return must be greater than ${pct(MANUAL.exclusiveMin)} and at most ${pct(MANUAL.max)}.`;
+
 export const confidenceSchema = z
   .number({ error: "Confidence must be a finite number." })
   .min(0, "Confidence must be between 0% and 100%.")
@@ -41,16 +53,18 @@ export const confidenceSchema = z
 export const viewSchema = z
   .object({
     source: z.enum(["none", "street", "manual"]),
-    /** A long position cannot lose more than 100%. */
+    /** 12M Expected Total Return, on the CAPM prior's basis: above −100% (a long
+     * position cannot lose more) and at most +200%; rejected, never clamped. */
     manualReturn: z
-      .number({ error: "A manual view must be a finite number." })
-      .gt(-1, "A manual 12-month expected return must be greater than −100%.")
+      .number({ error: MANUAL_RANGE_MESSAGE })
+      .gt(MANUAL.exclusiveMin, MANUAL_RANGE_MESSAGE)
+      .max(MANUAL.max, MANUAL_RANGE_MESSAGE)
       .nullable(),
     confidence: confidenceSchema,
   })
   .strict()
   .refine((v) => v.source !== "manual" || v.manualReturn !== null, {
-    error: "A manual view needs a 12-month expected return.",
+    error: "A manual view needs a 12M Expected Total Return.",
     path: ["manualReturn"],
   });
 

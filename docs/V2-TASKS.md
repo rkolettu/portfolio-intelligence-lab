@@ -313,9 +313,7 @@ substitute the CapIQ value.**
   - No implementation code was written in this task.
 
 ## TASK 1 — Forward-model contracts, assumptions and methodology constants
-- **STATUS:** BLOCKED — USER DECISION REQUIRED (Q27, Q28). The implementation, tests
-  and documentation are done; only the confirmation of two input guardrails is
-  outstanding.
+- **STATUS:** COMPLETE (2026-10-08, after Q27 and Q28 were approved).
 - **PURPOSE:** Define the types and defaults that every later task builds on:
   - types: `ForwardAssumptions`, `ViewInput`, `ForwardRiskFree`,
     `EffectiveRiskWindow`, `ForwardRiskModel`, `ExpectedReturnRow`,
@@ -365,15 +363,15 @@ substitute the CapIQ value.**
     - 527 / 527 unit tests (498 pre-existing + 29);
     - build passes;
     - lint shows only the pre-existing InfoTip error (Q26).
-  - **Pending decisions:**
-    - **Q27:** the MRP accepts any finite value above −100%, with no economic range.
-    - **Q28:** a Manual View is a 12-month expected *total* return, the same basis as
-      the CAPM prior, above −100% and with no upper cap.
+  - **Q27 / Q28 applied:**
+    - The MRP is bounded to [−10%, +20%] inclusive; negative values are allowed.
+    - A Manual View is a "12M Expected Total Return", above −100% and at most +200%.
+    - Both ranges are versioned in `FORWARD_METHODOLOGY` and enforced by
+      validation: rejected with the range stated, never clamped.
+    - This brings Task 1 to 31 tests.
 
 ## TASK 2 — Forward risk-free rate: 1Y Treasury from the existing curve
-- **STATUS:** BLOCKED — USER DECISION REQUIRED (Q29). The existing curve reports the
-  1Y yield on the latest date that all five maturities share. That may differ from
-  the latest DGS1 observation on its own.
+- **STATUS:** IN PROGRESS (Q29 approved: B).
 - **PURPOSE:**
   - Take the 12-month Rf from the 1Y point of the existing `currentTreasury()` curve:
     DGS1 via FRED, with the U.S. Treasury as fallback.
@@ -895,9 +893,9 @@ T26 runs alongside each task · T27–T30 close V2
 
 | # | Raised in | Question | Blocks |
 | --- | --- | --- | --- |
-| Q27 | Task 1 | MRP input guardrail: numeric sanity only (finite, > −100%), or an economic range? | Task 1 sign-off |
-| Q28 | Task 1 | Manual View = 12M expected *total* return (same basis as the CAPM prior), > −100%, no upper cap? | Task 1 sign-off |
-| Q29 | Task 2 | Forward Rf = 1Y point of the existing common-date curve, or the latest DGS1 observation on its own? | Task 2 |
+| Q27 | Task 1 | **APPROVED (changed):** the MRP is bounded to [−10%, +20%], negative allowed, rejected not clamped; MRP ≤ 0 makes outputs undefined with typed states, never manufactured. | — |
+| Q28 | Task 1 | **APPROVED:** Manual View = "12M Expected Total Return", the CAPM/BL basis, > −100% and ≤ +200%, rejected not clamped. Street views stay "12M Price-Target Return · Dividends Excluded". | — |
+| Q29 | Task 2 | **APPROVED B:** add a 1Y-only read path to the existing Treasury providers, using the latest available official DGS1 observation (not the common curve date). The full curve is unchanged, and the 3M rate is never substituted. | — |
 
 ## External data service changes
 

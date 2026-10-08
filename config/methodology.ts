@@ -156,6 +156,9 @@ export const FORWARD_METHODOLOGY = {
   defaultMarketProxy: "VTI",
   /** An explicit forward assumption, never market data. */
   defaultMarketRiskPremium: 0.05,
+  /** Accepted MRP range, inclusive. A negative premium is an allowed explicit
+   * scenario; values outside the range are rejected, never clamped. */
+  marketRiskPremiumRange: { min: -0.1, max: 0.2 },
   riskFree: {
     series: "DGS1",
     maturity: "1Y",
@@ -178,6 +181,9 @@ export const FORWARD_METHODOLOGY = {
     /** V2 views are absolute, one security each. */
     kind: "absolute_single_security",
     defaultConfidence: 0.5,
+    /** A Manual View is a 12M expected TOTAL return (the CAPM prior's basis):
+     * above −100% and at most +200%; rejected, never clamped, outside that. */
+    manualReturnRange: { exclusiveMin: -1, max: 2 },
     omega:
       "confidence-scaled (Idzorek-style closed form): Ω_k = p_k τΣ p_kᵀ (1 − c_k) / c_k; c = 0 ignores the view, c = 1 sets Ω_k = 0",
   },

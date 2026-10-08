@@ -135,13 +135,24 @@ describe("assumption validation", () => {
       invalid(() => parseForwardAssumptions({ ...base, riskWindow }));
   });
 
-  it("requires a finite Market Risk Premium above −100%, with no economic range imposed", () => {
-    for (const marketRiskPremium of [0, -0.02, 0.05, 0.12])
+  it("accepts a Market Risk Premium from −10% to +20% inclusive, negative scenarios included", () => {
+    expect(FORWARD_METHODOLOGY.marketRiskPremiumRange).toEqual({
+      min: -0.1,
+      max: 0.2,
+    });
+    for (const marketRiskPremium of [-0.1, -0.02, 0, 0.05, 0.12, 0.2])
       expect(
         parseForwardAssumptions({ ...base, marketRiskPremium }).marketRiskPremium,
       ).toBe(marketRiskPremium);
-    for (const marketRiskPremium of [NaN, Infinity, -Infinity, -1, -2, "5"])
-      invalid(() => parseForwardAssumptions({ ...base, marketRiskPremium }));
+  });
+
+  it("rejects (never clamps) a Market Risk Premium outside −10% to +20%, and explains the range", () => {
+    for (const marketRiskPremium of [
+      -0.10000001, 0.20000001, 0.25, 5, -1, -2, NaN, Infinity, -Infinity, "5",
+    ])
+      expect(
+        invalid(() => parseForwardAssumptions({ ...base, marketRiskPremium })),
+      ).toMatch(/must be between −10\.00% and \+20\.00%/);
   });
 
   it("rejects missing and unknown fields (tau is not a user setting)", () => {
@@ -187,7 +198,7 @@ describe("view validation", () => {
       invalid(() =>
         parseViewState({ AAPL: { ...view, manualReturn: null } }),
       ),
-    ).toMatch(/manual view needs a 12-month expected return/);
+    ).toMatch(/manual view needs a 12M Expected Total Return/);
     expect(
       parseViewState({
         AAPL: { source: "street", manualReturn: null, confidence: 0.5 },
@@ -195,13 +206,24 @@ describe("view validation", () => {
     ).toBe("street");
   });
 
-  it("rejects manual returns at or below −100%", () => {
-    expect(
-      parseViewState({ AAPL: { ...view, manualReturn: -0.99 } }).AAPL
-        .manualReturn,
-    ).toBe(-0.99);
-    for (const manualReturn of [-1, -1.5, NaN, Infinity])
-      invalid(() => parseViewState({ AAPL: { ...view, manualReturn } }));
+  it("accepts a 12M Expected Total Return above −100% and up to +200%", () => {
+    expect(FORWARD_METHODOLOGY.views.manualReturnRange).toEqual({
+      exclusiveMin: -1,
+      max: 2,
+    });
+    for (const manualReturn of [-0.99, -0.25, 0, 0.115, 1.5, 2])
+      expect(
+        parseViewState({ AAPL: { ...view, manualReturn } }).AAPL.manualReturn,
+      ).toBe(manualReturn);
+  });
+
+  it("rejects (never clamps) manual views at or below −100% or above +200%, and explains the range", () => {
+    for (const manualReturn of [-1, -1.5, 2.0000001, 100, NaN, Infinity])
+      expect(
+        invalid(() => parseViewState({ AAPL: { ...view, manualReturn } })),
+      ).toMatch(
+        /12M Expected Total Return must be greater than −100\.00% and at most \+200\.00%/,
+      );
   });
 
   it("rejects non-canonical keys, CASH and unknown view sources or fields", () => {
@@ -409,6 +431,7 @@ describe("approved forward labels", () => {
   });
 
   it("uses the approved Street and extension wording", () => {
+    expect(FORWARD_LABELS.manualView).toBe("12M Expected Total Return");
     expect(FORWARD_LABELS.streetReturn).toBe(
       "12M Price-Target Return · Dividends Excluded",
     );

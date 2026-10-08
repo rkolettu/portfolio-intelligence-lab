@@ -56,6 +56,9 @@ export const FORWARD_LABELS = {
   effectiveRiskWindow: "Effective Risk Window",
   scenarioBaseline: "Scenario Baseline",
   proposedPortfolio: "Proposed Portfolio",
+  /** Manual View basis: same as the CAPM prior and the BL vector. */
+  manualView: "12M Expected Total Return",
+  /** Street View basis: a price-only return, never relabelled as total return. */
   streetReturn: "12M Price-Target Return · Dividends Excluded",
   ratingsCounted: "Ratings Counted",
   retrieved: "Retrieved",

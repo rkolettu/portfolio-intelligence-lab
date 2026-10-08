@@ -368,15 +368,26 @@ portfolio. Custom proxies need a separate, approved change.
 **Market Risk Premium (MRP).**
 - An explicit forward **assumption**, 5.00% by default, never presented as market
   data.
-- The user may override it. The only validation is numeric sanity (finite and
-  above −100%); no economic range is imposed.
+- The user may override it within **−10% to +20%** (inclusive). A negative
+  premium is an intentional, allowed scenario.
+- Values outside the range are rejected with the range stated, never clamped. The
+  bound exists because an absurd premium (e.g. +500%) would make the frontier, CAL
+  and SML meaningless while still looking mathematically valid.
+- When MRP ≤ 0 leaves no security with an expected return above Rf, outputs such as
+  the tangency portfolio report a typed *undefined* status. They are never
+  manufactured.
 
 **Views and confidence (inputs).**
 - Each risky security has one of three views:
   - **No View** — the model uses the CAPM prior;
   - **Street View**;
-  - **Manual View** — the user's 12-month expected *total* return, on the same
-    basis as the CAPM prior, which must be above −100%.
+  - **Manual View**, labelled **12M Expected Total Return** — the same return
+    basis as the CAPM prior and the Black–Litterman vector. It must be above −100%
+    and at most +200%; values outside that are rejected, never clamped. The upper
+    bound is broad because single-stock views can be large, but it catches
+    accidental entries such as 10000%.
+- Street views are different: they are labelled **12M Price-Target Return ·
+  Dividends Excluded**, a price-only return. That difference is always shown.
 - The manual value is kept while another source is active.
 - Confidence is explicit: 0–100%, default 50%. 0% ignores a view. It is never
   generated or inferred.
