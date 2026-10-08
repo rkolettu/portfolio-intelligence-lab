@@ -371,9 +371,7 @@ substitute the CapIQ value.**
     - This brings Task 1 to 31 tests.
 
 ## TASK 2 — Forward risk-free rate: latest available official 1Y Treasury
-- **STATUS:** BLOCKED — USER DECISION REQUIRED (Q30, Q31). The implementation, tests
-  and documentation are done as specified in Q29; two refinements of the data
-  definition are open.
+- **STATUS:** COMPLETE (2026-10-08, after Q30 and Q31 were approved).
 - **PURPOSE:**
   - The forward 12-month Rf is the latest available official DGS1 observation.
   - It is read 1Y-only through the existing Treasury-provider architecture (Q29 B).
@@ -410,9 +408,23 @@ substitute the CapIQ value.**
     - 544 / 544 unit tests;
     - build passes;
     - lint shows only the pre-existing InfoTip error.
+  - **Q30 / Q31 applied:**
+    - `FallbackTreasuryProvider.getLatestOneYearYield` (the forward path only) reads
+      both sources and uses the later official observation, FRED on equal dates.
+      Rates are never merged or averaged. The selection, any failure of one source
+      and same-date value differences are recorded in provenance.
+    - `getCurrentCurve` and `getHistoricalRates` keep the FRED-first race; a test
+      proves it.
+    - The 7-calendar-day age limit (`FORWARD_METHODOLOGY.riskFree`,
+      `oneYearStaleness`) is applied on every server read and again in the pure
+      `forwardRiskFree`. A stale reading is a typed `TREASURY_UNAVAILABLE`.
+    - The retrieval window stays at 21 days.
+    - Final checks: Treasury tests 38 / 38; unit tests 552 / 552; typecheck clean;
+      build passes; lint clean on all V2 code (only the pre-existing InfoTip error
+      remains).
 
 ## TASK 3 — Forward risk model: risk window, augmented Ledoit–Wolf Σ, Forward Model Beta, σ_m
-- **STATUS:** NOT STARTED.
+- **STATUS:** IN PROGRESS.
 - **PURPOSE:**
   - The risk window (1Y/3Y/5Y, default 3Y) ends at the latest finalized session (Q2).
   - Load the universe plus the proxy through `loadHistories`.
@@ -918,8 +930,8 @@ T26 runs alongside each task · T27–T30 close V2
 | Q27 | Task 1 | **APPROVED (changed):** the MRP is bounded to [−10%, +20%], negative allowed, rejected not clamped; MRP ≤ 0 makes outputs undefined with typed states, never manufactured. | — |
 | Q28 | Task 1 | **APPROVED:** Manual View = "12M Expected Total Return", the CAPM/BL basis, > −100% and ≤ +200%, rejected not clamped. Street views stay "12M Price-Target Return · Dividends Excluded". | — |
 | Q29 | Task 2 | **APPROVED B:** add a 1Y-only read path to the existing Treasury providers, using the latest available official DGS1 observation (not the common curve date). The full curve is unchanged, and the 3M rate is never substituted. | — |
-| Q30 | Task 2 | FRED ingestion lags the same-day H.15/Treasury release (DATA-PROVIDERS.md, Treasury publication timing). With FRED first, the 1Y rate can be one business day older than the Treasury file's latest. Keep FRED-first, or take the later of the two official observations (both are already fetched in parallel by the existing race)? | Task 2 sign-off |
-| Q31 | Task 2 | Maximum age of the forward 1Y observation: keep the curve's implicit 21-calendar-day window, or a stricter limit (e.g. 7 days, like the historical rate rule) beyond which the forward model is unavailable? | Task 2 sign-off |
+| Q30 | Task 2 | **APPROVED B:** the forward 1Y read uses the later of FRED's and the Treasury file's latest valid observation, FRED on equal dates, never merged; the selection is recorded. The curve, historical reads and the generic fallback are unchanged. | — |
+| Q31 | Task 2 | **APPROVED:** the forward 1Y observation must be ≤ 7 calendar days old (New York date), else `TREASURY_UNAVAILABLE` ("stale"); no substitution. The 21-day retrieval window stays. | — |
 
 ## External data service changes
 

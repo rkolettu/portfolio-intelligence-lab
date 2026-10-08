@@ -366,19 +366,37 @@ with the risk model.
   (H.15 DGS1).
 - **Basis:** a quoted yield used unconverted as the 12-month risk-free proxy. It is
   not a guaranteed realized holding-period return.
-- **How it is read:**
-  - 1Y only, through the existing Treasury providers (FRED first, the U.S.
-    Treasury's Daily Par Yield Curve "1 Yr" column only if FRED fails);
-  - over the same 21-calendar-day window the current curve reads;
-  - unpublished values ('.' / N/A) are skipped, and no observation dated after
-    today (New York) is used.
-- **Date:** it is DGS1's own latest observation, *not* the latest date shared with
-  the other curve maturities. The current curve shown on the Overview is unchanged.
+- **How it is read:** 1Y only, from both official sources:
+  - FRED's DGS1;
+  - the U.S. Treasury's Daily Par Yield Curve "1 Yr" column.
+
+  Each source is read over the same 21-calendar-day window the current curve reads.
+  Unpublished values ('.' / N/A) are skipped, and no observation dated after today
+  (New York) is used.
+- **Choosing between the two sources:**
+  - The **later** observation date wins, because FRED's ingestion can lag the
+    same-day H.15 release. On equal dates, FRED is used.
+  - Rates are never merged or averaged. If the two sources disagree on the same
+    date, FRED's value is used and the difference is recorded.
+  - If one source fails, the other is used.
+  - Provenance records the source, the observation date, the selection reason,
+    the cache age and the retrieval metadata.
+  - This rule applies only to the forward 1Y read. The historical Treasury logic,
+    the current curve and the generic FRED-first fallback are unchanged.
+- **Maximum age:** the newest observation must be at most **7 calendar days** older
+  than the current New York date.
+  - An older one returns `TREASURY_UNAVAILABLE` ("Latest available 1Y Treasury
+    observation is stale").
+  - The 21-day retrieval window exists only so that staleness is detected and
+    reported.
+  - Age is judged on every read, so a cached reading can age into unavailability.
+- **Date:** DGS1's own latest observation, *not* the latest date shared with the
+  other curve maturities.
 - **Cache:** own key `fred:latest-DGS1:v1`, with the Treasury six-hour TTL.
 - **When it is unavailable:**
-  - if the 1Y read fails, or returns another maturity, a future date or an invalid
-    yield, the forward model is unavailable with the reason;
-  - the 3-month rate, or any other maturity, is never substituted.
+  - if the read fails, or returns another maturity, a future date, a stale date or
+    an invalid yield, the forward model is unavailable with the reason;
+  - the 3M, 3Y, 5Y or 10Y rate is never substituted.
 - **Historical analytics are unchanged.** They keep the prior-known DGS3MO
   methodology above.
 

@@ -164,6 +164,14 @@ export const FORWARD_METHODOLOGY = {
     maturity: "1Y",
     convention:
       "Latest quoted 1-year constant-maturity Treasury yield, used unconverted as a 12-month risk-free proxy; not a guaranteed realized holding-period return. The 3-month rate is never substituted.",
+    /** Calendar days of DGS1 read from each source, wide enough to see (and report)
+     * a stale latest observation. */
+    retrievalWindowDays: 21,
+    /** The newest official observation must be at most this many calendar days old
+     * relative to the current New York date; otherwise TREASURY_UNAVAILABLE. */
+    maxObservationAgeDays: 7,
+    sourceSelection:
+      "The later of FRED's and the U.S. Treasury file's latest valid DGS1 observation; FRED when the dates are equal. Rates are never merged or averaged.",
   },
   riskAnnualization: METHODOLOGY.riskAnnualization,
   /** Common observations: < 60 unavailable, 60–251 limited, ≥ 252 normal. */

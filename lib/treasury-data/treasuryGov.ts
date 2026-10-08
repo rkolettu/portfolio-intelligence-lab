@@ -15,7 +15,7 @@ import {
 } from "./latest";
 import { fetchPublic, type Fetcher } from "@/lib/server/http";
 import { addDays, marketDate, validDate } from "@/lib/utils/dates";
-import { fail } from "@/lib/utils/errors";
+import { fail, LabError } from "@/lib/utils/errors";
 
 /** Columns of Treasury's Daily Par Yield Curve file and the H.15 series each one
  * is. Since the Federal Reserve's H.15 constant-maturity yields are read from this
@@ -177,7 +177,8 @@ export class TreasuryGovProvider implements TreasuryProvider {
     };
   }
 
-  /** Only the "1 Yr" column (DGS1) of the year file(s) covering the 21-day window. */
+  /** Only the "1 Yr" column (DGS1) of the year file(s) covering the 21-day window.
+   * Why this source was chosen is recorded by the caller that compares sources. */
   async getLatestOneYearYield(now: string): Promise<LatestTreasuryYield> {
     const today = marketDate(now);
     const { observations, provenance } = await this.series(
@@ -188,7 +189,7 @@ export class TreasuryGovProvider implements TreasuryProvider {
     );
     return latestOneYear(observations, today, provenance, [
       ONE_YEAR_PROXY_WARNING,
-      "Read from the U.S. Treasury's Daily Par Yield Curve because FRED was unreachable.",
+      "Read from the U.S. Treasury's Daily Par Yield Curve (the H.15 source).",
     ]);
   }
 }
@@ -225,10 +226,78 @@ export class FallbackTreasuryProvider implements TreasuryProvider {
       () => this.secondary.getCurrentCurve(now),
     );
   }
-  getLatestOneYearYield(now: string) {
-    return this.race(
-      () => this.primary.getLatestOneYearYield(now),
-      () => this.secondary.getLatestOneYearYield(now),
+  /** Forward 1Y only (the curve and historical reads above keep the race): both
+   * sources are read and the LATER official observation wins, the primary (FRED)
+   * on equal dates, so "Latest Available" survives FRED's ingestion lag. Rates are
+   * never merged or averaged; the selection is recorded in provenance. */
+  async getLatestOneYearYield(now: string): Promise<LatestTreasuryYield> {
+    const [a, b] = await Promise.allSettled([
+      this.primary.getLatestOneYearYield(now),
+      this.secondary.getLatestOneYearYield(now),
+    ]);
+    const why = (r: PromiseSettledResult<unknown>) =>
+      r.status === "fulfilled"
+        ? ""
+        : r.reason instanceof LabError
+          ? r.reason.detail.message
+          : r.reason instanceof Error
+            ? r.reason.message
+            : "unknown failure";
+    const x = a.status === "fulfilled" ? a.value : null;
+    const y = b.status === "fulfilled" ? b.value : null;
+    const p = this.primary.name;
+    const q = this.secondary.name;
+    const note = (
+      value: LatestTreasuryYield,
+      selection: string,
+      fallback: boolean,
+      extra: string[] = [],
+    ): LatestTreasuryYield => ({
+      ...value,
+      provenance: {
+        ...value.provenance,
+        fallbackUsed: fallback,
+        fallbackReason: fallback ? selection : undefined,
+        warnings: [...value.provenance.warnings, selection, ...extra],
+      },
+    });
+    if (x && !y)
+      return note(
+        x,
+        `Source selection: ${p} (DGS1 ${x.observationDate}); ${q} could not be read for comparison (${why(b)}).`,
+        false,
+      );
+    if (!x && y)
+      return note(
+        y,
+        `Source selection: ${q} (DGS1 ${y.observationDate}); ${p} could not be read (${why(a)}).`,
+        true,
+      );
+    if (!x || !y)
+      fail(
+        "TREASURY_UNAVAILABLE",
+        `No official 1-year Treasury observation could be read (${p}: ${why(a)}; ${q}: ${why(b)}).`,
+        { retryable: true },
+      );
+    if (y.observationDate > x.observationDate)
+      return note(
+        y,
+        `Source selection: ${q} (DGS1 ${y.observationDate}) is later than ${p} (${x.observationDate}); the later official observation is used.`,
+        true,
+      );
+    const differs =
+      y.observationDate === x.observationDate && y.annualYield !== x.annualYield
+        ? [
+            `${p} and ${q} report different 1-year yields for ${x.observationDate} (${(x.annualYield * 100).toFixed(2)}% vs ${(y.annualYield * 100).toFixed(2)}%); ${p}'s is used, never an average.`,
+          ]
+        : [];
+    return note(
+      x,
+      y.observationDate === x.observationDate
+        ? `Source selection: ${p} and ${q} both report DGS1 ${x.observationDate}; ${p} is used on equal dates.`
+        : `Source selection: ${p} (DGS1 ${x.observationDate}) is later than ${q} (${y.observationDate}); the later official observation is used.`,
+      false,
+      differs,
     );
   }
 }

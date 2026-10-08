@@ -16,7 +16,6 @@ import { PROVIDER_POLICY } from "@/config/providers";
 import { LabError } from "@/lib/utils/errors";
 import type {
   LatestTreasuryYield,
-  Provenance,
   Result,
   TreasuryCurve,
 } from "@/lib/types/data";
@@ -138,7 +137,7 @@ describe("U.S. Treasury Daily Par Yield Curve: the 1 Yr column only", () => {
     expect(latest.provenance.fallbackUsed).toBe(true);
     expect(latest.provenance.warnings).toEqual([
       expect.stringMatching(/12-month risk-free proxy/),
-      "Read from the U.S. Treasury's Daily Par Yield Curve because FRED was unreachable.",
+      "Read from the U.S. Treasury's Daily Par Yield Curve (the H.15 source).",
     ]);
   });
 
@@ -154,37 +153,107 @@ describe("U.S. Treasury Daily Par Yield Curve: the 1 Yr column only", () => {
   });
 });
 
-const yieldOf = (provider: string, date = "2024-06-03"): LatestTreasuryYield => ({
+const yieldOf = (
+  provider: string,
+  date = "2024-06-03",
+  annualYield = 0.0513,
+): LatestTreasuryYield => ({
   series: "DGS1",
   maturity: "1Y",
   observationDate: date,
-  annualYield: 0.0513,
-  provenance: { provider, cacheAgeSeconds: 0 } as Provenance,
+  annualYield,
+  provenance: {
+    provider,
+    fetchedAt: NOW,
+    lastSuccessfulRefresh: NOW,
+    cacheAgeSeconds: 0,
+    observationDate: date,
+    fallbackUsed: false,
+    warnings: ["proxy"],
+  },
 });
-const stub = (name: string, ok: boolean): TreasuryProvider => ({
+const stub = (
+  name: string,
+  oneYear: LatestTreasuryYield | null,
+): TreasuryProvider => ({
   name,
-  getHistoricalRates: async () => {
-    throw new Error("unused");
-  },
-  getCurrentCurve: async () => {
-    throw new Error("unused");
-  },
+  getHistoricalRates: async () => ({ provenance: { provider: name } }) as never,
+  getCurrentCurve: async () => ({ provenance: { provider: name } }) as never,
   getLatestOneYearYield: async () => {
-    if (!ok) throw new Error(`${name} down`);
-    return yieldOf(name);
+    if (!oneYear) throw new Error(`${name} down`);
+    return oneYear;
   },
 });
+const pick = (fred: LatestTreasuryYield | null, gov: LatestTreasuryYield | null) =>
+  new FallbackTreasuryProvider(stub("FRED", fred), stub("Treasury", gov)).getLatestOneYearYield(NOW);
 
-describe("existing FRED → U.S. Treasury fallback", () => {
-  it("uses FRED when it answers, the Treasury file only when FRED fails", async () => {
-    const both = new FallbackTreasuryProvider(stub("FRED", true), stub("Treasury", true));
-    expect((await both.getLatestOneYearYield(NOW)).provenance.provider).toBe("FRED");
-    const fredDown = new FallbackTreasuryProvider(stub("FRED", false), stub("Treasury", true));
-    expect((await fredDown.getLatestOneYearYield(NOW)).provenance.provider).toBe(
-      "Treasury",
+describe("forward 1Y source selection: the later official observation", () => {
+  it("uses the U.S. Treasury file when its observation is later than FRED's, and says so", async () => {
+    const r = await pick(yieldOf("FRED", "2024-05-31", 0.0518), yieldOf("Treasury", "2024-06-03"));
+    expect(r.provenance.provider).toBe("Treasury");
+    expect(r.observationDate).toBe("2024-06-03");
+    expect(r.annualYield).toBe(0.0513);
+    expect(r.provenance.fallbackUsed).toBe(true);
+    expect(r.provenance.fallbackReason).toBe(
+      "Source selection: Treasury (DGS1 2024-06-03) is later than FRED (2024-05-31); the later official observation is used.",
     );
-    const allDown = new FallbackTreasuryProvider(stub("FRED", false), stub("Treasury", false));
-    await expect(allDown.getLatestOneYearYield(NOW)).rejects.toThrow("Treasury down");
+    expect(r.provenance.warnings).toContain(r.provenance.fallbackReason);
+  });
+
+  it("uses FRED when FRED is later, and FRED on equal dates", async () => {
+    const later = await pick(yieldOf("FRED", "2024-06-03"), yieldOf("Treasury", "2024-05-31"));
+    expect(later.provenance.provider).toBe("FRED");
+    expect(later.provenance.fallbackUsed).toBe(false);
+    expect(later.provenance.warnings).toContain(
+      "Source selection: FRED (DGS1 2024-06-03) is later than Treasury (2024-05-31); the later official observation is used.",
+    );
+    const tie = await pick(yieldOf("FRED"), yieldOf("Treasury"));
+    expect(tie.provenance.provider).toBe("FRED");
+    expect(tie.provenance.warnings).toContain(
+      "Source selection: FRED and Treasury both report DGS1 2024-06-03; FRED is used on equal dates.",
+    );
+  });
+
+  it("never merges or averages: on equal dates with different values FRED's value is used and the difference noted", async () => {
+    const r = await pick(yieldOf("FRED", "2024-06-03", 0.0513), yieldOf("Treasury", "2024-06-03", 0.0515));
+    expect(r.annualYield).toBe(0.0513);
+    expect(r.provenance.provider).toBe("FRED");
+    expect(r.provenance.warnings.at(-1)).toMatch(
+      /different 1-year yields for 2024-06-03 \(5\.13% vs 5\.15%\); FRED's is used, never an average/,
+    );
+  });
+
+  it("uses whichever source answers when the other fails, and fails typed when neither does", async () => {
+    const fredDown = await pick(null, yieldOf("Treasury"));
+    expect(fredDown.provenance.provider).toBe("Treasury");
+    expect(fredDown.provenance.fallbackReason).toBe(
+      "Source selection: Treasury (DGS1 2024-06-03); FRED could not be read (FRED down).",
+    );
+    const govDown = await pick(yieldOf("FRED"), null);
+    expect(govDown.provenance.provider).toBe("FRED");
+    expect(govDown.provenance.fallbackUsed).toBe(false);
+    expect(govDown.provenance.warnings).toContain(
+      "Source selection: FRED (DGS1 2024-06-03); Treasury could not be read for comparison (Treasury down).",
+    );
+    await expect(pick(null, null)).rejects.toMatchObject({
+      detail: {
+        code: "TREASURY_UNAVAILABLE",
+        retryable: true,
+        message:
+          "No official 1-year Treasury observation could be read (FRED: FRED down; Treasury: Treasury down).",
+      },
+    });
+  });
+
+  it("leaves the generic fallback (curve and history) as FRED-first", async () => {
+    const both = new FallbackTreasuryProvider(
+      stub("FRED", yieldOf("FRED", "2024-05-31")),
+      stub("Treasury", yieldOf("Treasury")),
+    );
+    expect((await both.getCurrentCurve(NOW)).provenance.provider).toBe("FRED");
+    expect(
+      (await both.getHistoricalRates("2024-05-01", "2024-06-03", NOW)).provenance.provider,
+    ).toBe("FRED");
   });
 });
 
@@ -241,6 +310,48 @@ describe("cached server read", () => {
     expect(s.calls).toEqual({ oneYear: 1, curve: 1 });
   });
 
+  it("accepts an observation exactly seven calendar days old and rejects one eight days old as stale", async () => {
+    const seven = await forwardRiskFreeReading(
+      NOW,
+      services(async () => yieldOf("FRED", "2024-05-28")).data,
+    );
+    expect(seven.ok).toBe(true);
+    const eight = await forwardRiskFreeReading(
+      NOW,
+      services(async () => yieldOf("FRED", "2024-05-27")).data,
+    );
+    expect(eight).toEqual({
+      ok: false,
+      error: {
+        code: "TREASURY_UNAVAILABLE",
+        retryable: true,
+        message:
+          "Latest available 1Y Treasury observation is stale: 2024-05-27 is 8 calendar days before 2024-06-04, and the forward model allows at most 7. No other maturity is substituted.",
+      },
+    });
+  });
+
+  it("judges staleness on every read, so a cached reading can age into TREASURY_UNAVAILABLE", async () => {
+    const s = services(async () => yieldOf("FRED", "2024-05-28"));
+    expect((await forwardRiskFreeReading(NOW, s.data)).ok).toBe(true);
+    const later = await forwardRiskFreeReading("2024-06-05T15:00:00Z", s.data);
+    expect(s.calls.oneYear).toBe(1); // served from the cache
+    expect(later.ok).toBe(false);
+    if (!later.ok) expect(later.error.message).toMatch(/is stale: 2024-05-28 is 8 calendar days/);
+  });
+
+  it("prefers a fresh Treasury observation over a stale FRED one through the real selection", async () => {
+    const s = services(() =>
+      new FallbackTreasuryProvider(
+        stub("FRED", yieldOf("FRED", "2024-05-20")),
+        stub("Treasury", yieldOf("Treasury", "2024-06-03")),
+      ).getLatestOneYearYield(NOW),
+    );
+    const r = await forwardRiskFreeReading(NOW, s.data);
+    expect(r.ok && r.value.provenance.provider).toBe("Treasury");
+    expect(r.ok && r.value.observationDate).toBe("2024-06-03");
+  });
+
   it("returns typed failures without caching them", async () => {
     const s = services(async () => {
       throw new LabError({
@@ -281,6 +392,13 @@ describe("forward risk-free outcome (pure)", () => {
     expect(out.available).toBe(false);
     if (!out.available)
       expect(out.reason).toMatch(/3-month rate is never substituted/);
+  });
+
+  it("applies the seven-calendar-day limit to a replayed reading", () => {
+    expect(forwardRiskFree({ ok: true, value: yieldOf("FRED", "2024-05-28") }, TODAY).available).toBe(true);
+    const out = forwardRiskFree({ ok: true, value: yieldOf("FRED", "2024-05-27") }, TODAY);
+    expect(out.available).toBe(false);
+    if (!out.available) expect(out.reason).toMatch(/^Latest available 1Y Treasury observation is stale/);
   });
 
   it("rejects another maturity, a future-dated observation and an invalid yield", () => {

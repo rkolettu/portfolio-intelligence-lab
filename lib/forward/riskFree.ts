@@ -1,5 +1,6 @@
 import type { LatestTreasuryYield, Result } from "@/lib/types/data";
 import type { ForwardRiskFree } from "@/lib/types/forward";
+import { oneYearStaleness } from "@/lib/treasury-data/latest";
 import { validDate } from "@/lib/utils/dates";
 
 export type ForwardRiskFreeOutcome =
@@ -11,9 +12,10 @@ const NO_SUBSTITUTE =
 
 /** The forward 12-month risk-free proxy: the latest available official 1Y Treasury
  * yield (DGS1), used unconverted. Anything else — another maturity, a date after
- * `today` (New York), a non-finite yield or a failed read — leaves the forward
- * model unavailable with the reason, never a substitute rate. Pure, so a replayed
- * snapshot is checked by the same rule as a fresh read. */
+ * `today` (New York), an observation more than seven calendar days old, a
+ * non-finite yield or a failed read — leaves the forward model unavailable with
+ * the reason, never a substitute rate. Pure, so a replayed snapshot is checked by
+ * the same rule as a fresh read. */
 export function forwardRiskFree(
   reading: Result<LatestTreasuryYield>,
   today: string,
@@ -34,6 +36,8 @@ export function forwardRiskFree(
       available: false,
       reason: `The 1-year Treasury observation date ${r.observationDate} is invalid or after ${today}. ${NO_SUBSTITUTE}`,
     };
+  const stale = oneYearStaleness(r.observationDate, today);
+  if (stale) return { available: false, reason: stale };
   if (!Number.isFinite(r.annualYield) || r.annualYield <= -1)
     return {
       available: false,

@@ -1,13 +1,16 @@
+import { FORWARD_METHODOLOGY } from "@/config/methodology";
 import type {
   LatestTreasuryYield,
   Provenance,
   TreasuryObservation,
 } from "@/lib/types/data";
+import { calendarDays } from "@/lib/utils/dates";
 import { fail } from "@/lib/utils/errors";
 
-/** Calendar days of 1Y history read for the latest observation: the same lookback
- * the current curve reads for every maturity. */
-export const LATEST_ONE_YEAR_LOOKBACK_DAYS = 21;
+/** Calendar days of 1Y history read from a source (the curve's same window). */
+export const LATEST_ONE_YEAR_LOOKBACK_DAYS =
+  FORWARD_METHODOLOGY.riskFree.retrievalWindowDays;
+const MAX_AGE_DAYS = FORWARD_METHODOLOGY.riskFree.maxObservationAgeDays;
 
 export const ONE_YEAR_PROXY_WARNING =
   "Latest available official 1-year constant-maturity Treasury yield (DGS1): a quoted yield used as a 12-month risk-free proxy, not a guaranteed realized holding-period return.";
@@ -40,4 +43,17 @@ export function latestOneYear(
     annualYield: latest.annualYield,
     provenance: { ...provenance, observationDate: latest.date, warnings },
   };
+}
+
+/** Why the newest official 1Y observation cannot serve the forward model on
+ * `today` (New York): it is more than seven calendar days old. Null when fresh.
+ * Re-evaluated on every read, so a cached reading can become stale over time. */
+export function oneYearStaleness(
+  observationDate: string,
+  today: string,
+): string | null {
+  const age = calendarDays(observationDate, today);
+  return age > MAX_AGE_DAYS
+    ? `Latest available 1Y Treasury observation is stale: ${observationDate} is ${age} calendar days before ${today}, and the forward model allows at most ${MAX_AGE_DAYS}. No other maturity is substituted.`
+    : null;
 }
