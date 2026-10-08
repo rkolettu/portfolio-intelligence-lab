@@ -516,30 +516,78 @@ export type ForwardSolverStatus =
   | "numerical_failure"
   | "non_converged";
 
-/** Certification residuals; null when the solve produced no candidate. */
+/** Certification residuals (Q34); null when the solve produced no candidate. */
 export type ForwardSolverResiduals = {
+  /** |Σw − 1| ≤ 1e-10 */
   budget: number | null;
-  /** |wᵀμ − target| (frontier points only). */
+  /** |μᵀw − target| ≤ 1e-10 (decimal annual return) */
   return: number | null;
+  /** max(0, −min w) ≤ 1e-10 */
   bound: number | null;
-  /** Normalized KKT / stationarity residual. */
+  /** KKT / stationarity residual normalized by 2·λmax(Σ) ≤ 1e-8 */
   kkt: number | null;
 };
 
-/** One efficient-frontier point. Failed points carry no weights and are not plotted. */
+/** One efficient-frontier point. Only certified points carry weights and may be
+ * plotted; every point records its residuals. */
 export type FrontierPoint = {
+  index: number;
+  /** "gmv": the existing minimumVariance anchor; "max_return": the top endpoint. */
+  role: "gmv" | "interior" | "max_return";
   targetReturn: number;
   status: ForwardSolverStatus;
+  certified: boolean;
   reason: string | null;
-  /** Risky weights, canonical order, summing to 1. */
+  /** Risky weights in canonical order, summing to 1 — certified points only. */
   weights: number[] | null;
   expectedReturn: number | null;
   volatility: number | null;
-  /** Tickers at the 0% floor or a binding cap. */
+  /** Binding tickers as the existing bindingConstraints reports them for 0–100%
+   * bounds: lower = held at 0%, upper = held at 100% (the problem has no caps). */
   binding: { lower: string[]; upper: string[] };
   residuals: ForwardSolverResiduals;
   iterations: number;
 };
+
+/** The deterministic, certified efficient frontier of the risky universe. */
+export type EfficientFrontier = {
+  methodologyVersion: string;
+  riskModelHash: string;
+  /** Canonical risky universe and the BL expected returns the frontier used. */
+  tickers: string[];
+  expectedReturns: number[];
+  /** "single_point" when max μ − r_GMV ≤ 1e-12 (Q35): the GMV alone. */
+  status: "frontier" | "single_point";
+  gmv: {
+    expectedReturn: number;
+    volatility: number;
+    weights: number[];
+    solver: { termination: string; iterations: number };
+  };
+  maxExpectedReturn: number;
+  /** Securities with exactly the highest expected return. */
+  maxReturnTickers: string[];
+  /** 2·λmax(Σ): the KKT normalization, as in minimumVariance. */
+  kktNormalization: number;
+  tolerances: {
+    budget: number;
+    bound: number;
+    targetReturn: number;
+    kkt: number;
+  };
+  points: FrontierPoint[];
+  certifiedCount: number;
+  /** SHA-256 of the canonical frontier payload (risk-model hash, μ, targets, results). */
+  frontierHash: string;
+};
+
+export type EfficientFrontierOutcome =
+  | { available: true; frontier: EfficientFrontier }
+  | {
+      available: false;
+      code: "invalid_inputs" | "no_risky_assets" | "gmv_unavailable";
+      reason: string;
+    };
 
 /** A straight line E = intercept + slope × x drawn through an anchor point. The
  * CAL and the Market CML Proxy are solid from x = 0 to the anchor and dashed beyond

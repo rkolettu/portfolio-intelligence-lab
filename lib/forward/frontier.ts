@@ -1,0 +1,367 @@
+// V2 efficient frontier (Layer B): min wᵀΣw s.t. Σw = 1, μ_BLᵀw = r, w ≥ 0 over the
+// risky universe, on the efficient branch r ∈ [r_GMV, max μ]. The GMV anchor is the
+// existing minimumVariance, called exactly as the Constructor calls it; interior
+// points use the deterministic active-set QP; every point is certified
+// independently against Q34 and failed points carry no weights. Pure and
+// browser-safe.
+import { CONSTRUCTION_METHODOLOGY, FORWARD_METHODOLOGY } from "@/config/methodology";
+import { dot, matVec } from "@/lib/analytics/construction/common";
+import { equalWeight } from "@/lib/analytics/construction/equalWeight";
+import { minimumVariance } from "@/lib/analytics/construction/minimumVariance";
+import { jacobiEigen } from "@/lib/analytics/matrix";
+import { bindingConstraints } from "@/lib/analytics/optimization";
+import { portfolioVariance } from "@/lib/analytics/riskContribution";
+import type {
+  BlackLittermanPosterior,
+  EfficientFrontierOutcome,
+  ForwardRiskModel,
+  ForwardSolverResiduals,
+  FrontierPoint,
+} from "@/lib/types/forward";
+import { LabError } from "@/lib/utils/errors";
+import { sha256Hex } from "@/lib/utils/sha256";
+import { activeSetQp } from "./qp";
+
+const F = FORWARD_METHODOLOGY.frontier;
+const T = F.tolerances;
+type Matrix = readonly (readonly number[])[];
+
+/** Smallest achievable KKT violation of w, given g = 2Σw: over the budget and return
+ * multipliers (λ, ν), the largest of |g_i − λ − νμ_i| on free weights and of
+ * max(0, λ + νμ_j − g_j) on weights at 0%. For a fixed ν the best λ leaves
+ * φ(ν) = ½·max over free i and any j of [(g_i − g_j) − ν(μ_i − μ_j)], which is
+ * convex and piecewise linear in ν with breakpoints only where two lines g − νμ
+ * cross; its minimum is at ν = 0 or one of those breakpoints, and all are evaluated.
+ * Working with pairwise differences avoids cancellation at large ν. */
+function kktViolation(
+  g: readonly number[],
+  mu: readonly number[],
+  free: readonly number[],
+): number {
+  const n = g.length;
+  const phi = (nu: number) => {
+    let worst = 0;
+    for (const i of free)
+      for (let j = 0; j < n; j++)
+        worst = Math.max(worst, g[i] - g[j] - nu * (mu[i] - mu[j]));
+    return worst / 2;
+  };
+  let best = phi(0);
+  for (let a = 0; a < n; a++)
+    for (let b = a + 1; b < n; b++) {
+      const nu = (g[a] - g[b]) / (mu[a] - mu[b]);
+      if (mu[a] !== mu[b] && Number.isFinite(nu)) best = Math.min(best, phi(nu));
+    }
+  return best;
+}
+
+/** Independent Q34 certification of a candidate w for target r: budget, bound and
+ * target-return residuals, and the KKT residual (kktViolation) normalized by
+ * 2·λmax(Σ). It uses none of the solver's multipliers or working set: a weight
+ * above the binding tolerance is free, any other weight is at its 0% bound. */
+export function certifyFrontierPoint(input: {
+  weights: readonly number[];
+  targetReturn: number;
+  covariance: Matrix;
+  expectedReturns: readonly number[];
+  normalization: number;
+}): { residuals: ForwardSolverResiduals; certified: boolean; failures: string[] } {
+  const { weights: w, expectedReturns: mu } = input;
+  const budget = Math.abs(w.reduce((s, x) => s + x, 0) - 1);
+  const bound = Math.max(0, ...w.map((x) => -x));
+  const ret = Math.abs(dot(w, mu) - input.targetReturn);
+  const g = matVec(input.covariance, w).map((x) => 2 * x);
+  const free = w.flatMap((x, i) => (x > T.binding ? [i] : []));
+  const kkt = free.length ? kktViolation(g, mu, free) / input.normalization : Infinity;
+  const within = (value: number, tolerance: number) =>
+    Number.isFinite(value) && value <= tolerance;
+  const failures = [
+    ...(within(budget, T.budget) ? [] : [`budget residual ${budget}`]),
+    ...(within(bound, T.bound) ? [] : [`bound residual ${bound}`]),
+    ...(within(ret, T.targetReturn) ? [] : [`target-return residual ${ret}`]),
+    ...(within(kkt, T.kkt) ? [] : [`KKT residual ${kkt}`]),
+  ];
+  return {
+    residuals: { budget, return: ret, bound, kkt },
+    certified: failures.length === 0,
+    failures,
+  };
+}
+
+const NO_RESIDUALS: ForwardSolverResiduals = {
+  budget: null,
+  return: null,
+  bound: null,
+  kkt: null,
+};
+
+type Candidate =
+  | { weights: number[]; iterations: number }
+  | { failure: string; status: FrontierPoint["status"]; iterations: number };
+
+/** The certified efficient frontier for the risk model's Σ and the BL posterior. */
+export function buildEfficientFrontier(input: {
+  riskModel: Pick<ForwardRiskModel, "tickers" | "covariance" | "hash">;
+  posterior: Pick<
+    BlackLittermanPosterior,
+    "universeTickers" | "blackLittermanExpectedReturn" | "riskModelHash"
+  >;
+}): EfficientFrontierOutcome {
+  const { tickers, covariance: sigma, hash } = input.riskModel;
+  const mu = input.posterior.blackLittermanExpectedReturn;
+  const n = tickers.length;
+  if (
+    input.posterior.riskModelHash !== hash ||
+    input.posterior.universeTickers.length !== n ||
+    input.posterior.universeTickers.some((t, i) => t !== tickers[i]) ||
+    mu.length !== n ||
+    sigma.length !== n ||
+    sigma.some((row) => row.length !== n) ||
+    !mu.every(Number.isFinite) ||
+    !sigma.every((row) => row.every(Number.isFinite))
+  )
+    return {
+      available: false,
+      code: "invalid_inputs",
+      reason:
+        "The frontier needs the risk model's Σ and the posterior from that same model, in canonical order, all finite.",
+    };
+  if (!n)
+    return {
+      available: false,
+      code: "no_risky_assets",
+      reason: "No risky assets: there is no risky efficient frontier.",
+    };
+
+  // KKT normalization exactly as minimumVariance computes it: L = 2·λmax(Σ).
+  const eigen = jacobiEigen(sigma, {
+    maxSweeps: CONSTRUCTION_METHODOLOGY.limits.eigenSweeps,
+  });
+  const normalization = 2 * eigen.values.at(-1)!;
+  if (!eigen.converged || !Number.isFinite(normalization) || !(normalization > 0))
+    return {
+      available: false,
+      code: "invalid_inputs",
+      reason: "Σ has no positive, finite largest eigenvalue.",
+    };
+
+  // GMV anchor: the existing minimumVariance, called as the Constructor calls it
+  // (100% risky budget, 0–100% bounds, constrained equal-weight start). Not re-solved.
+  const lower = tickers.map(() => 0);
+  const upper = tickers.map(() => 1);
+  const mv = minimumVariance({
+    covariance: sigma,
+    lower,
+    upper,
+    budget: 1,
+    start: equalWeight({ lower, upper, budget: 1 }).weights!,
+  });
+  if (mv.status !== "success" || !mv.weights)
+    return {
+      available: false,
+      code: "gmv_unavailable",
+      reason: `Global Minimum Variance is unavailable: ${mv.reason ?? mv.status}.`,
+    };
+  const gmvWeights = mv.weights;
+  const volatility = (w: readonly number[]) => {
+    try {
+      return Math.sqrt(portfolioVariance(sigma, w));
+    } catch (error) {
+      if (error instanceof LabError) return NaN;
+      throw error;
+    }
+  };
+
+  const point = (
+    index: number,
+    role: FrontierPoint["role"],
+    targetReturn: number,
+    candidate: Candidate,
+  ): FrontierPoint => {
+    const rejected = (
+      status: FrontierPoint["status"],
+      reason: string,
+      residuals: ForwardSolverResiduals,
+    ): FrontierPoint => ({
+      index,
+      role,
+      targetReturn,
+      status,
+      certified: false,
+      reason,
+      weights: null,
+      expectedReturn: null,
+      volatility: null,
+      binding: { lower: [], upper: [] },
+      residuals,
+      iterations: candidate.iterations,
+    });
+    if ("failure" in candidate)
+      return rejected(candidate.status, candidate.failure, NO_RESIDUALS);
+    const w = candidate.weights;
+    const check = certifyFrontierPoint({
+      weights: w,
+      targetReturn,
+      covariance: sigma,
+      expectedReturns: mu,
+      normalization,
+    });
+    const sigmaP = volatility(w);
+    if (!check.certified || !Number.isFinite(sigmaP))
+      return rejected(
+        "numerical_failure",
+        `Failed certification (${check.failures.join("; ") || "non-finite volatility"}); not a valid frontier point, so it is not plotted.`,
+        check.residuals,
+      );
+    const bind = bindingConstraints(w, lower, upper);
+    return {
+      index,
+      role,
+      targetReturn,
+      status: "success",
+      certified: true,
+      reason: null,
+      weights: w,
+      expectedReturn: dot(w, mu),
+      volatility: sigmaP,
+      binding: {
+        lower: bind.lower.map((i) => tickers[i]),
+        upper: bind.upper.map((i) => tickers[i]),
+      },
+      residuals: check.residuals,
+      iterations: candidate.iterations,
+    };
+  };
+
+  const rGmv = dot(gmvWeights, mu);
+  const gmvPoint = point(0, "gmv", rGmv, {
+    weights: gmvWeights,
+    iterations: mv.iterations,
+  });
+  // The frontier's KKT residual never exceeds minimumVariance's own (ν = 0 with the
+  // best λ is among the multipliers it minimizes over), so a certified GMV always
+  // passes; the check stays as a guard.
+  if (!gmvPoint.certified)
+    return {
+      available: false,
+      code: "gmv_unavailable",
+      reason: `The Global Minimum Variance anchor failed frontier certification: ${gmvPoint.reason}`,
+    };
+  const maxMu = Math.max(...mu);
+  const maxIdx = mu.flatMap((m, i) => (m === maxMu ? [i] : []));
+  // Q35: a range at or below the threshold is a single point (never exact equality).
+  const single = maxMu - rGmv <= F.singlePointThreshold;
+  const points: FrontierPoint[] = [gmvPoint];
+  if (!single) {
+    const count = FORWARD_METHODOLOGY.frontierPoints;
+    const k = maxIdx[0];
+    for (let index = 1; index < count - 1; index++) {
+      const target = rGmv + (index / (count - 1)) * (maxMu - rGmv);
+      // Feasible start: the GMV mixed with the highest-return security so that the
+      // budget and the target return both hold.
+      const t = (target - rGmv) / (maxMu - rGmv);
+      const start = gmvWeights.map((w, i) => (1 - t) * w + (i === k ? t : 0));
+      const qp = activeSetQp({
+        covariance: sigma,
+        E: [tickers.map(() => 1), [...mu]],
+        f: [1, target],
+        start,
+        optimalityTolerance: T.kkt * normalization,
+        maxIterations: F.maxIterations,
+      });
+      points.push(
+        point(
+          index,
+          "interior",
+          target,
+          qp.ok
+            ? { weights: qp.x, iterations: qp.iterations }
+            : { failure: qp.reason, status: qp.status, iterations: qp.iterations },
+        ),
+      );
+    }
+    // Top endpoint: only allocations entirely in the highest-return securities reach
+    // max μ. One such security: 100% in it. An exact tie: the minimum-variance mix of
+    // the tied securities (the existing minimumVariance on their sub-covariance).
+    if (maxIdx.length === 1)
+      points.push(
+        point(count - 1, "max_return", maxMu, {
+          weights: tickers.map((_, i) => (i === k ? 1 : 0)),
+          iterations: 0,
+        }),
+      );
+    else {
+      const zero = maxIdx.map(() => 0);
+      const one = maxIdx.map(() => 1);
+      const tied = minimumVariance({
+        covariance: maxIdx.map((i) => maxIdx.map((j) => sigma[i][j])),
+        lower: zero,
+        upper: one,
+        budget: 1,
+        start: equalWeight({ lower: zero, upper: one, budget: 1 }).weights!,
+      });
+      const mix = tied.status === "success" ? tied.weights : null;
+      points.push(
+        point(
+          count - 1,
+          "max_return",
+          maxMu,
+          mix
+            ? {
+                weights: tickers.map((_, i) =>
+                  maxIdx.includes(i) ? mix[maxIdx.indexOf(i)] : 0,
+                ),
+                iterations: tied.iterations,
+              }
+            : {
+                failure: `Minimum variance among the tied highest-return securities is unavailable: ${tied.reason ?? tied.status}.`,
+                status:
+                  tied.status === "non_converged" ? "non_converged" : "numerical_failure",
+                iterations: tied.iterations,
+              },
+        ),
+      );
+    }
+  }
+
+  const status = single ? "single_point" : "frontier";
+  // Canonical economic payload: the risk model it rests on, μ, and every point's
+  // target, outcome and weights (no labels, residual diagnostics or display state).
+  const payload = {
+    kind: "efficient-frontier",
+    methodologyVersion: FORWARD_METHODOLOGY.version,
+    riskModelHash: hash,
+    tickers: [...tickers],
+    expectedReturns: [...mu],
+    status,
+    points: points.map((p) => [p.index, p.role, p.targetReturn, p.status, p.weights]),
+  };
+  return {
+    available: true,
+    frontier: {
+      methodologyVersion: FORWARD_METHODOLOGY.version,
+      riskModelHash: hash,
+      tickers: [...tickers],
+      expectedReturns: [...mu],
+      status,
+      gmv: {
+        expectedReturn: rGmv,
+        volatility: gmvPoint.volatility!,
+        weights: gmvWeights,
+        solver: { termination: mv.termination, iterations: mv.iterations },
+      },
+      maxExpectedReturn: maxMu,
+      maxReturnTickers: maxIdx.map((i) => tickers[i]),
+      kktNormalization: normalization,
+      tolerances: {
+        budget: T.budget,
+        bound: T.bound,
+        targetReturn: T.targetReturn,
+        kkt: T.kkt,
+      },
+      points,
+      certifiedCount: points.filter((p) => p.certified).length,
+      frontierHash: sha256Hex(JSON.stringify(payload)),
+    },
+  };
+}

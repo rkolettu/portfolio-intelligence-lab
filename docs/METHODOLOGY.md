@@ -720,6 +720,92 @@ replacing it.
 - It identifies results for audit only. It is not used for security. The existing
   server `snapshotHash` is unchanged.
 
+**Efficient frontier** (risky universe, 12 months; `buildEfficientFrontier`):
+- **Problem:** minimize wᵀΣw subject to Σw = 1, μ_BLᵀw = r and w ≥ 0. It is
+  long-only, over risky assets only (no CASH), with a 100% budget and no caps.
+  - Σ is the Task 3 Ledoit–Wolf covariance and μ_BL the Task 6 posterior. Both must
+    come from the same risk model (checked by hash) in canonical order.
+  - Only the efficient branch is solved: r runs from r_GMV up to the highest
+    expected return.
+  - There is no Monte Carlo and no random-portfolio cloud.
+- **GMV anchor (point 0):**
+  - It is the existing `minimumVariance`, called exactly as the Constructor calls
+    it: 100% budget, 0–100% bounds, constrained equal-weight start.
+  - It is not re-solved. r_GMV = μ_BLᵀw_GMV is the bottom of the branch.
+- **Single point (Q35):** if max μ − r_GMV ≤ 1e-12, the frontier is the GMV alone
+  (`single_point`).
+  - This covers one asset, equal expected returns and near-ties.
+  - The test never uses exact floating-point equality.
+- **Grid:** otherwise there are 41 targets, r_k = r_GMV + (k/40)(max μ − r_GMV). The
+  last target is exactly max μ.
+- **Interior points (1–39):** a deterministic primal active-set QP (Nocedal &
+  Wright, Algorithm 16.3).
+  - **Start:** the feasible allocation (1 − t)·w_GMV + t·e_k. Here e_k is 100% in
+    the highest-return security (lowest index on an exact tie), and t places the
+    start's return on the target. Every target is therefore feasible by
+    construction.
+  - **Each iteration:**
+    - solve the exact KKT system on the current free set with the existing
+      `solveLinear` (pivot test unchanged);
+    - step as far as feasibility allows;
+    - add the first bound reached. Only one bound joins per iteration (lowest index
+      on ties), so the working set stays linearly independent.
+  - **At a face optimum:** release the bound with the most negative multiplier
+    (lowest index on ties), provided it is below −1e-8 × 2λmax(Σ). That is the same
+    KKT tolerance certification uses.
+  - **Rounding:** a weight that rounding pushes a few ulps below zero during a step
+    is held at 0. The returned point is always an exact face solution, never a
+    clipped one.
+  - **Limit:** 10,000 iterations, then `non_converged`.
+- **Top endpoint (point 40):** only allocations held entirely in the highest-return
+  securities reach max μ.
+  - If one security has the highest return, the endpoint is 100% in it.
+  - If several tie exactly, it is their minimum-variance mix: the existing
+    `minimumVariance` on their sub-covariance.
+- **Certification (Q34):** every point, the GMV included, is checked from its weights
+  alone. No solver multipliers or working set are used.
+  - **Constraint residuals:**
+    - budget |Σw − 1| ≤ 1e-10;
+    - bound max(0, −min w) ≤ 1e-10;
+    - target return |μᵀw − r| ≤ 1e-10.
+  - **KKT ≤ 1e-8:** the residual is divided by 2·λmax(Σ), computed exactly as
+    `minimumVariance` computes it.
+    - The residual is the smallest achievable violation, over the budget and return
+      multipliers (λ, ν). For each pair (λ, ν) the violation is the larger of two
+      quantities:
+      - stationarity on free weights, |2(Σw)ᵢ − λ − νμᵢ|;
+      - dual feasibility on weights at 0%: 2(Σw)ⱼ − λ − νμⱼ must be ≥ 0, and any
+        shortfall counts.
+    - A weight ≤ 1e-10 counts as at its bound.
+    - For fixed ν the best λ is explicit. What remains is a convex piecewise-linear
+      function of ν, minimized exactly over its breakpoints.
+  - **The GMV always certifies.** ν = 0 is among the multipliers considered, so the
+    GMV's residual never exceeds `minimumVariance`'s own.
+  - **Failures:** tolerances are never relaxed. A failed point is
+    `numerical_failure` and is not plotted: it has no weights, expected return or
+    volatility.
+    - Its residuals are still recorded, or null when no candidate was produced,
+      together with the reason.
+    - Every point also records its iteration count.
+- **Volatility:** √(wᵀΣw), via the existing `portfolioVariance` with its roundoff
+  rule unchanged. Each point lists its binding tickers: those at 0% and any at 100%.
+- **Frontier hash:** `frontierHash` is a SHA-256 of a canonical payload:
+  - the version, risk-model hash, tickers, μ_BL and status;
+  - for each point: index, role, target, status and weights.
+- **Verified by tests:**
+  - Every interior point matches a brute-force optimum to 1e-12 (all 2ⁿ supports
+    enumerated, each solved independently) on seven models of 3–8 assets and on
+    the fixture forward chain.
+  - Two-asset closed forms hold.
+  - Σ-order invariance holds.
+  - A corner portfolio that lands exactly on a grid point certifies.
+  - A duplicated security still certifies: the Ledoit–Wolf Σ stays positive
+    definite.
+- **Pending decisions:**
+  - **Q36:** expected returns so close that the KKT system is ill-conditioned.
+    Today such interior points fail, typed, and are not plotted.
+  - **Q37:** the endpoint's tie rule. Today it is exact equality.
+
 **Local assumption state.** One state holds the risk window, market proxy, MRP and
 per-ticker views. Portfolio Theory and Stock Lab share it.
 - It is stored only in this browser, under the versioned key

@@ -662,7 +662,7 @@ substitute the CapIQ value.**
     - build passes.
 
 ## TASK 7 — Forward expected-return table and portfolio forward metrics
-- **STATUS:** COMPLETE (2026-10-08). Awaiting the owner's approval before Task 8.
+- **STATUS:** COMPLETE (approved by the owner 2026-10-08).
 - **RESULT:**
   - **Q33:** `lib/utils/sha256.ts` (`sha256Hex`), a synchronous, browser-safe
     SHA-256 over UTF-8 bytes (TextEncoder; no node:crypto or Buffer). It equals
@@ -722,7 +722,10 @@ substitute the CapIQ value.**
     - build passes.
 
 ## TASK 8 — Efficient-frontier solver (deterministic active-set QP)
-- **STATUS:** NOT STARTED.
+- **STATUS:** BLOCKED — USER DECISION REQUIRED (Q36, Q37; Q38 to confirm).
+  Implementation, tests and documentation are done. Two numerical cases fall
+  outside the approved methodology. Until they are decided they fail safely, typed
+  and unplotted (Q36), or follow the exact-arithmetic definition (Q37).
 - **PURPOSE:**
   - Solve min wᵀΣw s.t. Σw = 1, wᵀμ_BL = r, w ≥ 0, over risky assets only.
   - Use 41 deterministic target returns from r_GMV to max μ.
@@ -737,7 +740,85 @@ substitute the CapIQ value.**
   - an infeasible target is rejected;
   - ticker-order invariance;
   - repeat runs are deterministic.
-- **RESULT:** —
+- **RESULT:**
+  - **Configuration:** `FORWARD_METHODOLOGY.frontier`.
+    - The problem statement.
+    - The Q34 tolerances:
+      - budget and bound 1e-10, from the existing Constructor weight tolerance;
+      - target return 1e-10;
+      - KKT 1e-8, from the existing stationarity tolerance;
+      - binding 1e-10.
+    - The Q35 threshold, 1e-12.
+    - `maxIterations` 10,000 (Q38).
+  - **`lib/forward/qp.ts`, `activeSetQp`:** a generic, deterministic primal
+    active-set solver for min xᵀΣx s.t. Ex = f, x ≥ 0, from a feasible start.
+    - It solves the exact KKT system on each face with the existing `solveLinear`.
+    - It adds one blocking bound per step, lowest index on ties.
+    - It releases the most negative multiplier below the KKT tolerance × 2λmax.
+    - It never regularizes.
+    - Failures are typed: `invalid_inputs`, `numerical_failure` or
+      `non_converged`.
+    - Task 10 reuses it with E = (μ − Rf)ᵀ.
+  - **`lib/forward/frontier.ts`, `buildEfficientFrontier`:**
+    - checks the hash, order and finiteness of its inputs;
+    - computes L = 2λmax exactly as `minimumVariance` does;
+    - takes the GMV from the existing `minimumVariance` with the Constructor's
+      call, unchanged;
+    - applies the Q35 single-point rule;
+    - builds the 41-point grid; solves the interior points by `activeSetQp` from
+      a feasible GMV/top-security mix; the top endpoint is 100% in the top security,
+      or the `minimumVariance` mix of an exact tie;
+    - records binding tickers from the existing `bindingConstraints`;
+    - computes `frontierHash` with `sha256Hex`.
+  - **`certifyFrontierPoint`:** independent Q34 certification.
+    - The KKT residual is the exact minimum over (λ, ν) of the largest stationarity
+      or dual-feasibility violation, normalized by 2λmax.
+    - It never exceeds `minimumVariance`'s own residual, so the GMV anchor always
+      certifies.
+    - A failed point is `numerical_failure`: no weights, not plotted, residuals and
+      reason recorded.
+  - **Infeasible targets:** the frontier only requests targets in
+    [r_GMV, max μ], each feasible by construction. Called directly with a target no
+    allocation reaches, the QP returns a typed failure, never a point.
+  - **Types:** `ForwardSolverResiduals`, `FrontierPoint`, `EfficientFrontier`,
+    `EfficientFrontierOutcome`.
+  - **Tests:** 35 in total.
+    - **`tests/forward/frontier.test.ts`** (28):
+      - 41 certified, evenly spaced targets;
+      - the GMV is `minimumVariance` exactly;
+      - a brute-force support-enumeration oracle to 1e-12 on seven models
+        (3–8 assets) and on the fixture chain (CAPM prior and a 100% view);
+      - the two-asset closed form; monotone E and σ; the 2λmax normalization;
+        residuals and iterations on every point; binding tickers;
+      - Q35: one asset, equal μ, and either side of 1e-12;
+      - the endpoint: unique, exact tie (closed form) and 1-ulp near-tie (Q37);
+      - a corner exactly on a grid point;
+      - a duplicated security via Ledoit–Wolf (positive definite, 41/41);
+      - near-identical μ (Q36); a singular Σ given directly;
+      - certification: rejects budget, bound, return and suboptimal (KKT-only)
+        points; GMV residual ≤ the `minimumVariance` residual on 30 models;
+      - determinism, permutation invariance and the hash payload and its
+        sensitivity;
+      - input validation;
+      - the import boundary.
+    - **`tests/forward/qp.test.ts`** (7):
+      - the closed-form GMV;
+      - the unique feasible point;
+      - a bound held at exactly 0;
+      - a release from a vertex;
+      - a ratio-test tie adds one bound per step;
+      - determinism;
+      - typed failures, including an unreachable target and the iteration limit.
+  - **Outside the suite** (seeded sweeps, recorded here):
+    - 300 models of 2–10 assets (12,300 points): 0 failures; weights match the
+      oracle to 1.2e-14; worst KKT 2.6e-15.
+    - 500 models of 21 assets (20,500 points): 0 failures; at most 21 iterations;
+      at most 60 ms per frontier.
+  - **Checks:**
+    - unit tests 715 / 715;
+    - typecheck clean;
+    - lint clean on all V2 code (only the pre-existing InfoTip error remains);
+    - build passes.
 
 ## TASK 9 — Global Minimum Variance and Constructor consistency
 - **STATUS:** NOT STARTED.
@@ -1124,6 +1205,13 @@ T26 runs alongside each task · T27–T30 close V2
 | Q29 | Task 2 | **APPROVED B:** add a 1Y-only read path to the existing Treasury providers, using the latest available official DGS1 observation (not the common curve date). The full curve is unchanged, and the 3M rate is never substituted. | — |
 | Q30 | Task 2 | **APPROVED B:** the forward 1Y read uses the later of FRED's and the Treasury file's latest valid observation, FRED on equal dates, never merged; the selection is recorded. The curve, historical reads and the generic fallback are unchanged. | — |
 | Q31 | Task 2 | **APPROVED:** the forward 1Y observation must be ≤ 7 calendar days old (New York date), else `TREASURY_UNAVAILABLE` ("stale"); no substitution. The 21-day retrieval window stays. | — |
+| Q32 | Task 6 | **APPROVED B:** the BL solve is certified by η = ‖Ax − b‖∞ / (‖A‖∞‖x‖∞ + ‖b‖∞) ≤ 1e-12. A zero denominator passes only with a zero residual. Non-finite or singular systems are typed failures. No ridge, epsilon, pseudoinverse or dropped view. | — |
+| Q33 | Task 7 | **APPROVED A:** a browser-safe synchronous SHA-256 (`lib/utils/sha256.ts`) for result identity only; `snapshotHash` unchanged. | — |
+| Q34 | Task 8 | **APPROVED:** frontier tolerances: budget ≤ 1e-10, bound ≤ 1e-10, KKT ≤ 1e-8 normalized by 2·λmax as in `minimumVariance`, \|μᵀw − r\| ≤ 1e-10. Never relaxed; failed points are not plotted; residuals recorded for every solved point. | — |
+| Q35 | Task 8 | **APPROVED:** if max μ − r_GMV ≤ 1e-12, the frontier is a single point (`single_point`, the GMV); never exact equality. | — |
+| Q36 | Task 8 | **OPEN.** When expected returns are within about 1e-7 of each other (but the range is above Q35's 1e-12), the interior KKT systems fail the existing `solveLinear` pivot test. The points fail typed and are not plotted, leaving the GMV and the endpoint. Options: (A) accept; (B) solve each face with the return row replaced by the equivalent centered and scaled row ((μ − c)/s)ᵀw = (r − c)/s. That is an exact row operation: same constraints, same certification in original units, no tolerance change. In a scratch test it certified all 39 interior points down to 1e-12. (C) raise the single-point threshold. | Task 8 |
+| Q37 | Task 8 | **OPEN.** The top endpoint ties securities by exact equality. Identical 100%-confidence views on two securities give exactly equal μ_BL in 84% of 2,000 random trials and a 1-ulp difference in 16%. The endpoint then flips from the minimum-variance mix to 100% in one security. Options: (A) keep exact equality; (B) tie securities within Q35's 1e-12 of max μ. The endpoint's return is then within 1e-12 of its target, inside Q34. | Task 8 |
+| Q38 | Task 8 | **TO CONFIRM.** The active-set iteration cap is 10,000. The observed maximum is 21 at 21 assets. Exceeding the cap is a typed `non_converged`, never a point. | Task 8 |
 
 ## External data service changes
 

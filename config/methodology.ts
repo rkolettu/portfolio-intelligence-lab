@@ -220,4 +220,24 @@ export const FORWARD_METHODOLOGY = {
   /** Deterministic efficient-frontier target returns (refinable without a
    * methodology change to the frontier definition). */
   frontierPoints: 41,
+  frontier: {
+    problem:
+      "min wᵀΣw s.t. Σw = 1, μ_BLᵀw = r, w ≥ 0 over the risky universe; efficient branch r ∈ [r_GMV, max μ]",
+    /** Q34: the Constructor's tolerances where they apply, plus the new
+     * expected-return equality. KKT residuals are normalized by 2·λmax(Σ), as in
+     * minimumVariance. Never relaxed to make a point pass. */
+    tolerances: {
+      budget: CONSTRUCTION_METHODOLOGY.tolerances.weight,
+      bound: CONSTRUCTION_METHODOLOGY.tolerances.weight,
+      targetReturn: 1e-10,
+      kkt: CONSTRUCTION_METHODOLOGY.tolerances.stationarity,
+      /** A weight at or below this counts as at its 0% bound in certification and
+       * in the binding list (the Constructor's binding tolerance). */
+      binding: CONSTRUCTION_METHODOLOGY.tolerances.binding,
+    },
+    /** Q35: max μ − r_GMV at or below this makes the frontier a single point (GMV). */
+    singlePointThreshold: 1e-12,
+    /** Active-set iterations per target before a point is non_converged. */
+    maxIterations: 10_000,
+  },
 } as const;
