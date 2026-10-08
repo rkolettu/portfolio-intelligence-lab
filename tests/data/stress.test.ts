@@ -70,6 +70,9 @@ function services(options: { failing?: string[] } = {}) {
       getCurrentCurve: async () => {
         throw new Error("unused");
       },
+      getLatestOneYearYield: async () => {
+        throw new Error("unused");
+      },
     },
     cache: new DataCache(),
   };

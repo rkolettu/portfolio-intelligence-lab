@@ -45,6 +45,9 @@ function service(): DataServices {
       getCurrentCurve: async () => {
         throw new Error("outage");
       },
+      getLatestOneYearYield: async () => {
+        throw new Error("outage");
+      },
     },
     cache: new DataCache(),
   };

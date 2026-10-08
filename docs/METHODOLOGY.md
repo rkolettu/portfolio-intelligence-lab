@@ -360,6 +360,28 @@ also independent of the historical Analysis Period. The rules for ending the win
 at the latest finalized session and for disclosing an Effective Risk Window arrive
 with the risk model.
 
+**Forward risk-free rate.** Labelled **Forward Risk-Free Rate · 1Y U.S. Treasury
+· Latest Available**, with its observation date and source. It is never called live.
+- **Rate:** the latest available official 1-year constant-maturity Treasury yield
+  (H.15 DGS1).
+- **Basis:** a quoted yield used unconverted as the 12-month risk-free proxy. It is
+  not a guaranteed realized holding-period return.
+- **How it is read:**
+  - 1Y only, through the existing Treasury providers (FRED first, the U.S.
+    Treasury's Daily Par Yield Curve "1 Yr" column only if FRED fails);
+  - over the same 21-calendar-day window the current curve reads;
+  - unpublished values ('.' / N/A) are skipped, and no observation dated after
+    today (New York) is used.
+- **Date:** it is DGS1's own latest observation, *not* the latest date shared with
+  the other curve maturities. The current curve shown on the Overview is unchanged.
+- **Cache:** own key `fred:latest-DGS1:v1`, with the Treasury six-hour TTL.
+- **When it is unavailable:**
+  - if the 1Y read fails, or returns another maturity, a future date or an invalid
+    yield, the forward model is unavailable with the reason;
+  - the 3-month rate, or any other maturity, is never substituted.
+- **Historical analytics are unchanged.** They keep the prior-known DGS3MO
+  methodology above.
+
 **Market proxy.** VTI (default), SPY or VT. Only these broad equity funds are
 accepted: a bond fund, or any other fund, can never stand in for the market
 portfolio. VTI is a practical market proxy, not the theoretical global market

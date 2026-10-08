@@ -430,6 +430,13 @@ describe("approved forward labels", () => {
     expect(FORWARD_LABELS.marketCmlProxy).toBe("Market CML Proxy");
   });
 
+  it("labels the forward risk-free rate as the latest available 1Y Treasury, never live", () => {
+    expect(FORWARD_LABELS.forwardRiskFree).toBe("Forward Risk-Free Rate");
+    expect(FORWARD_LABELS.forwardRiskFreeSource).toBe("1Y U.S. Treasury");
+    expect(FORWARD_LABELS.latestAvailable).toBe("Latest Available");
+    expect(Object.values(FORWARD_LABELS).join(" ")).not.toMatch(/\blive\b/i);
+  });
+
   it("uses the approved Street and extension wording", () => {
     expect(FORWARD_LABELS.manualView).toBe("12M Expected Total Return");
     expect(FORWARD_LABELS.streetReturn).toBe(

@@ -1,11 +1,17 @@
 import "server-only";
 import type {
+  LatestTreasuryYield,
   TreasuryCurve,
   TreasuryMaturity,
   TreasurySeries,
 } from "@/lib/types/data";
 import type { TreasuryProvider } from "./types";
 import { parseTreasuryCsv } from "./normalize";
+import {
+  LATEST_ONE_YEAR_LOOKBACK_DAYS,
+  ONE_YEAR_PROXY_WARNING,
+  latestOneYear,
+} from "./latest";
 import { fetchPublic, type Fetcher } from "@/lib/server/http";
 import { addDays, marketDate } from "@/lib/utils/dates";
 import { fail } from "@/lib/utils/errors";
@@ -96,5 +102,21 @@ export class FredProvider implements TreasuryProvider {
         ],
       },
     };
+  }
+
+  /** Only DGS1, over the same 21-day window (and so the same request URL and
+   * fetch cache entry) as the curve's 1Y leg; its latest observation, whatever
+   * dates the other maturities have. */
+  async getLatestOneYearYield(now: string): Promise<LatestTreasuryYield> {
+    const today = marketDate(now);
+    const { observations, provenance } = await this.series(
+      "DGS1",
+      addDays(today, -LATEST_ONE_YEAR_LOOKBACK_DAYS),
+      today,
+      now,
+    );
+    return latestOneYear(observations, today, provenance, [
+      ONE_YEAR_PROXY_WARNING,
+    ]);
   }
 }

@@ -34,7 +34,10 @@ export const FORWARD_LABELS = {
   marketRiskPremium: "Market Risk Premium",
   assumption: "Assumption",
   marketProxy: "Market Proxy",
-  forwardRiskFree: "Forward Risk-Free · 1Y U.S. Treasury",
+  /** Shown with its observation date and source; never called live. */
+  forwardRiskFree: "Forward Risk-Free Rate",
+  forwardRiskFreeSource: "1Y U.S. Treasury",
+  latestAvailable: "Latest Available",
   modelBeta: "Forward Model Beta",
   modelBetaLong: "Model Beta vs Market Proxy",
   historicalBeta: "Historical Beta vs Benchmark",

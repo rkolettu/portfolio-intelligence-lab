@@ -1,5 +1,6 @@
 import "server-only";
 import type {
+  LatestTreasuryYield,
   TreasuryCurve,
   TreasuryMaturity,
   TreasuryObservation,
@@ -7,6 +8,11 @@ import type {
 } from "@/lib/types/data";
 import type { TreasuryProvider } from "./types";
 import { modeledAvailableAt } from "./normalize";
+import {
+  LATEST_ONE_YEAR_LOOKBACK_DAYS,
+  ONE_YEAR_PROXY_WARNING,
+  latestOneYear,
+} from "./latest";
 import { fetchPublic, type Fetcher } from "@/lib/server/http";
 import { addDays, marketDate, validDate } from "@/lib/utils/dates";
 import { fail } from "@/lib/utils/errors";
@@ -170,6 +176,21 @@ export class TreasuryGovProvider implements TreasuryProvider {
       },
     };
   }
+
+  /** Only the "1 Yr" column (DGS1) of the year file(s) covering the 21-day window. */
+  async getLatestOneYearYield(now: string): Promise<LatestTreasuryYield> {
+    const today = marketDate(now);
+    const { observations, provenance } = await this.series(
+      "DGS1",
+      addDays(today, -LATEST_ONE_YEAR_LOOKBACK_DAYS),
+      today,
+      now,
+    );
+    return latestOneYear(observations, today, provenance, [
+      ONE_YEAR_PROXY_WARNING,
+      "Read from the U.S. Treasury's Daily Par Yield Curve because FRED was unreachable.",
+    ]);
+  }
 }
 
 /** FRED first; the Treasury's own file in parallel as the fallback. Both are the
@@ -202,6 +223,12 @@ export class FallbackTreasuryProvider implements TreasuryProvider {
     return this.race(
       () => this.primary.getCurrentCurve(now),
       () => this.secondary.getCurrentCurve(now),
+    );
+  }
+  getLatestOneYearYield(now: string) {
+    return this.race(
+      () => this.primary.getLatestOneYearYield(now),
+      () => this.secondary.getLatestOneYearYield(now),
     );
   }
 }

@@ -89,6 +89,9 @@ function services(options: { failing?: string[]; quote?: number } = {}) {
       getCurrentCurve: async () => {
         throw new Error("unused");
       },
+      getLatestOneYearYield: async () => {
+        throw new Error("unused");
+      },
     },
     cache: new DataCache(),
   };

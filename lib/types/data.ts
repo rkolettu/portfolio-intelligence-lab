@@ -103,3 +103,13 @@ export type TreasuryCurve = {
   mixedDates: boolean;
   provenance: Provenance;
 };
+/** The latest available official observation of the 1-year constant-maturity
+ * Treasury yield (H.15 DGS1), read on its own rather than at a date shared with
+ * the rest of the curve. A quoted yield, never "live". */
+export type LatestTreasuryYield = {
+  series: "DGS1";
+  maturity: "1Y";
+  observationDate: string;
+  annualYield: number;
+  provenance: Provenance;
+};

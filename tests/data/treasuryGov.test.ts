@@ -47,6 +47,10 @@ const stub = (name: string, ok: boolean): TreasuryProvider => ({
     if (!ok) throw new Error(`${name} down`);
     return { provenance: { provider: name } } as never;
   },
+  getLatestOneYearYield: async () => {
+    if (!ok) throw new Error(`${name} down`);
+    return { provenance: { provider: name } } as never;
+  },
 });
 
 it("prefers FRED and falls back to the Treasury file only when FRED fails", async () => {

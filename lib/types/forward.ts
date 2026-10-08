@@ -2,7 +2,7 @@
 // months). Kept apart from the historical contracts in ./analytics. Weights, returns,
 // yields and confidences are decimals; display formatting never feeds back.
 import type { Sample } from "./analytics";
-import type { Provenance } from "./data";
+import type { LatestTreasuryYield } from "./data";
 
 export type RiskWindow = "1Y" | "3Y" | "5Y";
 export type MarketProxy = "VTI" | "SPY" | "VT";
@@ -39,14 +39,10 @@ export type ForwardAssumptionState = {
   views: ViewState;
 };
 
-/** Forward 12-month risk-free proxy: the latest quoted DGS1 yield, unconverted. */
-export type ForwardRiskFree = {
-  series: "DGS1";
-  maturity: "1Y";
-  annualYield: number;
-  observationDate: string;
-  provenance: Provenance;
-};
+/** Forward 12-month risk-free proxy: the latest available official DGS1
+ * observation, read through the existing Treasury providers and used unconverted.
+ * Same shape as the data layer's reading, so nothing is re-described. */
+export type ForwardRiskFree = LatestTreasuryYield;
 
 /** The risk-estimation window actually used, which may start later than requested. */
 export type EffectiveRiskWindow = {
