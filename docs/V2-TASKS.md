@@ -546,7 +546,7 @@ substitute the CapIQ value.**
       records the risk-model hash and is fully deterministic.
 
 ## TASK 5 — Views, confidence and Black–Litterman inputs (P, Q, Ω)
-- **STATUS:** COMPLETE (2026-10-08). Awaiting the owner's approval before Task 6.
+- **STATUS:** COMPLETE (approved by the owner 2026-10-08).
 - **PURPOSE:** Deterministic P, Q and Ω from the saved views and the certified
   forward risk model. No posterior, no Expected Return Gap, no frontier.
 - **RESULT:**
@@ -604,21 +604,62 @@ substitute the CapIQ value.**
     - lint clean on all V2 code (only the pre-existing InfoTip error remains);
     - build passes.
 
-## TASK 6 — Black–Litterman engine
-- **STATUS:** NOT STARTED.
-- **PURPOSE:** Compute the posterior with the full matrix formula:
-  μ_BL = Π + τΣPᵀ(PτΣPᵀ + Ω)⁻¹(Q − PΠ), with τ = 0.05 internal (Q6).
-- **DEPENDENCIES:** Tasks 4, 5.
-- **FILES:** `lib/forward/blackLitterman.ts` (new); reuses `solveLinear`.
-- **TESTS (required):**
-  - **with no active views, μ_BL equals Π exactly** (bitwise);
-  - a single view at confidence c gives μ_k = Π_k + c(q − Π_k);
-  - correlated propagation: μ_B − Π_B = (Σ_BA/Σ_AA) × c(q − Π_A);
-  - τ-invariance;
-  - ticker-order invariance;
-  - 100% confidence on several views;
-  - a singular PΣPᵀ fails explicitly.
-- **RESULT:** —
+## TASK 6 — Black–Litterman posterior
+- **STATUS:** COMPLETE (2026-10-08). Awaiting the owner's approval before Task 7.
+- **PURPOSE:** A certified posterior μ_BL = Π + τΣPᵀ(PτΣPᵀ + Ω)⁻¹(Q − PΠ) from the
+  Task 4 prior, the Task 3 Σ and the Task 5 P, Q, Ω. No Expected Return Gap,
+  portfolio metric or frontier.
+- **RESULT:**
+  - `lib/forward/blackLitterman.ts`:
+    - **`blackLittermanMean` (the τ-parametric core):**
+      - no views: an exact copy of Π;
+      - otherwise S = τΣPᵀ, A = PS + Ω, b = Q − PΠ, solved jointly with the
+        existing `solveLinear`;
+      - the Q32 certification η ≤ 1e-12 (infinity norms; a zero denominator passes
+        only with a zero residual);
+      - then μ = Π + S x.
+    - **Typed failures:** `invalid_inputs`, `singular_view_system`,
+      `numerical_failure`.
+    - **`buildBlackLittermanPosterior`:**
+      - checks the same risk-model hash and canonical order across Π, Σ and the
+        view inputs, and τ = 0.05;
+      - `invalid_posterior` for any μ ≤ −100%, naming the security, its prior and
+        posterior, and every active view;
+      - preserves each active view's source and basis;
+      - keeps CASH at Rf.
+    - `vectorInfinityNorm` and `matrixInfinityNorm` follow the Q32 definitions.
+    - The module is browser-safe (import allowlist test).
+  - **Config:** `FORWARD_METHODOLOGY.blackLitterman` (formula, certification
+    measure and tolerance 1e-12).
+  - **Types:** `BlackLittermanSolveCertification`, `BlackLittermanRow`,
+    `PosteriorViewSummary`, `BlackLittermanPosterior`, `BlackLittermanFailure`,
+    `BlackLittermanPosteriorOutcome`.
+  - **Tests:** 22 in `tests/forward/blackLitterman.test.ts`:
+    - no views is bitwise equal to the prior (three variants);
+    - c × (Q − Π) at 50%, 25% and 100%;
+    - propagation (Σ_BA/Σ_AA)c(Q − Π_A), negative covariance, and zero
+      covariance exactly unchanged;
+    - the joint closed form (not a per-asset blend);
+    - multiple 100% views;
+    - τ invariance over τ ∈ {0.001 … 7};
+    - order invariance;
+    - risk-model and τ mismatches refused;
+    - the singular system with its views listed;
+    - certification recorded, a failing certification, and the zero-scale pass;
+    - non-finite inputs and overflow;
+    - the norm definitions;
+    - an `invalid_posterior` via correlation propagation, and no upper cap;
+    - CASH;
+    - the Street basis preserved;
+    - historical-mean invariance;
+    - the import boundary.
+  - **Observed certification:** η = 0 for one or two views at partial confidence
+    and 2.7e-17 for two views at 100%. Identity errors are about 1e-17.
+  - **Checks:**
+    - unit tests 646 / 646;
+    - typecheck clean;
+    - lint clean on all V2 code (only the pre-existing InfoTip error remains);
+    - build passes.
 
 ## TASK 7 — Forward expected-return table and portfolio forward metrics
 - **STATUS:** NOT STARTED.

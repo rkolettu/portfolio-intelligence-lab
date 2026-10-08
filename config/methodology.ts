@@ -205,6 +205,18 @@ export const FORWARD_METHODOLOGY = {
   /** Internal and fixed. Under the confidence-scaled Ω it cancels from the
    * posterior mean, so it carries no economic meaning and is not a user setting. */
   tau: 0.05,
+  blackLitterman: {
+    formula: "μ_BL = Π + τΣPᵀ(PτΣPᵀ + Ω)⁻¹(Q − PΠ); all views solved simultaneously",
+    /** Q32: after solveLinear (whose pivot test is unchanged), the solve of
+     * A x = b is certified by its relative backward error
+     * η = ‖Ax − b‖∞ / (‖A‖∞‖x‖∞ + ‖b‖∞) ≤ 1e-12, with ‖v‖∞ = max|v_i| and
+     * ‖A‖∞ = max row Σ|a_ij|. A zero denominator passes only with a zero
+     * residual. No ridge, epsilon, pseudoinverse or dropped view. */
+    solveCertification: {
+      measure: "relative_backward_error_infinity_norm",
+      tolerance: 1e-12,
+    },
+  },
   /** Deterministic efficient-frontier target returns (refinable without a
    * methodology change to the frontier definition). */
   frontierPoints: 41,

@@ -589,6 +589,66 @@ the certified forward risk model. No posterior is computed at this step.
 - The module has no Node-only or server-only imports. Every view and confidence
   change therefore re-runs the same function wherever it happens.
 
+**Black–Litterman posterior** (12 months):
+
+> **μ_BL = Π + τΣPᵀ (PτΣPᵀ + Ω)⁻¹ (Q − PΠ)**
+
+**Inputs.** Π is the Task 4 CAPM prior, Σ the certified annual Ledoit–Wolf
+covariance, and P, Q and Ω the certified view inputs. None is re-estimated.
+- All three must come from the same risk model (checked by hash) and follow its
+  canonical ticker order.
+- τ must be the approved internal 0.05.
+
+**The solve.**
+- **Computation:** S = τΣPᵀ, A = PS + Ω, b = Q − PΠ. One linear system A x = b holds
+  **every active view at once**: views are never applied in sequence or blended per
+  asset. Then μ_BL = Π + S x.
+- **Solver:** the system is solved with the existing `solveLinear` (Gaussian
+  elimination with partial pivoting; its pivot test is unchanged).
+- **Certification:** the solve passes only if its relative backward error
+  **η = ‖Ax − b‖∞ / (‖A‖∞‖x‖∞ + ‖b‖∞) ≤ 1e-12**, where ‖v‖∞ = max|vᵢ| and
+  ‖A‖∞ = the maximum absolute row sum.
+  - A zero denominator passes only with a zero residual; there is never a division
+    by zero.
+  - The residual, matrix, solution and RHS norms, η, the tolerance and the verdict
+    are recorded with the result.
+- **Failures:** a non-finite A, b, x, residual, denominator or η is a typed
+  `numerical_failure`. A singular system is `singular_view_system`, listing the
+  active views involved.
+- **Nothing is added:** no ridge, no diagonal epsilon, no pseudoinverse, no dropped
+  view and no reduced confidence. Regularization would be a separate methodology
+  decision.
+
+**Properties.** Each is proved by a test.
+- **No active views:** μ_BL is an exact copy of Π, bit for bit. No arithmetic runs.
+- **One view on A at confidence c:**
+  - μ_A − Π_A = c (Q_A − Π_A);
+  - every other security moves by (Σ_BA / Σ_AA) × c (Q_A − Π_A). Negative covariance
+    moves it the other way, and zero covariance leaves it exactly unchanged.
+- **Several views:** the joint solution equals the closed-form simultaneous result,
+  which differs from a per-asset (1 − c)Π + cQ blend.
+- **100% confidence:** Ω = 0. Each viewed security ends exactly at its Q when the
+  system is solvable; otherwise the typed failure applies.
+- **τ invariance:** scaling τ in both τΣ and Ω leaves μ_BL unchanged.
+- **Determinism:** the result does not depend on ticker, price or view order.
+
+**Impossible results.**
+- A 12-month expected return at or below −100% is an `invalid_posterior` error. It
+  names the security, its CAPM prior and posterior, and every active view in the
+  solve, and it is never clamped.
+- This can come through correlation, not only through a direct view. For example, a
+  −90% view held at 100% on a security whose covariance with another is twice its
+  own variance pulls that other security to about −182%.
+- There is no upper cap.
+
+**Return basis and CASH.**
+- Each view keeps its source and return basis through the posterior. A Street
+  `price_return` view is never relabelled as total return, and no dividend
+  adjustment is invented: the price-return versus total-return difference stays a
+  visible limitation until Task 14.
+- CASH stays at Rf, outside Σ and the solve.
+- The Expected Return Gap is computed later (Task 7).
+
 **Local assumption state.** One state holds the risk window, market proxy, MRP and
 per-ticker views. Portfolio Theory and Stock Lab share it.
 - It is stored only in this browser, under the versioned key

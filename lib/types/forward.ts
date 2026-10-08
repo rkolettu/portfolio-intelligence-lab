@@ -313,6 +313,80 @@ export type BlackLittermanInputsOutcome =
       tickers: string[];
     };
 
+/** Q32 certification of the Black–Litterman solve A x = b (infinity norms). */
+export type BlackLittermanSolveCertification =
+  | { required: false; reason: "no_active_views" }
+  | {
+      required: true;
+      /** ‖Ax − b‖∞ */
+      residualNorm: number;
+      /** ‖A‖∞ (maximum absolute row sum) */
+      matrixNorm: number;
+      /** ‖x‖∞ */
+      solutionNorm: number;
+      /** ‖b‖∞ */
+      rhsNorm: number;
+      /** η = ‖r‖∞ / (‖A‖∞‖x‖∞ + ‖b‖∞); null when that denominator is exactly 0. */
+      relativeBackwardError: number | null;
+      tolerance: number;
+      passed: boolean;
+    };
+
+/** One risky security's posterior. */
+export type BlackLittermanRow = {
+  ticker: string;
+  capmPrior: number;
+  /** 12-month Black–Litterman expected return, decimal. */
+  blackLittermanExpectedReturn: number;
+};
+
+/** The view metadata carried into (and reported with) the posterior. */
+export type PosteriorViewSummary = Pick<
+  ActiveView,
+  "ticker" | "source" | "basis" | "horizonMonths" | "confidence" | "viewReturn" | "label"
+>;
+
+/** The certified Black–Litterman posterior expected-return vector. No Expected
+ * Return Gap, portfolio metric or frontier is computed here. */
+export type BlackLittermanPosterior = {
+  methodologyVersion: string;
+  riskModelHash: string;
+  marketProxy: MarketProxy;
+  riskWindow: RiskWindow;
+  tau: number;
+  /** Canonical risk-model order: the order of every vector below. */
+  universeTickers: string[];
+  capmPrior: number[];
+  blackLittermanExpectedReturn: number[];
+  rows: BlackLittermanRow[];
+  /** "prior_only" when no view is active (posterior = prior exactly). */
+  status: "prior_only" | "posterior";
+  /** Task 5 active views, source and return basis preserved. */
+  activeViews: ActiveView[];
+  certification: BlackLittermanSolveCertification;
+  /** CASH stays at Rf, outside the solve. */
+  cash: { ticker: "CASH"; forwardModelBeta: 0; expectedReturn: number };
+};
+
+export type BlackLittermanFailure =
+  | "invalid_inputs"
+  | "singular_view_system"
+  | "numerical_failure"
+  | "invalid_posterior";
+
+export type BlackLittermanPosteriorOutcome =
+  | { available: true; posterior: BlackLittermanPosterior }
+  | {
+      available: false;
+      code: BlackLittermanFailure;
+      reason: string;
+      /** The active views involved in the failed solve. */
+      activeViews: PosteriorViewSummary[];
+      certification: BlackLittermanSolveCertification | null;
+      /** For invalid_posterior: each security at or below −100%. */
+      invalid: { ticker: string; capmPrior: number; blackLittermanExpectedReturn: number }[];
+    };
+
 /** A forward statistic that can be undefined (e.g. Sharpe at zero volatility). */
 export type ForwardMetric =
   { available: true; value: number } | { available: false; reason: string };
