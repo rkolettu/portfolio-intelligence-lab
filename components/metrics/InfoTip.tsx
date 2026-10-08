@@ -5,12 +5,16 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  useSyncExternalStore,
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
 
 const GUTTER = 16;
 const GAP = 8;
+
+// Nothing to subscribe to: the client snapshot never changes once rendered.
+const subscribeNever = () => () => {};
 
 /** A brief definition, accessible by hover, tap or focus. The tooltip is portaled
  * to document.body so transformed/scrolling/overflow-hidden analysis surfaces can
@@ -20,13 +24,14 @@ export function InfoTip({ label, children }: { label: string; children: ReactNod
   const anchor = useRef<HTMLSpanElement>(null);
   const tip = useRef<HTMLSpanElement>(null);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [mounted, setMounted] = useState(false);
+  // False on the server and during hydration, true afterwards: the portal needs
+  // document.body and must not change the hydrated markup.
+  const mounted = useSyncExternalStore(subscribeNever, () => true, () => false);
   const [active, setActive] = useState(false);
   const [dismissed, setDismissed] = useState(false);
   const [box, setBox] = useState<{ left: number; top: number; width: number }>();
 
   useEffect(() => {
-    setMounted(true);
     return () => {
       if (hideTimer.current) clearTimeout(hideTimer.current);
     };
