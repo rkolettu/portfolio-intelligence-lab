@@ -10,7 +10,14 @@ This document tracks V2 of the Portfolio Intelligence & Construction Lab. V2 add
 - Model CAL, Market CML Proxy and SML;
 - Stock Lab, which uses the same engine.
 
-**Status legend:** NOT STARTED · IN PROGRESS · BLOCKED — USER DECISION REQUIRED · COMPLETE.
+**Status legend:**
+
+- NOT STARTED;
+- IN PROGRESS;
+- BLOCKED — USER DECISION REQUIRED;
+- BLOCKED — PROVIDER QUALIFICATION REQUIRED;
+- COMPLETE.
+
 A task is COMPLETE only when all of these hold:
 
 - the implementation is done;
@@ -19,9 +26,12 @@ A task is COMPLETE only when all of these hold:
 - its methodology is documented;
 - no issue is unresolved.
 
-Open questions are numbered **Q1–Q26**. The full text of each question is in the plan
-review (chat) and summarised in [Open questions](#open-questions) below. A task that
-depends on an unanswered question is BLOCKED.
+**Working rule.** If anything about financial methodology, a data definition, a
+provider limitation or an architecture decision becomes uncertain, work stops, the
+task is marked BLOCKED, and the question goes to the project owner. Nothing is
+silently assumed.
+
+The plan was approved on 2026-10-08 with the decisions recorded below.
 
 ## Baseline (before any V2 code, 2026-10-08, `main` @ 5d0840a)
 
@@ -30,7 +40,7 @@ depends on an unanswered question is BLOCKED.
 | `npm run typecheck` | clean |
 | `npx vitest --run` | 53 files, 498 / 498 passed |
 | `npm run build` | passes (21 routes) |
-| `npm run lint` | **1 pre-existing error**: `components/metrics/InfoTip.tsx:29` (`react-hooks/set-state-in-effect`). It predates V2; see Q26. |
+| `npm run lint` | **1 pre-existing error**: `components/metrics/InfoTip.tsx:29` (`react-hooks/set-state-in-effect`). It is fixed as a separate housekeeping task, outside the V2 commits (Q26). |
 | Playwright | not run in this container (it needs installed Google Chrome per `playwright.config.ts`) |
 
 ## Architecture principles (binding for every task)
@@ -39,122 +49,353 @@ depends on an unanswered question is BLOCKED.
    - *Historical* (existing `lib/backtest`, `lib/analytics`) is unchanged.
    - *Forward model* is new: `lib/forward/*`.
    - *Decision analysis* is new: `lib/stock-lab/*`. It reuses both of the other layers.
-2. **One forward engine.** Portfolio Theory and Stock Lab call the same pure function,
-   `runForwardModel(snapshot, assumptions, views)`. Stock Lab never computes its own
-   CAPM prior, BL, Σ, β or Rf.
+2. **One forward engine.**
+   - Portfolio Theory and Stock Lab call the same pure functions.
+   - Stock Lab never computes its own CAPM prior, BL, Σ, β or Rf.
+   - The pure functions run on the server, and also in the browser for MRP, view
+     and confidence edits only (Q19).
+   - There is no duplicate browser-only financial code.
 3. **Reuse, do not duplicate.** These functions are reused as they are:
    - `ledoitWolf`, `annualizeCovariance`, `validateCovariance`;
-   - `beta`, `sampleCovarianceMatrix`, `correlationMatrix`;
+   - `sampleCovarianceMatrix`, `correlationMatrix`;
    - `riskContributions`, `modelRisk`, `minimumVariance` (which serves as GMV);
    - `equalWeight`, `inverseVolatility`, `equalRiskContribution`;
    - `simulate`, `runStress`, `portfolioCoverage`, `loadHistories`;
    - `currentTreasury`, `snapshotHash`, `solveLinear`, `kktResidual`, `bindingConstraints`.
 
-   New solver infrastructure is added only where no existing solver covers the
-   problem: the frontier and tangency (see Q8).
+   New solver infrastructure is limited to the deterministic active-set QP for the
+   frontier and tangency (Q8).
 4. **Fixed horizon.** The outlook is the next 12 months, always. Nothing is
    compounded or extrapolated, and no decay is applied.
 5. **No AI and no recommendations.** The app reports measurable facts only. It never
-   uses the words Buy, Sell, Undervalued or Overvalued.
+   uses the words Buy, Sell, Undervalued or Overvalued in its own text. Provider
+   rating labels are shown only as attributed Street data.
 6. **Repository boundary.** All V2 financial logic lives in this repository. The
    Street-data adapter is server-only and lives here too. **No change to
    `portfolio-lab-market-data` is planned.**
-7. **Versioned methodology.** New constants are *appended* to `config/methodology.ts`
-   as `FORWARD_METHODOLOGY` and `STOCK_LAB_METHODOLOGY`. Existing constants are not
-   edited, so every existing snapshot hash and replay is unchanged.
+7. **Versioned methodology.** New constants are *appended* to
+   `config/methodology.ts` as `FORWARD_METHODOLOGY` (and later
+   `STOCK_LAB_METHODOLOGY`).
+   - Existing constants are not edited, so every existing snapshot hash and replay
+     is unchanged.
+   - `FORWARD_METHODOLOGY` stays at `forward-v1` while V2 is built: tasks append
+     fields. Once V2 ships, any change to it requires a new version.
+
+## Naming rules (approved)
+
+| Concept | Required label | Never |
+| --- | --- | --- |
+| β_i = Σ_im/Σ_mm from the forward model | **Forward Model Beta** / **Model Beta vs Market Proxy** | bare "Beta" anywhere a historical beta is also shown |
+| Phase 3 regression/raw beta vs the analysis benchmark | **Historical Beta vs Benchmark** | bare "Beta" next to the forward beta |
+| (E[R_p] − Rf)/σ_p from the forward model | **Forward Model Sharpe** | bare "Sharpe" on Portfolio Theory |
+| Phase 2 Sharpe | **Historical Sharpe** | — |
+| Line through Rf and the model tangency | **Model Capital Allocation Line** / **Model CAL** | "CML" |
+| Line through Rf and the market proxy | **Market CML Proxy** | "CML" without "Proxy" |
+| BL − CAPM required | **Expected Return Gap** (Positive / Negative) | "alpha", "undervalued", "overvalued" |
+| Stock Lab current-side portfolio on the scenario universe | **Scenario Baseline** | "Current Portfolio" when it could be mistaken for Portfolio Theory's |
+| Street price-target return | **12M Price-Target Return · Dividends Excluded** | "expected return" without the qualifier |
+| Ratings totals when no target-contributor count exists | **Ratings Counted** | "Analyst Count" |
+| Time we fetched Street data, when the provider gives no as-of date | **Retrieved** (timestamp) | "Updated" |
+
+## Approved decisions (2026-10-08)
+
+**Q1 — forward covariance and beta. ACCEPT B.**
+- One Ledoit–Wolf covariance over the forward risky universe *plus* the selected
+  market proxy.
+- Forward Model Beta: β_i = Σ_im/Σ_mm.
+- Forward market volatility: σ_m = √Σ_mm.
+- This is the internally consistent forward risk model. With no views, the Model CAL
+  is never steeper than the Market CML Proxy.
+- Historical beta is unchanged.
+
+**Q2 — window end. ACCEPT.** The risk-estimation window ends at the latest finalized
+market session, independent of the historical Analysis Period.
+
+**Q3 — short history. ACCEPT, with explicit UI disclosure.**
+- Below 60 common observations, the forward model is unavailable.
+- 60–251 observations is Limited History; 252 or more is normal.
+- When history is shorter than the requested window, the common window starts at the
+  latest first trade. The UI shows the **Effective Risk Window** and the reason it
+  changed. It is never silently shortened.
+
+**Q4 — forward universe. ACCEPT.**
+- Zero-weight risky rows are included as part of the current opportunity set.
+- In Stock Lab, the candidate joins the scenario opportunity set.
+
+**Q5 — 1Y Treasury. ACCEPT.**
+- The latest available DGS1 / 1Y Treasury yield is the forward 12-month risk-free
+  proxy, unconverted.
+- It is documented as a quoted Treasury yield proxy, not a guaranteed 12-month
+  realized holding-period return.
+- The 3M rate is never substituted.
+
+**Q6 — τ. ACCEPT, with one change.**
+- τ = 0.05 is fixed internally and is **not** a user setting.
+- The documentation says that under the confidence-scaled Ω, τ cancels from the
+  posterior mean. It is never presented as economically meaningful.
+
+**Q7 — confidence and Ω. ACCEPT.**
+- Ω is "confidence-scaled (Idzorek-style closed form)". It is never described as the
+  full iterative Idzorek method.
+- Views are absolute and single-security.
+- A 0% view is ignored; a 100% view sets Ω_k = 0, the limiting high-confidence view.
+- The documentation says that multiple correlated views interact.
+
+**Q8 — frontier solver. ACCEPT A.**
+- A deterministic active-set QP, using the existing certification philosophy.
+- Every point carries its budget, return, bound and KKT/stationarity residuals and
+  its solver status.
+- No Monte Carlo.
+
+**Q9 — frontier scope. ACCEPT.**
+- Risky assets only, long-only, with a 100% risky budget.
+- No Constructor floors or caps.
+- Efficient branch only.
+- 41 deterministic points to start. The point count is a parameter, so it can change
+  without touching the methodology.
+
+**Q10 — CAL and CML extension. ACCEPT.**
+- Solid from Rf to the tangency (or to the market-proxy point); dashed beyond it.
+- Tooltip: "Requires borrowing/leverage at the assumed risk-free rate and is outside
+  the lab's modeled allocation constraints."
+- Each line can be shown or hidden on its own.
+
+**Q11 — existing construction portfolios. ACCEPT.**
+- EW, IV and ERC are computed with the existing functions on the same forward risk
+  model and risky-only universe.
+- Their expected-return coordinate is wᵀμ_BL, never a historical return.
+
+**Q12 — SML series. ACCEPT.** Each of these can be shown or hidden on its own:
+- the CAPM Security Market Line;
+- the CAPM holding points;
+- the BL Expected Return points;
+- the gap connectors;
+- the Current Portfolio;
+- the Proposed Portfolio (Stock Lab);
+- the Market Proxy.
+
+The chart has Show All, Hide All and Reset.
+
+**Q13 — Street provider and licensing. DO NOT COMMIT TO FMP.**
+- Build now:
+  - the `StreetDataProvider` interface;
+  - the normalized StreetData types;
+  - fixtures and mocks;
+  - the provider qualification framework;
+  - tests.
+- Do not architect the financial model around any specific provider.
+- Provider-specific production integration stays **BLOCKED — PROVIDER QUALIFICATION
+  REQUIRED** until the owner approves a provider. Approval needs:
+  - the exact endpoint access;
+  - the exact response schema;
+  - the plan requirements;
+  - the redistribution and display rights.
+- S&P Capital IQ Pro is a private QA source only. See
+  [Private external validation](#private-external-validation).
+
+**Q14 — missing Street fields. ACCEPT, with strict labelling.**
+- Never invent an Analyst Count, an Updated Date or a Median Target.
+- Ratings totals are labelled **Ratings Counted**.
+- With no provider as-of date, show **Retrieved** plus the retrieval timestamp, and
+  never imply that it is the provider's estimate date.
+- With no median, there is no automatic Street view. It never falls back to the
+  average.
+
+**Q15 — dividends. ACCEPT.**
+- The Street view is a price-target return only, labelled "12M Price-Target Return ·
+  Dividends Excluded".
+- Trailing dividend yield is never presented as a forward yield.
+
+**Q16 — Street reference price. ACCEPT.**
+- The implied return uses the provider's quote from the same retrieval snapshot.
+- Our market-data price stays available separately for comparison and debugging.
+
+**Q17 — OTC, ADRs and currency. ACCEPT.**
+- No Street-return view unless the listing, the share basis and the target currency
+  all match the security analyzed.
+- No currency or share-ratio conversion is guessed.
+
+**Q18 — FY1 and FY2. ACCEPT.** FY1 is the first fiscal year not yet reported; FY2 is
+the year after it.
+
+**Q19 — server versus client. ACCEPT, with safeguards.**
+- The server creates the hashed forward risk-model snapshot.
+- The same pure functions may run client-side when ONLY the MRP, the views or the
+  confidence change.
+- Every client result traces to the risk-model snapshot hash plus the assumption
+  state plus the view state, and carries a deterministic derived-result hash.
+- A change to the risk window, the market proxy, the universe or the market history
+  requires a new server snapshot.
+
+**Q20 — persistence. ACCEPT.**
+- One shared local assumption state serves both Portfolio Theory and Stock Lab.
+- A view on a security that is not held affects Stock Lab only, unless that security
+  is added to Portfolio Theory's opportunity set.
+
+**Q21 — Stock Lab funding. ACCEPT.**
+- An increase or a new position is funded pro-rata from other *risky* holdings, from
+  CASH, or from one specific holding.
+- A decrease is redistributed pro-rata to other risky holdings by default, with an
+  explicit "to CASH" option.
+- An invalid request is never partly satisfied. It is rejected with a useful reason.
+- The portfolio stays exactly 100% within tolerance.
+
+**Q22 — Stock Lab combined universe. ACCEPT, with the labelling changed.**
+- Both sides are evaluated on the same scenario universe and the same forward
+  covariance model.
+- They are labelled **Scenario Baseline** and **Proposed Portfolio**.
+- The page explains: "Stock Lab evaluates both portfolios using the same scenario
+  universe so the comparison is internally consistent."
+- Portfolio Theory's current point may appear as a faint, labelled reference. The
+  two methodologies are never mixed silently.
+
+**Q23 — Stock Lab historical window. ACCEPT.**
+- The selected Analysis Period, with one common comparable start for both sides.
+- The two betas are always labelled "Historical Beta vs Benchmark" and "Forward Model
+  Beta vs Market Proxy".
+
+**Q24 — risk and correlation. ACCEPT.**
+- Capital vs Risk, risk contribution, MRC and forward model volatility use the
+  forward Ledoit–Wolf Σ.
+- Correlations are historical sample correlations over the effective risk window,
+  labelled historical.
+
+**Q25 — market-proxy point. ACCEPT.** (σ_m, Rf + MRP) is shown as part of the Market
+CML Proxy series.
+
+**Q26 — existing lint error. ACCEPT.** It is fixed as a separate housekeeping task and
+kept out of the V2 financial commits.
+
+## Private external validation
+
+The project owner has access to S&P Capital IQ Pro through school. CapIQ may be used
+**manually** as an external fact-check and QA benchmark for:
+
+- market cap;
+- security classification;
+- consensus estimates;
+- price targets;
+- EPS and revenue estimates;
+- forward multiples;
+- beta comparisons.
+
+CapIQ is **not** part of the production architecture, and the deployed application
+must not require it. Do not build any of these:
+
+- a CapIQ connector;
+- a CapIQ scraper;
+- CapIQ credential storage;
+- CapIQ runtime fallback logic.
+
+CapIQ data is never exposed publicly.
+
+When production data differs from CapIQ, **investigate why**. Possible causes include:
+
+- timing;
+- fiscal-period mapping;
+- a listing mismatch;
+- consensus methodology;
+- a stale quote;
+- currency;
+- beta lookback or frequency;
+- provider coverage.
+
+Fix our methodology or provider where that is appropriate. **Never silently
+substitute the CapIQ value.**
 
 ---
 
 ## TASK 0 — Repository audit and architecture plan
-- **STATUS:** IN PROGRESS: plan delivered and awaiting approval.
-- **PURPOSE:** Inspect the repository, identify what can be reused, and propose the
-  architecture, task plan and questions.
-- **DEPENDENCIES:** none.
-- **FILES:** `docs/V2-TASKS.md` (this file).
-- **TESTS:** baseline recorded above.
-- **RESULT:** the plan is submitted. No implementation code has been written.
+- **STATUS:** COMPLETE (approved 2026-10-08).
+- **RESULT:**
+  - Plan approved.
+  - Decisions Q1–Q26 recorded above.
+  - No implementation code was written in this task.
 
 ## TASK 1 — Forward-model contracts, assumptions and methodology constants
-- **STATUS:** NOT STARTED.
+- **STATUS:** IN PROGRESS.
 - **PURPOSE:** Define the types and defaults that every later task builds on:
-  - types: `ForwardAssumptions`, `ForwardSnapshot`, `ForwardModelResult`, `View`,
-    `ExpectedReturnRow`, `FrontierPoint` and `LineSeries`;
-  - `FORWARD_METHODOLOGY`: the version, horizon 12M, risk windows {1Y, 3Y, 5Y}
-    (default 3Y), market proxies {VTI, SPY, VT} (default VTI), MRP default 5.00%,
-    confidence default 50%, τ, tolerances and the frontier point count;
-  - Zod validation of the assumptions;
-  - the versioned localStorage schema for the MRP, the proxy, the window and the
-    views.
-- **DEPENDENCIES:** Task 0 approval.
+  - types: `ForwardAssumptions`, `ViewInput`, `ForwardRiskFree`,
+    `EffectiveRiskWindow`, `ForwardRiskModel`, `ExpectedReturnRow`,
+    `PortfolioForwardMetrics`, `FrontierPoint` and `CapitalMarketLine`;
+  - `FORWARD_METHODOLOGY`, holding:
+    - the version, and the 12M horizon;
+    - risk windows {1Y, 3Y, 5Y}, default 3Y;
+    - market proxies {VTI, SPY, VT}, default VTI;
+    - MRP default 5.00%; confidence default 50%;
+    - τ = 0.05 (internal);
+    - the frontier point count (41) and the observation thresholds;
+    - the approved labels;
+  - Zod validation of the assumptions and views;
+  - the versioned localStorage schema for one shared assumption state.
+- **DEPENDENCIES:** Task 0.
 - **FILES:** `config/methodology.ts` (append only), `lib/types/forward.ts` (new),
   `lib/forward/assumptions.ts` (new), `lib/validation/forward.ts` (new),
-  `lib/state/forwardAssumptions.ts` (new).
+  `lib/state/forwardAssumptions.ts` (new), `tests/forward/assumptions.test.ts` (new).
 - **TESTS:**
   - assumptions: defaults, the allowed proxies, rejection of a bond ETF or a custom
-    proxy, rejection of a non-finite MRP, and a confidence outside 0–100;
-  - persistence: round-trip, fallback when stored data is corrupt, and version
-    mismatch;
-  - existing snapshot hashes are unchanged (replay tests stay green).
+    proxy, rejection of a non-finite MRP, and a confidence outside 0–100%;
+  - persistence: round-trip, fallback when stored data is corrupt or the storage is
+    denied, and version mismatch;
+  - existing snapshot hashes are unchanged.
 - **METHODOLOGY DECISIONS:**
-  - The MRP is labelled *Assumption* and is never presented as market data.
+  - The MRP is labelled *Assumption* and is never market data.
   - Views and assumptions are stored locally only.
-- **QUESTIONS:** Q20, Q26.
+  - τ is internal.
 - **RESULT:** —
 
 ## TASK 2 — Forward risk-free rate: 1Y Treasury from the existing curve
-- **STATUS:** BLOCKED — USER DECISION REQUIRED (Q5).
-- **PURPOSE:** Take the 12-month Rf from the 1Y point of the existing
-  `currentTreasury()` curve, which already fetches DGS1 through FRED with the
-  U.S. Treasury fallback. Expose the yield, the observation date and the source.
-  Historical analytics keep DGS3MO, unchanged.
+- **STATUS:** NOT STARTED.
+- **PURPOSE:**
+  - Take the 12-month Rf from the 1Y point of the existing `currentTreasury()` curve:
+    DGS1 via FRED, with the U.S. Treasury as fallback.
+  - Expose the yield, the observation date and the source.
+  - The yield is used unconverted and is documented as a quoted yield proxy (Q5).
+  - Historical analytics keep DGS3MO, unchanged.
 - **DEPENDENCIES:** Task 1.
 - **FILES:** `lib/forward/riskFree.ts` (new). It reads the existing cache key
-  `fred:current-curve:v1`. No new Treasury provider is added.
+  `fred:current-curve:v1`.
 - **TESTS:**
   - the 1Y point is selected, with its observation date and provenance;
-  - the fallback-provider provenance flows through;
-  - curve unavailable → forward model unavailable, with the typed reason and no
-    substitution of the 3M rate;
-  - the historical engine is untouched (existing treasury tests).
-- **METHODOLOGY DECISIONS:** The 1Y yield is a bond-equivalent (CMT) yield. Whether
-  to use it as-is or convert it is Q5.
+  - the fallback provenance flows through;
+  - curve unavailable → forward model unavailable, with no substitution of the 3M
+    rate;
+  - the historical engine is untouched.
 - **RESULT:** —
 
-## TASK 3 — Forward risk model: risk-window sample, Σ, market-proxy β and σ_m
-- **STATUS:** BLOCKED — USER DECISION REQUIRED (Q1, Q2, Q3, Q4).
-- **PURPOSE:** Build the risk window (1Y/3Y/5Y), which is separate from the 12M
-  forecast horizon:
-  - load the universe plus the market proxy through `loadHistories`;
-  - build one common sample with the `portfolioCoverage` rules: no forward-fill,
-    no bridging;
-  - estimate an annualized Ledoit–Wolf Σ, validated by `validateCovariance`;
-  - compute β to the market proxy and the proxy's σ_m;
-  - record the sample metadata, hash, δ and conditioning.
+## TASK 3 — Forward risk model: risk window, augmented Ledoit–Wolf Σ, Forward Model Beta, σ_m
+- **STATUS:** NOT STARTED.
+- **PURPOSE:**
+  - The risk window (1Y/3Y/5Y, default 3Y) ends at the latest finalized session (Q2).
+  - Load the universe plus the proxy through `loadHistories`.
+  - Build one common sample with the `portfolioCoverage` rules: no forward-fill and
+    no bridging. Shortening is disclosed as the Effective Risk Window, with the
+    limiting tickers (Q3).
+  - Estimate one annualized Ledoit–Wolf Σ over universe ∪ proxy, validated by
+    `validateCovariance` (Q1).
+  - Compute β_i = Σ_im/Σ_mm and σ_m = √Σ_mm.
+  - Compute the historical sample correlations over the same window (Q24).
+  - Record the sample metadata, the hash, δ and the conditioning.
 - **DEPENDENCIES:** Task 1.
-- **FILES:**
-  - new: `lib/forward/riskModel.ts`, `lib/forward/sample.ts`;
-  - reused: `lib/analytics/shrinkage.ts`, `lib/analytics/covariance.ts`,
-    `lib/analytics/benchmark.ts`, `lib/backtest/coverage.ts`.
+- **FILES:** `lib/forward/sample.ts` (new), `lib/forward/riskModel.ts` (new).
 - **TESTS:**
   - Σ is symmetric and PSD;
-  - β equals the closed form;
+  - β equals Σ_im/Σ_mm;
   - the proxy has β = 1 against itself;
-  - portfolio β = wᵀβ equals the β of the target-weight return series;
+  - portfolio β = wᵀβ;
+  - with no views, every portfolio's Sharpe is ≤ MRP/σ_m (Cauchy–Schwarz);
+  - a held proxy coincides with the market point;
   - ticker-ordering invariance;
-  - limited history: < 60 observations → unavailable, 60–251 → limited;
+  - < 60 observations → unavailable; 60–251 → limited; shortened windows are
+    disclosed;
   - a zero-volatility asset makes the model invalid;
-  - a bond-ETF proxy is rejected.
-- **METHODOLOGY DECISIONS:**
-  - which covariance defines β and σ_m (Q1);
-  - window anchoring (Q2);
-  - limited-history rule (Q3);
-  - whether 0% rows are in the universe (Q4).
+  - a non-allowed proxy is rejected.
 - **RESULT:** —
 
 ## TASK 4 — CAPM prior
-- **STATUS:** BLOCKED (depends on Task 3 / Q1).
+- **STATUS:** NOT STARTED.
 - **PURPOSE:**
-  - Π_i = Rf + β_i × MRP; CASH earns Rf.
+  - Π_i = Rf + β_i × MRP, with β the Forward Model Beta; CASH earns Rf.
   - Historical CAGR or mean returns are never used as the prior.
 - **DEPENDENCIES:** Tasks 2, 3.
 - **FILES:** `lib/forward/capm.ts` (new).
@@ -168,149 +409,145 @@ depends on an unanswered question is BLOCKED.
 - **RESULT:** —
 
 ## TASK 5 — Views and confidence model
-- **STATUS:** BLOCKED — USER DECISION REQUIRED (Q7, Q20).
+- **STATUS:** NOT STARTED.
 - **PURPOSE:**
   - Each security has No View, Street View or Manual View, plus a confidence from
     0–100% (default 50%). The confidence is never AI-generated.
-  - Analyst count, dispersion and freshness are shown as context only and are never
+  - Analyst counts, dispersion and freshness are shown as context only and are never
     mapped to confidence.
-  - The task builds P (absolute, single-asset views), Q and the confidence-scaled Ω.
-- **DEPENDENCIES:** Task 1. The Street values arrive later from Task 14, and manual
-  views work without them.
-- **FILES:** `lib/forward/views.ts` (new), `lib/state/forwardAssumptions.ts`.
+  - The task builds P (absolute, single-security views), Q and the confidence-scaled
+    Ω (Idzorek-style closed form).
+  - Only views on securities in the active universe enter P (Q20).
+- **DEPENDENCIES:** Task 1. The Street values arrive later through the normalized
+  Street types, and manual views work without them.
+- **FILES:** `lib/forward/views.ts` (new).
 - **TESTS:**
   - c = 0 → the row is removed;
   - c = 1 → Ω_k = 0, with no division by zero;
   - Ω_k = p_k τΣ p_kᵀ (1 − c)/c;
-  - an inactive Street view (no data) is never silently replaced by the manual
-    value.
+  - an inactive Street view is never silently replaced by the manual value;
+  - a view on a security outside the universe is ignored.
 - **RESULT:** —
 
 ## TASK 6 — Black–Litterman engine
-- **STATUS:** BLOCKED — USER DECISION REQUIRED (Q6, Q7).
-- **PURPOSE:** Compute the posterior with the full matrix formula, not a weighted
-  average:
-  μ_BL = Π + τΣPᵀ(PτΣPᵀ + Ω)⁻¹(Q − PΠ).
+- **STATUS:** NOT STARTED.
+- **PURPOSE:** Compute the posterior with the full matrix formula:
+  μ_BL = Π + τΣPᵀ(PτΣPᵀ + Ω)⁻¹(Q − PΠ), with τ = 0.05 internal (Q6).
 - **DEPENDENCIES:** Tasks 4, 5.
 - **FILES:** `lib/forward/blackLitterman.ts` (new); reuses `solveLinear`.
 - **TESTS (required):**
   - **with no active views, μ_BL equals Π exactly** (bitwise);
   - a single view at confidence c gives μ_k = Π_k + c(q − Π_k);
   - correlated propagation: μ_B − Π_B = (Σ_BA/Σ_AA) × c(q − Π_A);
-  - τ-invariance under this Ω convention;
+  - τ-invariance;
   - ticker-order invariance;
   - 100% confidence on several views;
   - a singular PΣPᵀ fails explicitly.
 - **RESULT:** —
 
 ## TASK 7 — Forward expected-return table and portfolio forward metrics
-- **STATUS:** BLOCKED (depends on Task 6).
+- **STATUS:** NOT STARTED.
 - **PURPOSE:**
-  - Per security, the table shows: Ticker, β, CAPM Prior (= CAPM Required Return),
-    Active View, View Source, Confidence, BL Expected Return and Expected Return Gap
-    (BL − CAPM Required).
+  - Per security, the table shows: Ticker, Forward Model Beta, CAPM Prior (= CAPM
+    Required Return), Active View, View Source, Confidence, BL Expected Return and
+    Expected Return Gap.
   - For a portfolio, it computes:
-    - E[R_p] = Σwμ_BL + w_cash Rf;
-    - β_p = Σwβ;
-    - Required_p = Rf + β_p × MRP;
-    - Gap_p;
-    - model σ_p = √(wᵀΣw);
-    - **Forward Model Sharpe** = (E[R_p] − Rf)/σ_p, undefined at σ_p = 0.
+    - E[R_p];
+    - β_p;
+    - CAPM Required Return;
+    - the Gap;
+    - model σ_p;
+    - Forward Model Sharpe.
+  - It also derives a deterministic result hash (Q19).
 - **DEPENDENCIES:** Task 6.
-- **FILES:** `lib/forward/expectedReturns.ts` (new); reuses `riskContributions` /
-  `modelRisk`.
+- **FILES:** `lib/forward/expectedReturns.ts` (new).
 - **TESTS:**
   - the gap is 0 for every row when there are no views;
   - Gap_p = Σw·gap_i;
-  - all-CASH: σ = 0, so Forward Model Sharpe is unavailable;
-  - the portfolio expected return and β equal the closed forms.
+  - all-CASH → Forward Model Sharpe unavailable;
+  - the closed forms;
+  - hash stability.
 - **RESULT:** —
 
-## TASK 8 — Efficient-frontier solver
-- **STATUS:** BLOCKED — USER DECISION REQUIRED (Q8, Q9).
+## TASK 8 — Efficient-frontier solver (deterministic active-set QP)
+- **STATUS:** NOT STARTED.
 - **PURPOSE:**
-  - Solve min wᵀΣw s.t. Σw = 1, wᵀμ_BL = r, w ≥ 0, with risky assets only.
-  - Use deterministic target returns from r_GMV to max μ.
-  - Each point stores its weights, E[R], σ, status, binding constraints and
-    residuals (budget, return, bound, KKT).
-  - Points that fail are not plotted.
+  - Solve min wᵀΣw s.t. Σw = 1, wᵀμ_BL = r, w ≥ 0, over risky assets only.
+  - Use 41 deterministic target returns from r_GMV to max μ.
+  - Each point stores its weights, E[R], σ, status, binding constraints and its
+    budget, return, bound and KKT residuals. Points that fail are not plotted.
 - **DEPENDENCIES:** Task 6.
-- **FILES:** `lib/forward/qp.ts` (new; small dense active-set QP, if Q8 picks it),
-  `lib/forward/frontier.ts` (new). Reuses `kktResidual`'s certification philosophy
-  and `CONSTRUCTION_METHODOLOGY` tolerances.
+- **FILES:** `lib/forward/qp.ts` (new), `lib/forward/frontier.ts` (new).
 - **TESTS:**
-  - Σw = 1 and wᵀμ = r within 1e-10;
-  - w ≥ 0;
+  - the constraint residuals are within tolerance;
   - σ is monotone along the efficient branch;
-  - the KKT residual is ≤ 1e-8;
-  - two-asset closed form;
-  - unconstrained closed form when no bound binds;
-  - an infeasible r is rejected;
+  - two-asset and unconstrained closed forms;
+  - an infeasible target is rejected;
   - ticker-order invariance;
-  - points are deterministic (identical on repeat runs).
+  - repeat runs are deterministic.
 - **RESULT:** —
 
 ## TASK 9 — Global Minimum Variance and Constructor consistency
-- **STATUS:** BLOCKED (depends on Task 8).
+- **STATUS:** NOT STARTED.
 - **PURPOSE:**
   - GMV is the existing `minimumVariance()` on the forward Σ (B = 1, bounds [0,1]).
-    It is a single source, not new math.
   - The frontier's low end must agree with it.
 - **DEPENDENCIES:** Tasks 3, 8.
 - **FILES:** `lib/forward/frontier.ts`.
 - **TESTS:**
   - GMV equals the frontier endpoint;
-  - with the same window, the same universe, CASH 0 and default bounds, GMV equals
-    the Constructor's Minimum-Variance allocation exactly;
+  - on an identical Σ, GMV equals the Constructor's Minimum Variance allocation;
   - with CASH c and non-binding caps, Constructor MV = (1 − c) × GMV.
 - **RESULT:** —
 
 ## TASK 10 — Tangency / Maximum-Sharpe solver
-- **STATUS:** BLOCKED (Q8).
+- **STATUS:** NOT STARTED.
 - **PURPOSE:**
-  - Find the long-only risky portfolio that maximises (wᵀμ_BL − Rf)/σ_p.
-  - Use the exact convex reformulation: min yᵀΣy s.t. (μ − Rf)ᵀy = 1, y ≥ 0, then
-    w = y/Σy. It is certified by KKT.
+  - Use the convex reformulation: min yᵀΣy s.t. (μ − Rf)ᵀy = 1, y ≥ 0, then
+    w = y/Σy. It is solved by the same QP and certified by KKT.
   - When no asset has μ_i > Rf, the result is "undefined" with that reason.
 - **DEPENDENCIES:** Task 8.
 - **FILES:** `lib/forward/tangency.ts` (new).
 - **TESTS:**
-  - the tangency Sharpe is ≥ the Sharpe of every frontier point and every asset;
-  - the tangency lies on the frontier (σ matches at its return);
+  - the tangency Sharpe is ≥ that of every frontier point and every asset;
+  - the tangency lies on the frontier;
   - two-asset closed form;
   - the undefined case;
   - ticker-order invariance.
 - **RESULT:** —
 
 ## TASK 11 — Model CAL, Market CML Proxy and SML line engines
-- **STATUS:** BLOCKED (Q1, Q10, Q12).
+- **STATUS:** NOT STARTED.
 - **PURPOSE:** Compute the three lines as independent series:
-  - **Model CAL:** E = Rf + [(E_t − Rf)/σ_t]σ.
-  - **Market CML Proxy:** E = Rf + (MRP/σ_m)σ, with E_m = Rf + MRP.
-  - **SML:** E = Rf + β × MRP.
+  - Model CAL: E = Rf + [(E_t − Rf)/σ_t]σ;
+  - Market CML Proxy: E = Rf + (MRP/σ_m)σ, with the proxy point (σ_m, Rf + MRP);
+  - SML: E = Rf + β × MRP.
+
+  Each line carries a solid segment and a dashed borrowing extension (Q10).
 - **DEPENDENCIES:** Tasks 3, 4, 10.
 - **FILES:** `lib/forward/lines.ts` (new).
 - **TESTS:**
-  - the endpoints of each line;
-  - the slopes;
+  - endpoints and slopes;
   - the CAL passes through the tangency;
   - the CML proxy passes through (σ_m, Rf + MRP);
   - the SML passes through (0, Rf) and (1, Rf + MRP);
-  - with no views, every holding lies on the SML;
-  - with no views and Q1 = B, the CAL slope is ≤ the CML-proxy slope.
+  - with no views, every holding lies on the SML and the CAL slope is ≤ the CML
+    slope;
+  - the solid/dashed split falls at the point.
 - **RESULT:** —
 
 ## TASK 12 — Forward-model orchestration, API route, snapshot and replay
-- **STATUS:** BLOCKED (Q19).
+- **STATUS:** NOT STARTED.
 - **PURPOSE:**
-  - Add a `POST /api/forward-model` route that:
+  - Add `POST /api/forward-model`, which:
     - validates the config and assumptions;
     - loads the risk-window histories and the proxy;
-    - reads the current 1Y Rf and the Street data, if any;
-    - runs `runForwardModel`.
-  - The result carries a SHA-256 hash over the snapshot, the assumptions and the
-    methodology. `runForwardModel({...snapshot, assumptions, views})` reproduces it.
-  - The cached-sample mode shows "needs live data", as the Constructor does.
+    - reads the current 1Y Rf;
+    - builds the hashed risk-model snapshot;
+    - runs the pure engine.
+  - Client-side recomputation (Q19) uses the same functions with the snapshot hash,
+    the assumption state, the view state and a derived-result hash.
+  - The cached-sample mode shows "needs live data".
 - **DEPENDENCIES:** Tasks 2–11.
 - **FILES:** `lib/forward/model.ts` (new), `lib/server/forward.ts` (new),
   `app/api/forward-model/route.ts` (new).
@@ -318,269 +555,264 @@ depends on an unanswered question is BLOCKED.
   - injected-provider server tests;
   - replay identity;
   - hash stability;
-  - a proxy-fetch failure gives a typed unavailable result;
+  - a proxy-fetch failure;
   - the 1Y curve unavailable;
-  - a 22-ticker batch (20 holdings + benchmark + proxy) chunks correctly through
-    the existing micro-batcher.
+  - a 22-ticker batch is chunked correctly;
+  - server and client paths give identical results.
 - **RESULT:** —
 
-## TASK 13 — Street-data provider abstraction and first adapter
-- **STATUS:** BLOCKED — USER DECISION REQUIRED (Q13, Q14, Q18).
+## TASK 13a — Street-data provider abstraction, normalized types, qualification framework
+- **STATUS:** NOT STARTED. It can proceed: it contains no provider-specific
+  production code.
 - **PURPOSE:**
-  - Server-only `StreetDataProvider` with `getConsensus`, `getPriceTargets` and
-    `getAnalystEstimates`. The interface is provider-neutral, and records are
-    normalized and Zod-validated.
-  - The API key is server-side only, from an env var; it is never bundled or logged.
-  - Per-instance cache with TTL.
-  - A qualification registry, mirroring `config/deployed-providers.ts`, records the
-    licence evidence.
-  - Candidate: Financial Modeling Prep stable endpoints (see the plan review).
+  - A server-only `StreetDataProvider` interface: consensus, price targets, analyst
+    estimates and the provider quote, with the retrieval snapshot time.
+  - Provider-neutral normalized `StreetData` types. Missing fields are explicit
+    nulls with reasons, never invented.
+  - A provider-qualification registry, mirroring `config/deployed-providers.ts`, that
+    requires:
+    - endpoint-access evidence;
+    - the response schema;
+    - the plan;
+    - display and redistribution rights;
+    - an owner approval date.
+  - A provider fixture or mock for tests and development.
+  - Server-side key handling (env var, never bundled or logged), a per-instance
+    cache, and typed errors.
 - **DEPENDENCIES:** Task 1.
 - **FILES:**
   - new: `lib/street-data/types.ts`, `lib/street-data/normalize.ts`,
-    `lib/street-data/providers/<provider>.ts`, `config/street-providers.ts`,
-    `lib/server/street.ts`, `app/api/street/route.ts`,
-    `scripts/street-smoke.ts`;
-  - updated: `.env.example`, `docs/DATA-PROVIDERS.md`, `docs/DEPLOYMENT.md`.
+    `lib/street-data/fixture.ts`, `config/street-providers.ts`,
+    `lib/server/street.ts`, `tests/data/street.test.ts`;
+  - updated: `docs/DATA-PROVIDERS.md`.
 - **TESTS:**
-  - schema normalization;
+  - normalization;
   - missing fields;
-  - plan-restricted responses (402/403) → typed `PERMISSION`;
+  - an unqualified provider is refused at runtime;
+  - a plan-restricted response → typed `PERMISSION`;
   - ETF → "no analyst coverage";
   - unknown ticker;
-  - stale or absent dates;
   - the key never appears in responses or errors.
 - **RESULT:** —
 
-## TASK 14 — Street 12M return view
-- **STATUS:** BLOCKED — USER DECISION REQUIRED (Q14–Q17).
+## TASK 13b — Provider-specific production Street adapter
+- **STATUS:** BLOCKED — PROVIDER QUALIFICATION REQUIRED.
+- **PURPOSE:** Implement one adapter for an owner-approved provider, after its
+  endpoint access, response schema, plan and display/redistribution rights are
+  verified.
+- **DEPENDENCIES:** Task 13a; owner approval of a provider.
+- **RESULT:** —
+
+## TASK 14 — Street 12M price-target view
+- **STATUS:** NOT STARTED for the pure mapping on fixtures. Live data is BLOCKED —
+  PROVIDER QUALIFICATION REQUIRED (Task 13b).
 - **PURPOSE:**
-  - Street Price Return = Target / Current Price − 1, using the median if it is
-    reliably available.
-  - Dividend treatment is labelled.
-  - The context fields (analyst count, high/low dispersion, freshness) are shown and
-    never converted to confidence.
-  - The view becomes inactive, with its reason, when the data is missing.
-- **DEPENDENCIES:** Tasks 5, 13.
+  - Street Price Return = Median Target / Provider Quote − 1, both from the same
+    retrieval snapshot (Q16).
+  - It is labelled "12M Price-Target Return · Dividends Excluded" (Q15).
+  - There is no view when:
+    - the median is missing (Q14);
+    - the listing, share basis or currency don't match (Q17);
+    - the security is an ETF without coverage;
+    - the quote is missing.
+  - Context (Ratings Counted, high/low, Retrieved) is shown and never converted to
+    confidence.
+- **DEPENDENCIES:** Tasks 5, 13a.
 - **FILES:** `lib/forward/streetView.ts` (new).
 - **TESTS:**
-  - the return arithmetic;
-  - the "price-target return — dividends excluded" label;
-  - missing median → behaviour per Q14;
-  - ETF / OTC / non-USD → no Street view;
-  - a missing price → no view.
+  - the arithmetic;
+  - the labels;
+  - every no-view condition;
+  - no fallback to the average.
 - **RESULT:** —
 
 ## TASK 15 — Shared chart-series toggle and overlay system
-- **STATUS:** NOT STARTED. It is built *before* the charts, which depend on it.
+- **STATUS:** NOT STARTED.
 - **PURPOSE:**
-  - A pure series registry: id, label, visible, style (stroke, dash, marker),
-    tooltip metadata and legend behaviour.
-  - Controls to toggle a series, Show all, Hide all and Reset. Each chart keeps its
-    own defaults.
-  - Overlay series are never merged.
-  - Built with Recharts, the existing chart library.
+  - A pure series registry: id, label, visible, style, tooltip metadata and legend
+    behaviour.
+  - Controls to toggle a series, Show All, Hide All and Reset, with per-chart
+    defaults.
+  - Series are overlaid and never merged.
 - **DEPENDENCIES:** Task 1.
 - **FILES:** `lib/charts/seriesToggle.ts` (new), `components/charts/SeriesToggle.tsx`
   (new), `app/analytics.css`.
 - **TESTS:**
-  - the toggle reducer (toggle, show all, hide all, reset);
-  - the keyboard and ARIA states of the legend buttons;
-  - series ids are unique per chart.
+  - the toggle reducer;
+  - keyboard and ARIA states;
+  - unique ids per chart.
 - **RESULT:** —
 
 ## TASK 16 — Risk/Return overlay chart
-- **STATUS:** BLOCKED (Q10, Q11, Q25).
+- **STATUS:** NOT STARTED.
 - **PURPOSE:**
-  - X = annualized model volatility; Y = 12M expected return.
-  - Series that can be shown or hidden one by one:
-    - `efficient_frontier`, `model_cal`, `market_cml_proxy`;
+  - X = model volatility; Y = 12M BL expected return.
+  - Series, each toggled independently:
+    - `efficient_frontier`, `model_cal`, `market_cml_proxy` (with the proxy point);
     - `current_portfolio`, `proposed_portfolio`;
     - `gmv`, `tangency`;
-    - `equal_weight`, `inverse_volatility`, `erc`;
+    - `equal_weight`, `inverse_volatility`, `erc` (forward Σ, wᵀμ_BL; Q11);
     - `holdings`.
-  - Each series has its own line or marker treatment, a legend entry, a tooltip and
-    a methodology label.
+  - Dashed extensions carry the Q10 tooltip.
 - **DEPENDENCIES:** Tasks 12, 15.
 - **FILES:** `components/theory/RiskReturnChart.tsx` (new).
 - **TESTS:**
-  - every series is independently toggleable;
+  - independent toggles;
   - overlays coexist;
-  - the tooltips name the line;
-  - failed frontier points are absent;
-  - the "Model CAL" label is never the bare "CML".
+  - tooltips name each line;
+  - failed points are absent;
+  - "Model CAL" is never labelled "CML".
 - **RESULT:** —
 
 ## TASK 17 — SML chart
-- **STATUS:** BLOCKED (Q12).
+- **STATUS:** NOT STARTED.
 - **PURPOSE:**
-  - A separate chart with X = β and Y = 12M expected return. It never shares an
-    axis with the risk/return chart.
-  - Series: `security_market_line`, `holdings`, `bl_expected_returns` (with gap
-    connectors), `current_portfolio`, `proposed_portfolio` and `market_proxy`.
-  - Gap wording is "Positive / Negative Expected Return Gap" only.
+  - A separate chart with X = Forward Model Beta and Y = 12M expected return.
+  - Series per Q12: the CAPM SML, CAPM holding points, BL Expected Return points, gap
+    connectors, Current Portfolio, Proposed Portfolio and Market Proxy. It has Show
+    All, Hide All and Reset.
 - **DEPENDENCIES:** Tasks 11, 15.
 - **FILES:** `components/theory/SmlChart.tsx` (new).
 - **TESTS:**
   - the toggles;
   - the coordinates equal the engine values;
-  - the words "undervalued" and "overvalued" never appear.
+  - the gap wording is "Positive / Negative Expected Return Gap" only.
 - **RESULT:** —
 
 ## TASK 18 — Portfolio Theory page (`/analysis/theory`)
-- **STATUS:** BLOCKED (Q19, Q20).
+- **STATUS:** NOT STARTED.
 - **PURPOSE:**
-  - Title: "Portfolio Theory". Subtitle: "Forward-looking portfolio construction
-    using explicit 12-month assumptions."
   - The page contains:
-    - a top strip showing the Outlook, Risk Model, Risk-Free, Market Proxy, MRP,
-      Return Model and Covariance;
-    - the assumptions panel (§49) and the views editor;
+    - the title and subtitle;
+    - the top strip;
+    - the assumptions panel (§49);
+    - the views editor (MRP, views and confidence recompute client-side);
     - the expected-return table;
     - both charts;
-    - the GMV and tangency weight tables;
-    - Forward Model Sharpe, labelled distinctly from Historical Sharpe.
+    - the GMV and tangency weights;
+    - Forward Model Sharpe.
   - A navigation link is added.
-- **DEPENDENCIES:** Tasks 12, 14, 16, 17.
+- **DEPENDENCIES:** Tasks 12, 14 (fixture-backed), 16, 17.
 - **FILES:**
   - new: `app/analysis/theory/page.tsx`, `components/pages/TheoryPage.tsx`,
-    `components/theory/{AssumptionsPanel,ViewsEditor,ExpectedReturnTable}.tsx`;
-  - updated: `components/layout/SiteHeader.tsx`,
-    `components/observatory/WorkspaceSpine.tsx`, `components/ui/SectionGlyph.tsx`,
-    `app/analytics.css`.
-- **TESTS:**
-  - component tests for the strip, the editor, the table and the labels;
-  - an e2e route test.
+    `components/theory/*`;
+  - updated: the navigation files and `app/analytics.css`.
+- **TESTS:** component and e2e route tests.
 - **RESULT:** —
 
 ## TASK 19 — Stock Lab scenario modifier (`createProposedPortfolio`)
-- **STATUS:** BLOCKED — USER DECISION REQUIRED (Q21).
+- **STATUS:** NOT STARTED.
 - **PURPOSE:**
-  - A pure function: the current portfolio plus a scenario (Existing Holding or New
-    Stock, and the proposed weight) plus a funding method gives the proposed
-    portfolio.
-  - Funding methods: pro-rata, from CASH, or from a specific holding. A decrease is
-    redistributed pro-rata by default.
-  - The function does no analytics, never mutates the saved portfolio, sums to
-    100%, and enforces the 20-risky-holding limit.
+  - A pure function: the current portfolio plus a scenario plus a funding method
+    gives the proposed portfolio (Q21).
+  - It does no analytics, never mutates the saved portfolio, sums to 100% and
+    enforces the 20-risky-holding limit.
+  - It adds `STOCK_LAB_METHODOLOGY`.
 - **DEPENDENCIES:** Task 1.
-- **FILES:** `lib/stock-lab/scenario.ts` (new), `lib/validation/stockLab.ts` (new).
+- **FILES:** `lib/stock-lab/scenario.ts` (new), `lib/validation/stockLab.ts` (new),
+  `config/methodology.ts` (append).
 - **TESTS:**
-  - the funding methods: pro-rata, cash and specific-holding funding;
-  - position changes: increase, decrease, removal to 0% and a new stock;
-  - infeasible requests: CASH or the funding holding is too small, or a 21st risky
-    holding;
-  - CASH is excluded from stock selection;
-  - the total stays 100% within 1e-12;
+  - the funding methods: pro-rata, cash and specific-holding funding, and decrease to
+    pro-rata or to CASH;
+  - removal to 0% and a new stock;
+  - infeasible requests are rejected with reasons;
+  - CASH is excluded from selection;
+  - the total stays 100%;
   - the input is never mutated;
   - the output passes `parsePortfolio`.
 - **RESULT:** —
 
 ## TASK 20 — Stock Lab orchestration, API route and historical impact
-- **STATUS:** BLOCKED (Q22, Q23).
+- **STATUS:** NOT STARTED.
 - **PURPOSE:** Add `POST /api/stock-lab`. It:
   - builds the proposed portfolio;
-  - runs the **same** `runForwardModel` on the union universe;
-  - runs the **unchanged** `simulate()` for the current and proposed portfolios on
-    a common window;
-  - runs the **unchanged** `runStress()` for both portfolios, using the
-    Constructor's union-coverage comparison;
+  - runs the **same** forward engine on the scenario universe, giving the Scenario
+    Baseline and the Proposed Portfolio (Q22);
+  - runs the **unchanged** `simulate()` for both sides on the Analysis Period, with a
+    common start (Q23);
+  - runs the **unchanged** `runStress()` for both sides;
   - returns a replayable snapshot with its hash.
 - **DEPENDENCIES:** Tasks 12, 19.
 - **FILES:**
   - new: `lib/stock-lab/impact.ts`, `lib/server/stockLab.ts`,
-    `app/api/stock-lab/route.ts`, `lib/backtest/compare.ts` (shared);
-  - updated: `lib/backtest/construction.ts`. Its private `historical()` and
-    `compareStress()` move verbatim into the shared module; behaviour and hashes are
-    unchanged.
+    `app/api/stock-lab/route.ts`, `lib/backtest/compare.ts`;
+  - updated: `lib/backtest/construction.ts`. Its `historical()` and `compareStress()`
+    move verbatim; hashes are unchanged.
 - **TESTS:**
-  - current versus proposed historical metrics equal two independent `simulate()`
-    runs;
-  - limited history for the new stock;
-  - a new stock missing in a stress window → Incomplete Historical Coverage, never
-    fabricated;
-  - Constructor replay and hashes are unchanged after the refactor.
+  - both sides equal independent `simulate()` runs;
+  - limited history disclosed as an Effective Risk Window change;
+  - missing stress history → Incomplete Coverage;
+  - Constructor replay and hashes are unchanged.
 - **RESULT:** —
 
 ## TASK 21 — Stock Lab historical impact UI
-- **STATUS:** BLOCKED (depends on Task 20).
+- **STATUS:** NOT STARTED.
 - **PURPOSE:**
-  - Show current versus proposed for: CAGR, Historical Volatility, Historical
-    Sharpe, Beta (vs benchmark), Max Drawdown, Tracking Error, Diversification Ratio
-    and Effective Holdings.
+  - Show, for both sides: CAGR, Historical Volatility, Historical Sharpe, Historical
+    Beta vs Benchmark, Max Drawdown, Tracking Error, Diversification Ratio and
+    Effective Holdings.
   - Label these as historical metrics.
 - **FILES:** `components/stock-lab/HistoricalImpact.tsx` (new).
-- **TESTS:**
-  - component values come from the result;
-  - the labels separate historical metrics from forward ones.
 - **RESULT:** —
 
 ## TASK 22 — Stock Lab capital vs risk, correlation and stress impact
-- **STATUS:** BLOCKED (Q24).
+- **STATUS:** NOT STARTED.
 - **PURPOSE:**
-  - **Hero:** capital weight versus PCR, MRC and β; current and proposed model σ;
-    incremental σ in percentage points.
-  - **Correlation:** to the current portfolio, to the benchmark and to each holding.
-  - **Stress:** per-event current, proposed and difference.
-  - Colors are neutral: a change is never coloured as good or bad automatically.
+  - **Hero:** on the forward LW Σ — capital weight, PCR, MRC, Forward Model Beta,
+    Scenario Baseline and Proposed model σ, and incremental σ.
+  - **Correlation:** historical sample correlations over the effective risk window
+    (Q24).
+  - **Stress:** per-event differences.
+  - Colors are neutral.
 - **FILES:** `components/stock-lab/{CapitalRiskHero,CorrelationPanel,StressImpact}.tsx`
-  (new). Reuses the patterns of `components/risk/CapitalVsRisk.tsx`.
-- **TESTS:**
-  - PCR and MRC equal the `riskContributions` output;
-  - incremental σ equals the difference of the two model σ values;
-  - unavailable events are labelled.
+  (new).
 - **RESULT:** —
 
 ## TASK 23 — Stock Lab forward model and forward portfolio impact
-- **STATUS:** BLOCKED (depends on Task 20).
+- **STATUS:** NOT STARTED.
 - **PURPOSE:**
   - Show a progression: MARKET / CAPM PRIOR → STREET OR MANUAL VIEW →
     BLACK–LITTERMAN → PORTFOLIO IMPACT.
-  - For the selected stock: β, CAPM Prior, Street View, Confidence, BL Expected
-    Return, CAPM Required Return and Gap.
-  - A current versus proposed table, with change, for: 12M BL Expected Return, Model
-    Volatility, Forward Model Sharpe, Portfolio β, CAPM Required Return and Gap.
+  - A Scenario Baseline versus Proposed table covering:
+    - 12M BL Expected Return;
+    - Model Volatility;
+    - Forward Model Sharpe;
+    - Forward Model Beta;
+    - CAPM Required Return;
+    - Expected Return Gap.
+  - No automatic good/bad colouring.
 - **FILES:** `components/stock-lab/{ForwardProgression,ForwardImpact}.tsx` (new).
-- **TESTS:**
-  - the values equal Portfolio Theory's engine output for the same inputs;
-  - no positive change is coloured green automatically.
 - **RESULT:** —
 
 ## TASK 24 — Stock Lab Street consensus panel
-- **STATUS:** BLOCKED (Tasks 13–14).
+- **STATUS:** NOT STARTED against fixtures. Live data is BLOCKED — PROVIDER
+  QUALIFICATION REQUIRED (Task 13b).
 - **PURPOSE:**
-  - Show the consensus rating, the rating breakdown, the current price, the
-    median/average/high/low targets, the implied 12M price return, the analyst
-    count, the updated date, and forward EPS and revenue (FY1/FY2) where available.
-  - Name the provider; explain missing fields.
+  - The panel shows:
+    - the consensus rating and the rating breakdown (attributed);
+    - the provider quote;
+    - the median, average, high and low targets;
+    - the 12M Price-Target Return · Dividends Excluded;
+    - Ratings Counted or Analyst Count, only as provided;
+    - Updated or Retrieved, only as provided;
+    - FY1/FY2 EPS and revenue.
+  - Missing fields are explained.
 - **FILES:** `components/stock-lab/StreetPanel.tsx` (new).
-- **TESTS:**
-  - missing Street data;
-  - an ETF;
-  - partial fields;
-  - the provider label.
 - **RESULT:** —
 
-## TASK 25 — Stock Lab on the Frontier and the SML, and Stock Lab page assembly
-- **STATUS:** BLOCKED (Q22).
+## TASK 25 — Stock Lab on the Frontier and the SML, and page assembly
+- **STATUS:** NOT STARTED.
 - **PURPOSE:**
-  - Build the `/analysis/stock-lab` page with:
-    - the entry modes (Existing Holding / New Stock);
-    - the proposed weight and the funding method;
+  - `/analysis/stock-lab` with:
+    - the entry modes and the proposed weight;
+    - the funding method;
     - all panels.
-  - "View on Frontier" and "View on SML" reuse the chart components from Tasks 16
-    and 17, with the `proposed_portfolio` series and the selected stock's point.
-  - A navigation link is added.
-- **FILES:**
-  - new: `app/analysis/stock-lab/page.tsx`, `components/pages/StockLabPage.tsx`,
-    `components/stock-lab/StockLabControls.tsx`, `lib/state/stockLab.ts`;
-  - updated: the navigation files.
-- **TESTS:**
-  - the frontier coordinates of the current and proposed portfolios equal
-    (σ_model, E_BL);
-  - the SML coordinates equal (β, E_BL);
-  - the scenario never alters the saved builder draft;
-  - an e2e flow.
+  - "View on Frontier" and "View on SML" reuse the Task 16 and 17 charts with the
+    Scenario Baseline, Proposed and selected-stock points. Portfolio Theory's current
+    point may appear as a faint, labelled reference only.
+- **FILES:** `app/analysis/stock-lab/page.tsx`, `components/pages/StockLabPage.tsx`,
+  `components/stock-lab/StockLabControls.tsx`, `lib/state/stockLab.ts`, plus the
+  navigation files.
 - **RESULT:** —
 
 ## TASK 26 — Methodology documentation
@@ -588,52 +820,27 @@ depends on an unanswered question is BLOCKED.
 - **PURPOSE:**
   - Add a V2 section to `docs/METHODOLOGY.md`, plus "Forward Model" and "Stock Lab"
     topics in the Methodology Drawer.
-  - Cover every item in spec §50, including that VTI is a practical market proxy,
-    not the theoretical market portfolio, and that the theoretical CML differs from
-    the Market CML Proxy.
-- **FILES:** `docs/METHODOLOGY.md`, `components/methodology/MethodologyDrawer.tsx`,
-  `README.md`.
-- **TESTS:** a drawer component test (topics render and anchors open).
+  - Cover every item in spec §50 and every approved decision above.
 - **RESULT:** —
 
 ## TASK 27 — Unit, integration and E2E tests
 - **STATUS:** NOT STARTED.
-- **PURPOSE:**
-  - Consolidate the deterministic suites listed in spec §51.
-  - Add an end-to-end test of the forward model on fixed fixtures.
-  - Add Playwright routes for Portfolio Theory and Stock Lab.
-- **FILES:** `tests/forward/*`, `tests/stock-lab/*`, `tests/data/street.test.ts`,
-  `tests/components/{theory,stockLab}.test.tsx`, `tests/e2e/portfolio.spec.ts`.
 - **RESULT:** —
 
 ## TASK 28 — Responsive, accessibility and polish
 - **STATUS:** NOT STARTED.
-- **PURPOSE:**
-  - Layouts at 390, 820, 1024, 1320 and 1920 px.
-  - Reduced motion.
-  - Keyboard access to the series toggles.
-  - Chart table views for non-visual access, as on the existing charts.
-  - Contrast of 3:1 or more on series colors.
 - **RESULT:** —
 
 ## TASK 29 — Regression audit of the existing application
 - **STATUS:** NOT STARTED.
-- **PURPOSE:** Prove the existing application is unaffected:
-  - all pre-V2 tests pass;
-  - replay and snapshot hashes for analysis, stress and construction are unchanged;
-  - lint, typecheck and build pass;
-  - Playwright runs, where Chrome is available;
-  - bundle size is checked.
 - **RESULT:** —
 
 ## TASK 30 — Final financial-methodology audit
 - **STATUS:** NOT STARTED.
-- **PURPOSE:** Re-derive every V2 formula against its documentation and tests:
-  - wording audit: no Buy, Sell, Undervalued or Overvalued; "Sharpe" is never
-    unqualified;
-  - "CML" is never applied to the Model CAL;
-  - historical and forward labels are kept separate.
 - **RESULT:** —
+
+## HOUSEKEEPING (outside V2) — InfoTip lint error
+- **STATUS:** Queued as a separate task (Q26). It is not part of any V2 commit.
 
 ---
 
@@ -645,51 +852,20 @@ T1 ─┬─ T2 ──────────────┐
     ├─ T5 ───────┼─ T6 ─ T7
     │            │       └─ T8 ─ T9
     │            │            └─ T10 ─ T11 ─ T12 ─┬─ T16 ─┐
-    ├─ T13 ─ T14 ┘ (Street views plug into T5)    ├─ T17 ─┼─ T18
-    ├─ T15 ───────────────────────────────────────┘       │
-    └─ T19 ──────────────────────────── T20 ─┬─ T21       │
-                                             ├─ T22       │
-                                             ├─ T23       │
-                                     T14 ────┼─ T24       │
-                                             └─ T25 ◄─────┘ (T16/T17)
+    ├─ T13a ─ T14 ┘ (fixture-backed Street views)  ├─ T17 ─┼─ T18
+    │   └─ T13b (BLOCKED — provider qualification) │       │
+    ├─ T15 ────────────────────────────────────────┘       │
+    └─ T19 ──────────────────────────── T20 ─┬─ T21        │
+                                             ├─ T22        │
+                                             ├─ T23        │
+                                    T14 ─────┼─ T24        │
+                                             └─ T25 ◄──────┘ (T16/T17)
 T26 runs alongside each task · T27–T30 close V2
 ```
 
-## Open questions
-
-The full wording and recommendations are in the plan review.
-
-| # | Topic | Blocks |
-| --- | --- | --- |
-| Q1 | Which covariance defines β and σ_m (sample β with LW Σ vs one augmented LW matrix vs sample everywhere) | T3, T4, T11 |
-| Q2 | Risk window anchored to today's last finalized session, not the analysis end | T3 |
-| Q3 | Limited history inside the risk window: shorten and disclose, or refuse | T3, T20 |
-| Q4 | Forward universe includes 0% candidate rows | T3 |
-| Q5 | 1Y CMT bond-equivalent yield used as-is, or converted | T2 |
-| Q6 | τ fixed and recorded (it cancels in μ_BL); optimize on Σ, not Σ + M | T6 |
-| Q7 | Confidence mapping conventions and naming; absolute views only | T5, T6 |
-| Q8 | Frontier/tangency solver: active-set QP, CLA or FISTA + bisection | T8, T10 |
-| Q9 | Frontier constraints: long-only, no caps, CASH excluded, efficient branch only, point count | T8 |
-| Q10 | CAL and CML proxy beyond the tangency/market point (borrowing) | T11, T16 |
-| Q11 | "Existing Constructor Portfolios": re-solved on forward Σ, or the user's last proposal | T16 |
-| Q12 | SML "Individual Holdings" vs "BL Expected Returns" series | T11, T17 |
-| Q13 | Street provider, plan and display licence for a public deployment | T13 |
-| Q14 | Median availability, analyst count and updated date | T13, T14, T24 |
-| Q15 | Dividends: price-only view vs trailing yield | T14 |
-| Q16 | Price used for the Street return | T14 |
-| Q17 | OTC/ADR and non-USD targets | T14 |
-| Q18 | FY1/FY2 definition | T13, T24 |
-| Q19 | Where BL and the frontier recompute on edits (server vs isomorphic in the browser) | T12, T18 |
-| Q20 | Persistence and sharing of views across pages | T1, T5, T18 |
-| Q21 | Funding rules involving CASH; infeasible funding | T19 |
-| Q22 | Stock Lab union-universe model and frontier display | T20, T25 |
-| Q23 | Stock Lab historical window and beta label | T20, T21 |
-| Q24 | Stock Lab risk hero on the forward Σ; correlations from the sample Σ | T22 |
-| Q25 | Market-proxy point on the risk/return chart | T16 |
-| Q26 | Fix the pre-existing InfoTip lint error inside V2 or separately | T1 |
-
 ## External data service changes
 
-None planned. Street consensus is fetched by a server-only adapter in this
-repository. The risk-window and proxy histories use the existing market-data
-service routes unchanged; the existing micro-batcher splits batches above 21 symbols.
+None planned. Street consensus will be fetched by a server-only adapter in this
+repository once a provider is qualified. The risk-window and proxy histories use the
+existing market-data service routes unchanged; the existing micro-batcher splits
+batches above 21 symbols.
