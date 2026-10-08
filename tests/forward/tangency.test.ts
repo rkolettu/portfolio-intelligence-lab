@@ -138,7 +138,8 @@ function expectCertified(t: TangencyPortfolio, sigma: Matrix) {
   const c = t.certification;
   expect(c.scaled.scaledEquality!).toBeLessThanOrEqual(T.scaledEquality);
   expect(c.scaled.bound!).toBeLessThanOrEqual(T.bound);
-  expect(c.scaled.kkt!).toBeLessThanOrEqual(T.kkt);
+  // Q41: the authoritative KKT residual is relative to the gradient scale ‖2Σy‖∞.
+  expect(c.scaled.gradientScaledKktResidual!).toBeLessThanOrEqual(T.kkt);
   expect(c.economic.budget!).toBeLessThanOrEqual(T.budget);
   expect(c.economic.bound!).toBeLessThanOrEqual(T.bound);
   expect(c.economic.scaleIdentity!).toBeLessThanOrEqual(T.scaledEquality);
@@ -154,9 +155,15 @@ function expectCertified(t: TangencyPortfolio, sigma: Matrix) {
   t.weights.forEach((w, i) => expect(w).toBe(y[i] / t.solver.ySum!));
   expect(Math.abs(dot(mu.map((m) => m - t.riskFreeRate), y) / s - 1)).toBeLessThanOrEqual(T.scaledEquality);
   expect(Math.abs(t.yIdentitySharpe - s / Math.sqrt(variance(sigma, y))) / t.yIdentitySharpe).toBeLessThan(1e-14);
-  // KKT normalization: 2·λmax(Σ)·1ᵀy, minimumVariance's L·B with B = 1ᵀy.
+  // The gradient scale is ‖2Σy‖∞; the λmax-scaled residual is the same violation over
+  // 2·λmax(Σ)·1ᵀy and is recorded only as a diagnostic.
+  const g = sigma.map((row) => 2 * dot(row, y));
+  expect(c.scaled.gradientScale).toBe(Math.max(...g.map(Math.abs)));
   const L = 2 * jacobiEigen(sigma, { maxSweeps: CONSTRUCTION_METHODOLOGY.limits.eigenSweeps }).values.at(-1)!;
-  expect(c.scaled.kktNormalization).toBe(L * t.solver.ySum!);
+  expect(c.scaled.lambdaMaxScaledKktResidual).toBeCloseTo(
+    (c.scaled.gradientScaledKktResidual! * c.scaled.gradientScale!) / (L * t.solver.ySum!),
+    20,
+  );
   if (t.solver.method === "active_set") {
     expect(t.solver.maxIterations).toBe(Math.max(50, 2 * mu.length ** 2));
     expect(t.solver.iterations).toBeLessThanOrEqual(t.solver.maxIterations!);
@@ -688,7 +695,8 @@ describe("the certifiers reject each kind of violation", () => {
   const c = a.map((x) => x / s);
   const L = 2 * jacobiEigen(SIGMA, { maxSweeps: CONSTRUCTION_METHODOLOGY.limits.eigenSweeps }).values.at(-1)!;
   const y = t.solver.y!;
-  const certY = (v: number[]) => certifyTangencyY({ y: v, scaledExcessReturns: c, covariance: SIGMA, normalization: L });
+  const certY = (v: number[]) =>
+    certifyTangencyY({ y: v, scaledExcessReturns: c, covariance: SIGMA, lambdaMaxNormalization: L });
   const econ = (o: Partial<Parameters<typeof certifyTangencyEconomics>[0]> = {}) =>
     certifyTangencyEconomics({
       weights: t.weights,
@@ -707,7 +715,11 @@ describe("the certifiers reject each kind of violation", () => {
     expect(certY(y).failures).toEqual([]);
     // 100% in the top security: feasible, not optimal.
     const start = c.map((_, i) => (i === c.indexOf(1) ? 1 : 0));
-    expect(certY(start).failures).toEqual([expect.stringMatching(/^y KKT residual/)]);
+    expect(certY(start).failures).toEqual([expect.stringMatching(/^gradient-scaled KKT residual/)]);
+    // A zero y has no gradient scale: a typed failure, no substitute scale.
+    const zero = certY([0, 0, 0]);
+    expect(zero.certification.gradientScale).toBe(0);
+    expect(zero.failures).toContainEqual(expect.stringMatching(/^gradient scale 0 is not positive and finite/));
     expect(certY(y.map((v) => v * (1 + 1e-6))).failures).toContainEqual(expect.stringMatching(/^scaled equality residual/));
     expect(certY(y.map((v, i) => (i === 0 ? -1e-6 : v))).failures).toContainEqual(expect.stringMatching(/^y bound residual/));
   });
@@ -724,6 +736,57 @@ describe("the certifiers reject each kind of violation", () => {
     expect(econ({ expectedReturns: mu.map(() => RF - 0.01) }).failures).toContainEqual(
       expect.stringMatching(/is not positive/),
     );
+  });
+});
+
+describe("Q41: scale-invariant KKT certification (gradient scale ‖2Σy‖∞)", () => {
+  // The reviewer's adversarial case: two quiet securities and one with volatility
+  // 1e4× larger, which makes 2·λmax huge relative to the tangency's own gradient.
+  const S = [
+    [1e-4, 0, 0],
+    [0, 1e-4, 0],
+    [0, 0, 1e4],
+  ];
+  const mu = [0.05, 0.045, 0.041];
+
+  it("finds the true maximum-Sharpe portfolio where the λmax scale would accept a wrong one", () => {
+    const t = tangency(S, mu);
+    expectCertified(t, S);
+    // Diagonal Σ, all excess returns positive: w ∝ Σ⁻¹a = (100, 50, 1e-7) exactly,
+    // Sharpe = √Σ aᵢ²/σᵢ² = √(1 + 0.25 + 1e-10) — essentially (2/3, 1/3, 0).
+    const z = mu.map((m, i) => (m - RF) / S[i][i]);
+    const sum = z.reduce((u, v) => u + v, 0);
+    t.weights.forEach((w, i) => expect(Math.abs(w - z[i] / sum)).toBeLessThan(1e-14));
+    expect(t.weights[0]).toBeCloseTo(2 / 3, 8);
+    expect(t.forwardModelSharpe).toBeCloseTo(Math.sqrt(1.25 + 1e-10), 12);
+    const o = oracle(S, mu.map((m) => m - RF));
+    expect(Math.abs(t.forwardModelSharpe - o.sharpe) / o.sharpe).toBeLessThan(1e-12);
+  });
+
+  it("the previously accepted 100%-in-one portfolio fails the authoritative certificate", () => {
+    const a = mu.map((m) => m - RF);
+    const s = Math.max(...a);
+    const L = 2 * jacobiEigen(S, { maxSweeps: CONSTRUCTION_METHODOLOGY.limits.eigenSweeps }).values.at(-1)!;
+    const wrong = certifyTangencyY({
+      y: [1, 0, 0],
+      scaledExcessReturns: a.map((x) => x / s),
+      covariance: S,
+      lambdaMaxNormalization: L,
+    });
+    // The λmax-scaled diagnostic would have passed it; it no longer decides.
+    expect(wrong.certification.lambdaMaxScaledKktResidual!).toBeLessThan(1e-8);
+    expect(wrong.certification.gradientScaledKktResidual!).toBeGreaterThan(0.1);
+    expect(wrong.failures).toEqual([expect.stringMatching(/^gradient-scaled KKT residual/)]);
+  });
+
+  it("a zero gradient scale inside the solver is a typed numerical failure", () => {
+    // A linear solve that returns a zero face optimum: ‖2Σx‖∞ = 0 at the face.
+    const zeroFace = (_A: number[][], b: number[]) => b.map((_, i) => (i === b.length - 1 ? 1 : 0));
+    expect(outcome(SIGMA, [0.1, 0.07, 0.12], { solve: zeroFace })).toMatchObject({
+      available: false,
+      code: "numerical_failure",
+      cause: "invalid_gradient_scale",
+    });
   });
 });
 

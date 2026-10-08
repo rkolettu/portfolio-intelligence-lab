@@ -17,6 +17,7 @@ type Matrix = readonly (readonly number[])[];
 /** Why a solve produced no point. */
 export type ActiveSetFailureCause =
   | "invalid_inputs"
+  | "invalid_gradient_scale"
   | "no_free_variables"
   | "singular_face"
   | "iteration_cap"
@@ -79,9 +80,14 @@ function faceOptimum(
   return { x: solution.slice(0, m), y: solution.slice(m) };
 }
 
-/** Active-set solve from a feasible `start`. `optimalityTolerance` is the absolute
- * multiplier threshold for releasing a bound (the caller passes its normalized KKT
- * tolerance × its normalization), so stopping and certification agree.
+/** Active-set solve from a feasible `start`. A bound is released when its multiplier
+ * is below −threshold, the same threshold the caller certifies against:
+ * - releaseScale "absolute" (default; Task 8 frontier): threshold =
+ *   optimalityTolerance, an absolute number the caller passes (its normalized KKT
+ *   tolerance × its normalization);
+ * - releaseScale "gradient" (Q41; tangency): threshold = optimalityTolerance ×
+ *   ‖2Σx‖∞ at the face optimum. A zero or non-finite gradient scale stops the solve
+ *   (invalid_gradient_scale); no other scale is substituted.
  * `maxIterations` is the caller's cap (activeSetIterationCap for the forward
  * model). `solve` defaults to the existing solveLinear; tests inject others. */
 export function activeSetQp(input: {
@@ -90,6 +96,7 @@ export function activeSetQp(input: {
   f: readonly number[];
   start: readonly number[];
   optimalityTolerance: number;
+  releaseScale?: "absolute" | "gradient";
   maxIterations: number;
   solve?: (A: number[][], b: number[]) => number[] | null;
 }): ActiveSetResult {
@@ -186,7 +193,24 @@ export function activeSetQp(input: {
 
     // At the face optimum: bound multipliers s_i = (2Σx)_i − (Eᵀy)_i must be ≥ 0.
     let release = -1;
-    let most = -optimalityTolerance;
+    let threshold = optimalityTolerance;
+    if (input.releaseScale === "gradient") {
+      let scale = 0;
+      for (let i = 0; i < n; i++) {
+        let g = 0;
+        for (let j = 0; j < n; j++) g += 2 * sigma[i][j] * x[j];
+        scale = Math.max(scale, Math.abs(g));
+      }
+      if (!(Number.isFinite(scale) && scale > 0))
+        return fail(
+          "numerical_failure",
+          "invalid_gradient_scale",
+          `The gradient scale ‖2Σx‖∞ = ${scale} is not positive and finite; no other scale is substituted.`,
+          iteration,
+        );
+      threshold = optimalityTolerance * scale;
+    }
+    let most = -threshold;
     for (const i of pinned) {
       let g = 0;
       for (let j = 0; j < n; j++) g += 2 * sigma[i][j] * x[j];

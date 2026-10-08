@@ -259,8 +259,9 @@ export const FORWARD_METHODOLOGY = {
     /** Tangency exists only when max aᵢ > this (whatever the sign of the MRP). */
     positiveExcessReturnTolerance: 1e-12,
     /** The Q34 tolerances where they apply: the scaled equality and the budget at the
-     * weight tolerance, bounds at the weight tolerance, KKT at the stationarity
-     * tolerance over 2·λmax(Σ)·1ᵀy (minimumVariance's L·B with B = 1ᵀy). */
+     * weight tolerance, bounds at the weight tolerance. KKT (Q41): ≤ the
+     * stationarity tolerance RELATIVE TO THE GRADIENT SCALE ‖2Σy‖∞, used for both the
+     * solver's release rule and the certificate (scale-invariant). */
     tolerances: {
       scaledEquality: CONSTRUCTION_METHODOLOGY.tolerances.weight,
       budget: CONSTRUCTION_METHODOLOGY.tolerances.weight,
@@ -268,6 +269,17 @@ export const FORWARD_METHODOLOGY = {
       kkt: CONSTRUCTION_METHODOLOGY.tolerances.stationarity,
       binding: CONSTRUCTION_METHODOLOGY.tolerances.binding,
     },
+  },
+  /** Task 11 line engine: definitions and semantic breakpoints only, no chart domain.
+   * The Market CML Proxy exists only when MRP > tangency.positiveExcessReturnTolerance
+   * (the same 1e-12 concept); the SML exists for every valid MRP. */
+  lines: {
+    modelCal: "E[R](σ) = Rf + Sharpe_t·σ; solid 0 → σ_t, dashed beyond (borrowing at Rf)",
+    marketCmlProxy:
+      "E[R](σ) = Rf + (MRP/σ_m)·σ; solid 0 → σ_m, dashed beyond; unavailable when MRP ≤ 1e-12",
+    securityMarketLine: "E[R](β) = capmRequiredReturn(Rf, β, MRP) for every valid MRP",
+    /** Anchor identities hold within 4·ε·(|intercept| + |slope·x| + |y|). */
+    anchorAllowanceUlps: 4,
   },
   /** Q38: the deterministic primal active-set solver (frontier and tangency).
    * Bounds both join and are released, so no n + 2 bound exists. A pinned set that

@@ -567,6 +567,7 @@ export type FrontierCertification =
 export type FrontierFailureCause =
   | "invalid_scale"
   | "invalid_inputs"
+  | "invalid_gradient_scale"
   | "no_free_variables"
   | "singular_face"
   | "iteration_cap"
@@ -661,11 +662,14 @@ export type TangencyScaledCertification = {
   scaledEquality: number | null;
   /** max(0, −min y) ≤ 1e-10 */
   bound: number | null;
-  /** Smallest achievable stationarity / dual-feasibility violation over the one
-   * multiplier, over 2·λmax(Σ)·1ᵀy, ≤ 1e-8 */
-  kkt: number | null;
-  /** 2·λmax(Σ)·1ᵀy */
-  kktNormalization: number | null;
+  /** ‖2Σy‖∞: the gradient scale (Q41). Must be positive and finite. */
+  gradientScale: number | null;
+  /** AUTHORITATIVE (Q41): the smallest achievable stationarity / dual-feasibility
+   * violation over the one multiplier, divided by ‖2Σy‖∞. Must be ≤ 1e-8. */
+  gradientScaledKktResidual: number | null;
+  /** DIAGNOSTIC ONLY (never pass/fail): the same violation over 2·λmax(Σ)·1ᵀy, the
+   * Task 8 / minimumVariance convention. */
+  lambdaMaxScaledKktResidual: number | null;
 };
 
 /** Task 10: certification of the final normalized portfolio, in original economics. */
@@ -757,15 +761,91 @@ export type TangencyOutcome =
       } | null;
     };
 
-/** A straight line E = intercept + slope × x drawn through an anchor point. The
- * CAL and the Market CML Proxy are solid from x = 0 to the anchor and dashed beyond
- * it (borrowing at Rf, outside the lab's modeled allocation constraints). */
-export type CapitalMarketLine = {
-  id: "model_cal" | "market_cml_proxy" | "security_market_line";
-  axis: "volatility" | "beta";
-  intercept: number;
-  slope: number;
-  anchor: { x: number; y: number };
-  /** x where the solid segment ends; null when the whole line is one treatment (SML). */
-  solidUntil: number | null;
+/** Task 11 line engine. Each line is a DEFINITION (intercept, slope) plus its
+ * semantic breakpoint; no chart domain, colour or dash style lives here. The chart
+ * layer draws capital lines solid from σ = 0 to `solidThroughVolatility` and dashed
+ * beyond it (borrowing/leverage at Rf), and evaluates the SML over its own β axis. */
+type LineLineage = {
+  methodologyVersion: string;
+  riskModelHash: string;
+  marketProxy: MarketProxy;
+  riskWindow: RiskWindow;
+  riskFreeRate: number;
+  riskFreeObservationDate: string;
+  /** SHA-256 of the line's canonical economic payload. */
+  lineHash: string;
 };
+
+/** Model Capital Allocation Line: E[R](σ) = Rf + Sharpe_t·σ through the certified
+ * Task 10 tangency. Never called a CML. */
+export type ModelCal = LineLineage & {
+  kind: "model_cal";
+  /** Rf */
+  intercept: number;
+  /** The tangency's Forward Model Sharpe */
+  slope: number;
+  /** σ_t: solid from 0 to here; beyond it requires borrowing at Rf. */
+  solidThroughVolatility: number;
+  tangencyVolatility: number;
+  /** μ_BLᵀw_t (12M) */
+  tangencyExpectedReturn: number;
+  tangencyHash: string;
+  /** |Rf + slope·σ_t − μ_t|: the anchor identity, within the rounding allowance. */
+  anchorResidual: number;
+  anchorAllowance: number;
+};
+
+export type ModelCalOutcome =
+  | { available: true; line: ModelCal }
+  | {
+      available: false;
+      /** The tangency's own unavailability, carried through unchanged. */
+      code: Extract<TangencyOutcome, { available: false }>["code"];
+      reason: string;
+      cause: FrontierFailureCause | null;
+    };
+
+/** Market CML Proxy: E[R](σ) = Rf + (MRP/σ_m)·σ through (σ_m, Rf + MRP), from the
+ * Task 4 expected market return and the Task 3 proxy volatility. */
+export type MarketCmlProxy = LineLineage & {
+  kind: "market_cml_proxy";
+  marketRiskPremium: number;
+  /** Rf */
+  intercept: number;
+  /** MRP / σ_m */
+  slope: number;
+  /** σ_m = √Σ_mm from the Task 3 risk model. */
+  marketProxyVolatility: number;
+  /** Rf + MRP: the Task 4 canonical expected market return. */
+  expectedMarketReturn: number;
+  /** σ_m: solid from 0 to here; beyond it requires borrowing at Rf. */
+  solidThroughVolatility: number;
+  /** |Rf + slope·σ_m − E[R_m]|: the anchor identity, within the rounding allowance. */
+  anchorResidual: number;
+  anchorAllowance: number;
+};
+
+export type MarketCmlProxyOutcome =
+  | { available: true; line: MarketCmlProxy }
+  | {
+      available: false;
+      code: "invalid_inputs" | "market_proxy_has_no_positive_expected_excess_return";
+      reason: string;
+      marketRiskPremium: number | null;
+    };
+
+/** Security Market Line: E[R](β) = Rf + β·MRP, evaluated ONLY through the Task 4
+ * capmRequiredReturn. Defined for every valid MRP: upward, flat or downward. */
+export type SecurityMarketLine = LineLineage & {
+  kind: "security_market_line";
+  marketRiskPremium: number;
+  /** Rf */
+  intercept: number;
+  /** MRP */
+  slope: number;
+  direction: "upward" | "flat" | "downward";
+};
+
+export type SecurityMarketLineOutcome =
+  | { available: true; line: SecurityMarketLine }
+  | { available: false; code: "invalid_inputs"; reason: string };

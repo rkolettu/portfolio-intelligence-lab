@@ -930,12 +930,18 @@ portfolio, `buildTangencyPortfolio`):
 - **Certification of the scaled y-problem** (independent of the solver's
   multipliers):
   - |(a/s)ᵀy − 1| ≤ 1e-10 and max(0, −min y) ≤ 1e-10.
-  - KKT ≤ 1e-8, normalized by 2·λmax(Σ)·1ᵀy (`minimumVariance`'s L·B, with
-    B = 1ᵀy).
-    - The residual is the exact minimum, over the one multiplier, of the largest
+  - **KKT (Q41, scale-invariant):** the raw residual divided by the gradient scale
+    ‖2Σy‖∞ must be ≤ 1e-8.
+    - The raw residual is the exact minimum, over the one multiplier, of the largest
       stationarity or dual-feasibility violation.
-    - Because each (a/s)ᵢ ≤ 1, 1ᵀy ≥ 1. The solver releases only below
-      −1e-8·2λmax, so it is never looser than this check.
+    - The gradient scale must be positive and finite; otherwise the result is a
+      typed `numerical_failure` (`invalid_gradient_scale`) and no other scale is
+      substituted.
+    - The solver's release rule uses the same scale: a bound is released when its
+      multiplier is below −1e-8·‖2Σy‖∞. Solver and certificate agree on what counts
+      as a meaningful violation.
+    - The earlier 2·λmax(Σ)·1ᵀy normalization is kept as
+      `lambdaMaxScaledKktResidual`, a diagnostic only. It never decides pass/fail.
 - **Certification of the final portfolio:**
   - |Σw − 1| ≤ 1e-10 and w ≥ 0;
   - |aᵀy/s − 1| ≤ 1e-10;
@@ -964,12 +970,21 @@ portfolio, `buildTangencyPortfolio`):
   - a forced cycle, a singular face and a solve that fails certification (nothing
     is published), and invalid, asymmetric, indefinite and singular Σ;
   - each certifier rejecting each kind of violation.
-- **Validity domain (pending Q41):** the KKT check is normalized by 2·λmax(Σ)·1ᵀy,
-  the Task 8 and `minimumVariance` convention. That normalization is not
-  scale-invariant. Under the production Ledoit–Wolf Σ its condition number is at
-  most n/δ, and results match a brute-force maximum-Sharpe search to about 1e-15.
-  For adversarial Σ (near-singular, or volatilities spread by 1e5) a sub-optimal
-  portfolio can pass. The same applies to Task 8 frontier points.
+- **Why the gradient scale (Q41):** a 2·λmax normalization is not scale-invariant.
+  When one security's variance dwarfs the tangency's own, it can accept a materially
+  sub-optimal portfolio on a valid covariance matrix. Example:
+  Σ = diag(1e-4, 1e-4, 1e4) would accept 100% in one security (Sharpe 1.000)
+  instead of the true optimum (Sharpe 1.118).
+
+**Developer note — KKT scale convention.** The Task 8 frontier and the existing
+`minimumVariance` (Constructor) keep the historical 2·λmax(Σ) KKT scaling inherited
+from the Constructor. The forward risk model always supplies a Ledoit–Wolf
+covariance: its condition number is at most n/δ, and frontier results match
+independent brute-force optima on every seeded and production-like model. That
+certificate is still not scale-invariant on adversarial covariance matrices (for
+example near-singular ones, or volatilities spread by 1e5). Only the tangency uses
+the gradient-scaled certificate (Q41). Unifying solver certification would be a
+separate task.
 - **Tangency hash:** `tangencyHash` is a SHA-256 of a canonical payload:
   - the version, risk-model hash, proxy and window;
   - Rf with its observation date;

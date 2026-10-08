@@ -5,7 +5,8 @@
 // homogeneous convex problem min yᵀΣy s.t. (a/s)ᵀy = 1, y ≥ 0 with a = μ_BL − Rf·1
 // and s = max aᵢ, by the Task 8 active-set QP (one equality row; releases, the cycle
 // guard and the max(50, 2n²) cap), then w = y / Σᵢ yᵢ. The scaled y-problem and the
-// final portfolio are each certified independently. Pure and browser-safe.
+// final portfolio are each certified independently; Q41: the solver's release rule
+// and the KKT certificate both use the gradient scale ‖2Σy‖∞. Pure and browser-safe.
 import { CONSTRUCTION_METHODOLOGY, FORWARD_METHODOLOGY } from "@/config/methodology";
 import { dot, matVec } from "@/lib/analytics/construction/common";
 import { jacobiEigen, validateCovariance } from "@/lib/analytics/matrix";
@@ -67,37 +68,43 @@ const cancellation = (sigma: Matrix, v: readonly number[]) => {
 };
 
 /** Independent certification of the scaled y-problem: the scaled equality, the
- * bounds and the KKT residual over 2·λmax(Σ)·1ᵀy (minimumVariance's L·B with
- * B = 1ᵀy). No solver multipliers or working set are used. */
+ * bounds and (Q41) the KKT residual relative to the gradient scale ‖2Σy‖∞, which
+ * must be positive and finite. The λmax-scaled residual (Task 8 / minimumVariance
+ * convention) is recorded as a diagnostic only and never decides pass/fail. No
+ * solver multipliers or working set are used. */
 export function certifyTangencyY(input: {
   y: readonly number[];
   scaledExcessReturns: readonly number[];
   covariance: Matrix;
-  /** 2·λmax(Σ). */
-  normalization: number;
+  /** 2·λmax(Σ), for the diagnostic residual only. */
+  lambdaMaxNormalization: number;
 }): { certification: TangencyScaledCertification; failures: string[] } {
   const { y, scaledExcessReturns: c } = input;
   const scaledEquality = Math.abs(dot(c, y) - 1);
   const bound = Math.max(0, ...y.map((v) => -v));
   const ySum = y.reduce((s, v) => s + v, 0);
-  const kktNormalization = input.normalization * ySum;
   const g = matVec(input.covariance, y).map((v) => 2 * v);
+  const gradientScale = Math.max(...g.map(Math.abs));
+  const validScale = Number.isFinite(gradientScale) && gradientScale > 0;
   const free = y.flatMap((v, i) => (v > T.binding ? [i] : []));
-  const kkt =
-    free.length && kktNormalization > 0
-      ? oneMultiplierKkt(g, c, free) / kktNormalization
-      : Infinity;
+  const raw = free.length ? oneMultiplierKkt(g, c, free) : Infinity;
+  const gradientScaledKktResidual = validScale ? raw / gradientScale : Infinity;
+  const lambdaMaxScaledKktResidual = raw / (input.lambdaMaxNormalization * ySum);
   const failures = [
     ...(within(scaledEquality, T.scaledEquality) ? [] : [`scaled equality residual ${scaledEquality}`]),
     ...(within(bound, T.bound) ? [] : [`y bound residual ${bound}`]),
-    ...(within(kkt, T.kkt) ? [] : [`y KKT residual ${kkt}`]),
+    ...(validScale ? [] : [`gradient scale ${gradientScale} is not positive and finite`]),
+    ...(within(gradientScaledKktResidual, T.kkt)
+      ? []
+      : [`gradient-scaled KKT residual ${gradientScaledKktResidual}`]),
   ];
   return {
     certification: {
       scaledEquality: finiteOrNull(scaledEquality),
       bound: finiteOrNull(bound),
-      kkt: finiteOrNull(kkt),
-      kktNormalization: finiteOrNull(kktNormalization),
+      gradientScale: finiteOrNull(gradientScale),
+      gradientScaledKktResidual: finiteOrNull(gradientScaledKktResidual),
+      lambdaMaxScaledKktResidual: finiteOrNull(lambdaMaxScaledKktResidual),
     },
     failures,
   };
@@ -266,7 +273,8 @@ export function buildTangencyPortfolio(input: {
         : `Σ is not a valid covariance matrix: ${validation.reason}`,
       { maxExcessReturn: s },
     );
-  // KKT normalization exactly as minimumVariance computes it: L = 2·λmax(Σ).
+  // 2·λmax(Σ), as minimumVariance computes it: for the diagnostic λmax-scaled KKT
+  // residual only (Q41: pass/fail uses the gradient scale).
   const eigen = jacobiEigen(sigma, { maxSweeps: CONSTRUCTION_METHODOLOGY.limits.eigenSweeps });
   const L = 2 * eigen.values.at(-1)!;
   if (!eigen.converged || !Number.isFinite(L) || !(L > 0))
@@ -301,8 +309,9 @@ export function buildTangencyPortfolio(input: {
       E: [scaled],
       f: [1],
       start: tickers.map((_, i) => (i === k ? 1 : 0)),
-      // Strictest form of the certified KKT tolerance: 1ᵀy ≥ 1 always.
-      optimalityTolerance: T.kkt * L,
+      // Q41: release decisions use the certificate's own scale, ‖2Σy‖∞.
+      optimalityTolerance: T.kkt,
+      releaseScale: "gradient",
       maxIterations: cap,
       solve: input.solve,
     });
@@ -353,7 +362,12 @@ export function buildTangencyPortfolio(input: {
   const expectedReturn = dot(w, mu);
   const excessReturn = expectedReturn - rf;
   const yIdentitySharpe = s / Math.sqrt(yVariance);
-  const scaledCheck = certifyTangencyY({ y, scaledExcessReturns: scaled, covariance: sigma, normalization: L });
+  const scaledCheck = certifyTangencyY({
+    y,
+    scaledExcessReturns: scaled,
+    covariance: sigma,
+    lambdaMaxNormalization: L,
+  });
   const economicCheck = certifyTangencyEconomics({
     weights: w,
     y,
@@ -374,7 +388,15 @@ export function buildTangencyPortfolio(input: {
     return unavailable(
       "numerical_failure",
       `Failed certification (${failures.join("; ")}); no tangency portfolio is reported.`,
-      { cause: "certification_failed", maxExcessReturn: s, solver: record, certification },
+      {
+        cause:
+          certification.scaled.gradientScale === null || !(certification.scaled.gradientScale > 0)
+            ? "invalid_gradient_scale"
+            : "certification_failed",
+        maxExcessReturn: s,
+        solver: record,
+        certification,
+      },
     );
 
   const lower = tickers.map(() => 0);
