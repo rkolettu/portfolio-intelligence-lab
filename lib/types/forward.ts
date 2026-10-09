@@ -832,7 +832,8 @@ export type MarketCmlProxy = LineLineage & {
 };
 
 /** Unavailable when MRP ≤ 1e-12 (`market_proxy_has_no_positive_expected_excess_return`:
- * Rf weakly dominates the proxy, so a flat or downward line is never drawn instead). */
+ * the proxy offers no meaningful expected excess return — Rf weakly dominates it when
+ * MRP ≤ 0 — so a flat or downward line is never drawn instead). */
 export type MarketCmlProxyOutcome =
   | { available: true; line: MarketCmlProxy }
   | {

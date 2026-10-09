@@ -1042,11 +1042,16 @@ separate task.
     downward (MRP < 0). All three are valid model states that show the
     consequences of the MRP assumption. The SML is never withheld or clamped.
 - **No-view relationship.** With no active BL views and MRP > 1e-12, the Model CAL
-  slope never exceeds the Market CML Proxy slope.
+  slope never exceeds the Market CML Proxy slope in exact arithmetic.
   - Under the CAPM prior aᵢ = (MRP/σ_m²)·Σ_im on the same Ledoit–Wolf Σ. So any
     long-only w has Sharpe = (MRP/σ_m)·ρ(w, m) ≤ MRP/σ_m (Cauchy–Schwarz).
   - Equality only when the portfolio is perfectly correlated with the proxy, for
     example when the proxy itself is held.
+  - In floating point, μ_BL is stored as Rf + β·MRP and the tangency subtracts Rf
+    again, which costs up to half an ulp of μ in each excess return. When the proxy
+    is held and the MRP is tiny (≤ 1e-5), that rounding can put the Model CAL slope
+    above the CML proxy slope by more than 1e-12 relative, though by at most about
+    2e-16 absolute. The test tolerance for this case is open question Q42.
   - With active views no ordering is imposed: views deliberately move expected
     returns away from the CAPM prior.
 - **Line hash.** Each line carries `lineHash`, a SHA-256 of its economic lineage

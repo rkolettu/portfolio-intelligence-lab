@@ -168,13 +168,14 @@ export function buildMarketCmlProxy(input: {
   if (!Number.isFinite(sigmaM) || !(sigmaM > 0))
     return invalid("The market proxy's model volatility σ_m must be positive and finite.");
 
-  // At or below the tolerance the risk-free asset weakly dominates the proxy: no
-  // flat or downward line is drawn in place of a CML proxy.
+  // At or below the tolerance the proxy offers no meaningful expected excess return
+  // (for MRP ≤ 0 the risk-free asset weakly dominates it; 0 < MRP ≤ 1e-12 is
+  // indistinguishable from zero): no flat or downward line is drawn in its place.
   if (!(mrp > MRP_TOLERANCE))
     return {
       available: false,
       code: "market_proxy_has_no_positive_expected_excess_return",
-      reason: `The market proxy's expected excess return (the Market Risk Premium, ${mrp}) is zero or negative (not above the ${MRP_TOLERANCE} tolerance), so the risk-free asset weakly dominates the proxy in mean/variance space and no Capital Market Line proxy is drawn. The Market Risk Premium assumption itself is unchanged.`,
+      reason: `The market proxy's expected excess return (the Market Risk Premium, ${mrp}) is zero, negative or too small to distinguish from zero (not above the ${MRP_TOLERANCE} tolerance), so the proxy offers no meaningful expected return above the risk-free rate and no Capital Market Line proxy is drawn. The Market Risk Premium assumption itself is unchanged.`,
       marketRiskPremium: mrp,
     };
 

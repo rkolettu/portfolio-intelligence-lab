@@ -1045,7 +1045,8 @@ substitute the CapIQ value.**
     - build passes.
 
 ## TASK 11 — Model CAL, Market CML Proxy and SML line engines
-- **STATUS:** IN PROGRESS.
+- **STATUS:** IMPLEMENTED; sign-off awaits Q42 (the no-view test tolerance at tiny
+  MRP).
 - **PURPOSE:** Compute the three lines as independent series:
   - Model CAL: E = Rf + [(E_t − Rf)/σ_t]σ;
   - Market CML Proxy: E = Rf + (MRP/σ_m)σ, with the proxy point (σ_m, Rf + MRP);
@@ -1062,7 +1063,42 @@ substitute the CapIQ value.**
   - with no views, every holding lies on the SML and the CAL slope is ≤ the CML
     slope;
   - the solid/dashed split falls at the point.
-- **RESULT:** —
+- **RESULT:**
+  - **Engine:** `lib/forward/lines.ts`. It returns definitions only (intercept,
+    slope, `solidThroughVolatility`), never a chart domain. Each formula has one
+    implementation:
+    - capital lines (CAL and CML proxy): `capitalLineReturnAt`;
+    - SML: `securityMarketLineReturnAt` → `capmRequiredReturn`.
+  - **Model CAL:** from the certified tangency (slope = Forward Model Sharpe).
+    - It is unavailable whenever the tangency is, and carries the tangency's code,
+      reason and cause unchanged.
+    - The anchor (σ_t, μ_t) must hold within 4·ε·(|Rf| + |slope·σ_t| + |μ_t|);
+      otherwise the result is a typed `numerical_failure`.
+  - **Market CML Proxy:** reuses the Task 4 E[R_m] and the Task 3 σ_m; neither is
+    recalculated.
+    - It is unavailable for MRP ≤ 1e-12, with the code
+      `market_proxy_has_no_positive_expected_excess_return`.
+    - Inconsistent lineage or values return `invalid_inputs`.
+  - **SML:** defined for every valid MRP. Its direction is `upward`, `flat` or
+    `downward`, by the exact sign of the MRP.
+  - **Line hashes:** SHA-256 of economic lineage only.
+  - **Tests:** 141.
+    - `lines.test.ts`: 29 (Agent A).
+    - `linesIndependent.test.ts`: 54 (Agent B). Expected values come from the spec;
+      a mutation run killed 22 of 24 mutants, and the 2 survivors are not gaps.
+    - `linesIntegration.test.ts`: 58 (Agent D). The real chain, one formula per
+      line, and the import boundary.
+  - **Historical engine:** no change to `lib/analytics`, `lib/backtest`,
+    `components` or `app`.
+  - **Worst anchor residual / allowance:** 0.104 for the CAL (7,824 tangencies) and
+    0.195 for the CML proxy (200,000 draws).
+  - **No-view relationship:** the CAL slope is ≤ the CML slope·(1 + 1e-12) at
+    MRP 0.02, 0.05 and 0.1 on every production fixture.
+    - The CAL is strictly lower (by 13–25%) when the proxy is not held.
+    - The two are equal within 1e-12 when it is held.
+    - At tiny MRP (≤ 1e-5) with the proxy held, rounding of Rf + β·MRP − Rf puts
+      the CAL above the CML by more than 1e-12 relative, though by ≤ 1.9e-16
+      absolute. That is Q42.
 
 ## TASK 12 — Forward-model orchestration, API route, snapshot and replay
 - **STATUS:** NOT STARTED.
@@ -1410,6 +1446,7 @@ T26 runs alongside each task · T27–T30 close V2
 | Q39 | Task 8 | **APPROVED (separate certification):** the top endpoint is the minimum-variance portfolio of the near-tie set T and is certified as that problem: budget and bound; zero weight outside T; `minimumVariance`'s stationarity and KKT on T; and max μ − μᵀw ≤ 1e-12 plus a floating-point allowance. Exact ties and near-ties use the same rule; one security in T is 100% as before. The exact target-return KKT is not applied to it. | — |
 | Q40 | Task 9 | **APPROVED:** Portfolio Theory shows only its own GMV by default, never the Constructor's Minimum Variance as another main frontier point. A concise methodology note explains the difference: "Portfolio Theory GMV uses the forward risk model and selected historical risk window. The Constructor uses its own analysis-period covariance and may therefore produce a different Minimum Variance allocation." Task 9 still proves in tests that the two agree when covariance, universe and CASH handling are identical and bounds do not bind. An optional comparison overlay may come later. | — |
 | Q41 | Task 10 | **APPROVED B (tangency only):** the KKT certificate and the release rule use the gradient scale ‖2Σy‖∞; the residual must be ≤ 1e-8, and an invalid scale is a typed `numerical_failure`. The λmax-scaled residual is kept as a diagnostic. The Task 8 frontier, `minimumVariance` and the Constructor keep the 2·λmax convention, documented as a developer limitation. | — |
+| Q42 | Task 11 | **OPEN:** what tolerance should the no-view test use? With the proxy held and 0 < MRP ≤ 1e-5, rounding μ = Rf + β·MRP and then subtracting Rf moves each excess return by up to half an ulp of μ. The Model CAL slope can then exceed the CML proxy slope by more than 1e-12 relative (up to 6.4e-6 at MRP 2e-12), but by ≤ 1.9e-16 absolute. **A (recommended):** pass when CAL ≤ CML·(1 + 1e-12) + (n+2)·ε·(Σ\|wᵢμᵢ\| + \|Rf\|)/σ_t, the rounding term the Task 10 economic certification already uses; test over the full range 1e-12 < MRP ≤ 0.2. **B:** keep 1e-12 relative and test only MRP ≥ 1e-4. **C:** compute excess returns without the round trip (changes certified Task 10 code; not recommended). The runtime engine imposes no ordering, so no output changes under any option. | Task 11 sign-off |
 
 ## External data service changes
 
