@@ -994,6 +994,71 @@ separate task.
   (sorted ticker) order first, so equivalent orderings give the same result and
   hash. Timestamps, labels and display state are excluded.
 
+**Lines: Model CAL, Market CML Proxy and SML** (Task 11):
+- **Three definitions, not drawings.** Each line is returned as a definition
+  (intercept and slope) with its semantic breakpoint. The finance engine holds no
+  chart domain, colour or dash style, and never hard-codes a chart extension. The
+  chart (later) draws each capital line solid from 0 to its breakpoint and dashed
+  from there to its own x-axis maximum. The SML is evaluated over the chart's own β
+  axis.
+- **Model CAL** (never called a "CML"): E[R](σ) = Rf + Sharpe_t·σ, from the
+  certified Task 10 tangency.
+  - **Definition:** intercept = Rf, slope = the Tangency Forward Model Sharpe,
+    `solidThroughVolatility` = σ_t.
+  - **Anchors:** it passes through (0, Rf) and (σ_t, μ_t). The second is checked:
+    |Rf + slope·σ_t − μ_t| ≤ 4·ε·(|Rf| + |slope·σ_t| + |μ_t|), the same rounding
+    allowance for every anchor identity.
+  - **Availability:** unavailable whenever the tangency is, and it carries that
+    reason unchanged (no risky assets, no positive expected excess return, a
+    tangency numerical failure). No line is manufactured.
+  - **Dashed part:** σ_t → the chart's x-axis maximum requires borrowing/leverage at
+    the assumed risk-free rate and is outside the lab's modeled allocation
+    constraints (long-only, fully invested).
+- **Market CML Proxy:** E[R](σ) = Rf + (MRP/σ_m)·σ, using the selected market proxy.
+  - **Reused values:** E[R_m] = Rf + MRP is the Task 4 canonical expected market
+    return and σ_m the Task 3 proxy volatility. Neither is recalculated.
+  - **Definition:** slope = MRP/σ_m. It passes through (0, Rf) and
+    (σ_m, Rf + MRP), checked by the same anchor allowance. `solidThroughVolatility`
+    = σ_m, with the same borrowing/leverage explanation beyond it.
+  - **Availability:** unavailable when MRP ≤ 1e-12 (the tangency's
+    `positiveExcessReturnTolerance`), with the reason
+    `market_proxy_has_no_positive_expected_excess_return`.
+    - At or below that threshold the proxy offers no meaningful expected excess
+      return. For MRP ≤ 0 the risk-free asset weakly dominates it in mean/variance
+      space, and a positive MRP of at most 1e-12 is numerically indistinguishable
+      from zero. A CML proxy would be economically misleading, and a flat or
+      downward line is never drawn in its place.
+    - The MRP assumption itself is unchanged and still visible elsewhere. Only this
+      line is withheld.
+- **Two separate lines.** The Model CAL (BL expected returns and the optimized
+  tangency) and the Market CML Proxy (Rf, the explicit MRP and the proxy's model
+  volatility) answer different questions and are never merged, blended or averaged.
+- **Security Market Line:** E[R](β) = Rf + β·MRP.
+  - **One implementation:** it is evaluated only through `capmRequiredReturn`, the
+    function behind the CAPM prior, CASH and the expected market return.
+  - **Definition:** intercept = Rf, slope = MRP. β = 0 gives Rf and β = 1 gives
+    Rf + MRP.
+  - **Defined for every valid MRP:** upward (MRP > 0), flat at Rf (MRP = 0) and
+    downward (MRP < 0). All three are valid model states that show the
+    consequences of the MRP assumption. The SML is never withheld or clamped.
+- **No-view relationship.** With no active BL views and MRP > 1e-12, the Model CAL
+  slope never exceeds the Market CML Proxy slope.
+  - Under the CAPM prior aᵢ = (MRP/σ_m²)·Σ_im on the same Ledoit–Wolf Σ. So any
+    long-only w has Sharpe = (MRP/σ_m)·ρ(w, m) ≤ MRP/σ_m (Cauchy–Schwarz).
+  - Equality only when the portfolio is perfectly correlated with the proxy, for
+    example when the proxy itself is held.
+  - With active views no ordering is imposed: views deliberately move expected
+    returns away from the CAPM prior.
+- **Line hash.** Each line carries `lineHash`, a SHA-256 of its economic lineage
+  only:
+  - **Model CAL:** `tangencyHash`, intercept, slope and σ_t.
+  - **Market CML Proxy:** risk-model hash, proxy, window, Rf with its observation
+    date, MRP and σ_m.
+  - **SML:** risk-model hash, proxy, window, Rf with its observation date and MRP.
+
+  Labels, chart domain, colours, dash styles, timestamps and UI state are excluded.
+- **Out of scope here:** no chart, series toggle, domain or Portfolio Theory UI.
+
 **Local assumption state.** One state holds the risk window, market proxy, MRP and
 per-ticker views. Portfolio Theory and Stock Lab share it.
 - It is stored only in this browser, under the versioned key

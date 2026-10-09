@@ -74,6 +74,16 @@ export const FORWARD_LABELS = {
   /** Q40: Portfolio Theory's note on the Constructor's Minimum Variance. */
   gmvConstructorNote:
     "Portfolio Theory GMV uses the forward risk model and selected historical risk window. The Constructor uses its own analysis-period covariance and may therefore produce a different Minimum Variance allocation.",
+  /** Task 11: shown in place of the Market CML Proxy when MRP ≤ 1e-12. The dashed
+   * region of the Model CAL and of the proxy both reuse `borrowingExtension`. */
+  marketCmlProxyUnavailable:
+    "The Market CML Proxy is not shown because the Market Risk Premium assumption is zero, negative or too small to distinguish from zero (not above 1e-12). The market proxy then offers no meaningful expected return above the risk-free rate, so a capital market line through it would be misleading.",
+  /** Task 11: SML note when MRP = 0. */
+  smlFlat:
+    "With a Market Risk Premium of 0%, the model expects the risk-free rate at every Forward Model Beta, so the Security Market Line is flat.",
+  /** Task 11: SML note when MRP < 0. */
+  smlDownward:
+    "With a negative Market Risk Premium, model expected return falls as Forward Model Beta rises, so the Security Market Line slopes downward.",
 } as const;
 
 /** "Forward Model Beta vs VTI": always names the selected proxy, never bare "Beta". */

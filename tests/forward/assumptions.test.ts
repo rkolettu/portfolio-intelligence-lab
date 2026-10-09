@@ -459,6 +459,33 @@ describe("approved forward labels", () => {
     const all = Object.values(FORWARD_LABELS).join(" ");
     expect(all).not.toMatch(/undervalued|overvalued|\balpha\b/i);
   });
+
+  it("states the Task 11 line notes neutrally and reuses one borrowing explanation", () => {
+    expect(FORWARD_LABELS.marketCmlProxyUnavailable).toBe(
+      "The Market CML Proxy is not shown because the Market Risk Premium assumption is zero, negative or too small to distinguish from zero (not above 1e-12). The market proxy then offers no meaningful expected return above the risk-free rate, so a capital market line through it would be misleading.",
+    );
+    expect(FORWARD_LABELS.smlFlat).toBe(
+      "With a Market Risk Premium of 0%, the model expects the risk-free rate at every Forward Model Beta, so the Security Market Line is flat.",
+    );
+    expect(FORWARD_LABELS.smlDownward).toBe(
+      "With a negative Market Risk Premium, model expected return falls as Forward Model Beta rises, so the Security Market Line slopes downward.",
+    );
+    const lineNotes = [
+      FORWARD_LABELS.marketCmlProxyUnavailable,
+      FORWARD_LABELS.smlFlat,
+      FORWARD_LABELS.smlDownward,
+    ].join(" ");
+    expect(lineNotes).not.toMatch(
+      /\b(buy|sell|undervalued|overvalued|alpha|live)\b/i,
+    );
+    // Both dashed regions (Model CAL and Market CML Proxy) share the one
+    // borrowing/leverage sentence; no second copy exists.
+    expect(
+      Object.values(FORWARD_LABELS).filter((text) =>
+        /borrowing\/leverage/.test(text),
+      ),
+    ).toEqual([FORWARD_LABELS.borrowingExtension]);
+  });
 });
 
 it("parses a complete state through the shared schema", () => {

@@ -767,12 +767,16 @@ export type TangencyOutcome =
  * beyond it (borrowing/leverage at Rf), and evaluates the SML over its own β axis. */
 type LineLineage = {
   methodologyVersion: string;
+  /** Hash of the Task 3 risk model the line was built from. */
   riskModelHash: string;
   marketProxy: MarketProxy;
   riskWindow: RiskWindow;
+  /** Rf: the forward 1Y Treasury rate, as a decimal. */
   riskFreeRate: number;
+  /** Observation date of Rf; part of the line's economic lineage. */
   riskFreeObservationDate: string;
-  /** SHA-256 of the line's canonical economic payload. */
+  /** SHA-256 of the line's canonical economic payload only (never labels, chart
+   * domain, colours, dash styles, timestamps or UI state). */
   lineHash: string;
 };
 
@@ -786,6 +790,7 @@ export type ModelCal = LineLineage & {
   slope: number;
   /** σ_t: solid from 0 to here; beyond it requires borrowing at Rf. */
   solidThroughVolatility: number;
+  /** σ_t: the tangency's model volatility (equals `solidThroughVolatility`). */
   tangencyVolatility: number;
   /** μ_BLᵀw_t (12M) */
   tangencyExpectedReturn: number;
@@ -795,6 +800,7 @@ export type ModelCal = LineLineage & {
   anchorAllowance: number;
 };
 
+/** Available only when the Task 10 tangency is; otherwise no line is manufactured. */
 export type ModelCalOutcome =
   | { available: true; line: ModelCal }
   | {
@@ -825,6 +831,8 @@ export type MarketCmlProxy = LineLineage & {
   anchorAllowance: number;
 };
 
+/** Unavailable when MRP ≤ 1e-12 (`market_proxy_has_no_positive_expected_excess_return`:
+ * Rf weakly dominates the proxy, so a flat or downward line is never drawn instead). */
 export type MarketCmlProxyOutcome =
   | { available: true; line: MarketCmlProxy }
   | {
@@ -843,6 +851,7 @@ export type SecurityMarketLine = LineLineage & {
   intercept: number;
   /** MRP */
   slope: number;
+  /** MRP > 0: upward; MRP = 0: flat at Rf; MRP < 0: downward. */
   direction: "upward" | "flat" | "downward";
 };
 
